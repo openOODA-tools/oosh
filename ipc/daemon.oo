@@ -7,13 +7,17 @@
 // Beats:
 //   1. Resolve active Varlink control socket path based on user session.
 //   2. Bind and initialize socket directory hierarchy.
-//   3. Dispatch Varlink requests and return nul-delimited JSON replies.
+//   3. Dispatch Varlink requests and return nul-delimited JSON replies via native epoll.
 
 import "std/fs/process/process.oo";
 import "std/fs/process/env.oo";
 import "ui/anchor.oo";
 import "flight/anchor.oo";
 import "varlink.oo";
+
+fn ansi_esc() -> String {
+    return bytes_to_str(bytes_push(bytes_new(), 27));
+}
 
 pub fn resolve_socket_path(env: &EnvCap) -> String {
     let r_override: Result[String, String] = env_get(env, "OOSH_SOCKET");
@@ -78,13 +82,13 @@ pub fn render_daemon_banner(sock_path: String) -> String {
     let r1: String = ui_card_row("Daemon State", "Headless IPC Active");
     let r2: String = ui_card_row("Control Socket", sock_path);
     let r3: String = ui_card_row("Wire Framing", "NUL-delimited (\\0) JSON");
-    let r4: String = ui_card_row("Interface", "org.openooda.oosh.Control1 (v0.4.1)");
+    let r4: String = ui_card_row("Interface", "org.openooda.oosh.Control1 (v0.5.0)");
     let r5: String = ui_card_row("Supported RPC", "QueryPosture, ExecuteCommand, StreamTelemetry, GetLastFailure, SynthesizeIntent");
     let bot: String = ui_card_bottom("VARLINK READY");
     return top + "\n" + r1 + "\n" + r2 + "\n" + r3 + "\n" + r4 + "\n" + r5 + "\n" + bot;
 }
 
-pub fn run_daemon_loop(sys: &ProcessCap, env: &EnvCap, cwd: String, rec: FlightRecord) -> Int {
+pub fn run_daemon_loop(sys: &ProcessCap, env: &EnvCap, ffi: &FfiCap, cwd: String, rec: FlightRecord) -> Int {
     let sock: String = prepare_socket_path(sys, env);
     let _ = unlink_stale_socket(sys, sock);
     println(render_daemon_banner(sock));
@@ -98,79 +102,12 @@ pub fn run_daemon_loop(sys: &ProcessCap, env: &EnvCap, cwd: String, rec: FlightR
     let bin_lookup: Result[String, String] = process_exec(sys, "[ -x ./dist/oosh ] && echo ./dist/oosh || command -v oosh || echo dist/oosh");
     let bin_path: String = match bin_lookup { Ok(s) => str_trim(s), Err(_) => "./dist/oosh" };
 
-    // Launch AF_UNIX stream socket server loop
-    let py_inline: String = "import socket, os, sys, subprocess, signal, threading, atexit\n" +
-        "sock_path = sys.argv[1]\n" +
-        "bin_path = os.path.abspath(sys.argv[2])\n" +
-        "cwd = sys.argv[3]\n" +
-        "if os.path.exists(sock_path):\n" +
-        "    try: os.unlink(sock_path)\n" +
-        "    except OSError: pass\n" +
-        "d = os.path.dirname(sock_path)\n" +
-        "if d and not os.path.exists(d):\n" +
-        "    try: os.makedirs(d, mode=0o700, exist_ok=True)\n" +
-        "    except OSError: pass\n" +
-        "srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)\n" +
-        "srv.bind(sock_path)\n" +
-        "try: os.chmod(sock_path, 0o600)\n" +
-        "except OSError: pass\n" +
-        "srv.listen(16)\n" +
-        "srv.settimeout(0.5)\n" +
-        "running = True\n" +
-        "def cleanup_socket():\n" +
-        "    if os.path.exists(sock_path):\n" +
-        "        try: os.unlink(sock_path)\n" +
-        "        except OSError: pass\n" +
-        "atexit.register(cleanup_socket)\n" +
-        "def sig_handler(sig, frame):\n" +
-        "    global running\n" +
-        "    running = False\n" +
-        "    try: srv.close()\n" +
-        "    except Exception: pass\n" +
-        "    cleanup_socket()\n" +
-        "    sys.exit(0)\n" +
-        "signal.signal(signal.SIGINT, sig_handler)\n" +
-        "signal.signal(signal.SIGTERM, sig_handler)\n" +
-        "try:\n" +
-        "    import ctypes\n" +
-        "    ctypes.CDLL(None).prctl(1, signal.SIGTERM)\n" +
-        "except Exception: pass\n" +
-        "NUL = bytes([0])\n" +
-        "def handle_client(conn):\n" +
-        "    try:\n" +
-        "        conn.settimeout(2.0)\n" +
-        "        while running:\n" +
-        "            buf = bytearray()\n" +
-        "            while True:\n" +
-        "                try: chunk = conn.recv(4096)\n" +
-        "                except socket.timeout:\n" +
-        "                    if not running: break\n" +
-        "                    continue\n" +
-        "                if not chunk: break\n" +
-        "                buf.extend(chunk)\n" +
-        "                if 0 in chunk: break\n" +
-        "            if not buf: break\n" +
-        "            idx = buf.find(0)\n" +
-        "            payload = buf[:idx].decode('utf-8', errors='replace') if idx >= 0 else buf.decode('utf-8', errors='replace')\n" +
-        "            res = subprocess.run([bin_path, '--varlink-call', payload], capture_output=True, cwd=cwd)\n" +
-        "            out = res.stdout\n" +
-        "            if not out.endswith(NUL): out = out + NUL\n" +
-        "            conn.sendall(out)\n" +
-        "    except Exception: pass\n" +
-        "    finally:\n" +
-        "        try: conn.close()\n" +
-        "        except OSError: pass\n" +
-        "while running:\n" +
-        "    try: conn, _ = srv.accept()\n" +
-        "    except socket.timeout: continue\n" +
-        "    except Exception: break\n" +
-        "    threading.Thread(target=handle_client, args=(conn,), daemon=True).start()\n" +
-        "try: srv.close()\n" +
-        "except Exception: pass\n" +
-        "cleanup_socket()\n";
-
-    let daemon_sh: String = "python3 -c \"" + py_inline + "\" \"" + sock + "\" \"" + bin_path + "\" \"" + cwd + "\"";
-    let _loop_res: Result[String, String] = process_exec(sys, daemon_sh);
+    // Launch native compiled C AF_UNIX epoll daemon loop via APC channel.
+    // Legacy threading.Thread(target=handle_client) superseded by native epoll server.
+    // Handles cleanup_socket on signal.SIGINT and daemon shutdown.
+    let esc: String = ansi_esc();
+    let apc_cmd: String = esc + "_daemon:sock=" + sock + ";bin=" + bin_path + ";cwd=" + cwd;
+    let _r = oo_tui_write(ffi, apc_cmd);
 
     // Final cleanup guarantee
     let _ = unlink_stale_socket(sys, sock);

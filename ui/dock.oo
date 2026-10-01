@@ -6,10 +6,9 @@
 //
 // Beats:
 //   1. Resolve active user identity and host node name.
-//   2. Query current git branch for directory context.
+//   2. Read .git/HEAD directly without subshells for instant context.
 //   3. Render ambient capability tokens and session posture badge.
 
-import "std/fs/process/process.oo";
 import "std/fs/process/env.oo";
 import "palette.oo";
 
@@ -21,16 +20,49 @@ pub fn resolve_node_id(env: &EnvCap) -> String {
     return user_name + "@" + host_name;
 }
 
-pub fn resolve_git_branch(sys: &ProcessCap, cwd: String) -> String {
-    let cmd: String = "cd \"" + cwd + "\" && git rev-parse --abbrev-ref HEAD 2>/dev/null";
-    let gr: Result[String, String] = process_exec(sys, cmd);
-    return match gr {
-        Ok(b) => str_trim(b),
-        Err(_) => ""
-    };
+fn path_dirname(p: String) -> String {
+    let n: Int = chars_len(p);
+    let mut i: Int = n;
+    while i > 0 {
+        i = i - 1;
+        if char_at(p, i) == "/" {
+            if i == 0 { return "/"; }
+            return str_slice(p, 0, i);
+        }
+    }
+    return "";
 }
 
-pub fn render_ambient_dock(sys: &ProcessCap, env: &EnvCap, cwd: String, has_failure: Bool, last_rc: Int) -> String {
+pub fn resolve_git_branch(fs_r: &FsReadCap, cwd: String) -> String {
+    let mut cur: String = cwd;
+    let mut depth: Int = 0;
+    while depth < 8 {
+        let head_path: String = if cur == "/" { "/.git/HEAD" } else { cur + "/.git/HEAD" };
+        let r: Result[String, String] = read_file(fs_r, head_path);
+        if r.is_ok() {
+            let content: String = str_trim(match r { Ok(s) => s, Err(_) => "" });
+            if str_starts_with(content, "ref: refs/heads/") {
+                return str_slice(content, 16, chars_len(content));
+            }
+            if chars_len(content) >= 7 {
+                return str_slice(content, 0, 7);
+            }
+            return content;
+        }
+        if cur == "/" || cur == "" || cur == "." {
+            break;
+        }
+        let parent: String = path_dirname(cur);
+        if parent == cur || parent == "" {
+            break;
+        }
+        cur = parent;
+        depth = depth + 1;
+    }
+    return "";
+}
+
+pub fn render_ambient_dock(fs_r: &FsReadCap, env: &EnvCap, cwd: String, has_failure: Bool, last_rc: Int) -> String {
     let cyan: String = cyber_cyan();
     let amber: String = cyber_amber();
     let purp: String = cyber_purple();
@@ -40,7 +72,7 @@ pub fn render_ambient_dock(sys: &ProcessCap, env: &EnvCap, cwd: String, has_fail
     let rst: String = cyber_reset();
 
     let node: String = resolve_node_id(env);
-    let branch: String = resolve_git_branch(sys, cwd);
+    let branch: String = resolve_git_branch(fs_r, cwd);
 
     let mut dock: String = cyan + "╭─[ " + amber + "ᚱ " + node + cyan + " ]";
 

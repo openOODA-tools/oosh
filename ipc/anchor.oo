@@ -126,8 +126,8 @@ pub fn ipc_banner(sock: String) -> String {
     return render_daemon_banner(sock);
 }
 
-pub fn ipc_run_daemon(sys: &ProcessCap, env: &EnvCap, cwd: String, rec: FlightRecord) -> Int {
-    return run_daemon_loop(sys, env, cwd, rec);
+pub fn ipc_run_daemon(sys: &ProcessCap, env: &EnvCap, ffi: &FfiCap, cwd: String, rec: FlightRecord) -> Int {
+    return run_daemon_loop(sys, env, ffi, cwd, rec);
 }
 
 pub fn ipc_anchor_probe() -> String {

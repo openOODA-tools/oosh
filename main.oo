@@ -1,14 +1,14 @@
 // # oosh Main - Argv Router and Interactive Shell Entry
 //
-// Logline: Parse startup flags, validate environment, and launch sovereign shell or Varlink daemon.
+// Logline: Parse startup flags, validate environment, and launch sovereign shell, script, or Varlink daemon.
 //
-// Setup: Wire capability tokens per openOODA capability model. Handle --help, --version, -c, --daemon.
+// Setup: Wire capability tokens per openOODA capability model. Handle flags, scripts, .ooshrc, and REPL.
 //
 // Beats:
-//   1. Pre-pass --help and --version without side effects.
-//   2. Validate startup flags; support one-shot -c command execution.
-//   3. Handle headless Varlink IPC daemon mode when requested.
-//   4. Initialize prompt and dispatch to the OODA REPL engine.
+//   1. Pre-pass --help, --version, and flags without side effects.
+//   2. Support positional .oosh script execution and shebang #!/usr/bin/env oosh.
+//   3. Source ~/.ooshrc configuration on interactive startup.
+//   4. Initialize prompt and dispatch to the OODA REPL engine with FfiCap.
 
 import "std/fs/process/env.oo";
 import "version.oo";
@@ -20,7 +20,7 @@ import "ui/anchor.oo";
 
 fn print_help() {
     println("oosh — openOODA sovereign shell");
-    println("usage: oosh [flags] [-c <command>]");
+    println("usage: oosh [flags] [script.oosh] [-c <command>]");
     println("");
     println("flags:");
     println("  -c <command>           execute specified command and exit");
@@ -62,6 +62,9 @@ fn validate_argv(args: List[String]) -> Result[String, String] {
                 return Err("missing --varlink-call arg");
             }
             i = i + 2;
+        } else if !str_starts_with(a, "-") {
+            // Positional script file argument
+            i = i + 1;
         } else {
             println("ERR\toosh\tunknown flag: " + a);
             process_exit(2);
@@ -71,7 +74,45 @@ fn validate_argv(args: List[String]) -> Result[String, String] {
     return Ok("validated");
 }
 
-pub fn main(bind: &BindCap, fs_r: &FsReadCap, sys: &ProcessCap, sys_cap: &SysCap, env: &EnvCap, time: &TimeCap, fs_w: &FsWriteCap, alloc: &AllocCap, thread: &ThreadCap, args: List[String]) -> Result[Int, String] {
+fn run_script_file(fs_r: &FsReadCap, fs_w: &FsWriteCap, sys: &ProcessCap, env: &EnvCap, ffi: &FfiCap, cwd: String, script_path: String, rec: FlightRecord) -> Int {
+    let sr: Result[String, String] = read_file(fs_r, script_path);
+    if sr.is_err() {
+        println("ERR\toosh\tcannot read script: " + script_path);
+        return 1;
+    }
+    let content: String = match sr { Ok(s) => s, Err(_) => "" };
+    let n: Int = chars_len(content);
+    let mut cur: String = "";
+    let mut i: Int = 0;
+    let mut cur_cwd: String = cwd;
+    let mut cur_rec: FlightRecord = rec;
+
+    while i < n {
+        let ch: String = char_at(content, i);
+        if ch == "\n" {
+            let line: String = str_trim(cur);
+            cur = "";
+            if line != "" && !str_starts_with(line, "#") {
+                let res: DispatchResult = dispatch_line(fs_r, fs_w, sys, env, ffi, cur_cwd, line, cur_rec);
+                cur_cwd = res.next_cwd;
+                cur_rec = res.flight_rec;
+                if res.should_exit || res.exit_code != 0 { return res.exit_code; }
+            }
+        } else if ch != "\r" {
+            cur = cur + ch;
+        }
+        i = i + 1;
+    }
+    let last_line: String = str_trim(cur);
+    if last_line != "" && !str_starts_with(last_line, "#") {
+        let res: DispatchResult = dispatch_line(fs_r, fs_w, sys, env, ffi, cur_cwd, last_line, cur_rec);
+        return res.exit_code;
+    }
+    return 0;
+}
+
+pub fn main(bind: &BindCap, fs_r: &FsReadCap, sys: &ProcessCap, sys_cap: &SysCap, env: &EnvCap, time: &TimeCap, fs_w: &FsWriteCap, alloc: &AllocCap, thread: &ThreadCap, ffi: &FfiCap, args: List[String]) -> Result[Int, String] {
+    let _h = dlopen(ffi, "");
     let pre: Result[String, String] = validate_argv(args);
     let kind: String = match pre { Ok(s) => s, Err(_) => "validated" };
     if kind == "showed-help" || kind == "showed-version" {
@@ -84,6 +125,7 @@ pub fn main(bind: &BindCap, fs_r: &FsReadCap, sys: &ProcessCap, sys_cap: &SysCap
     let mut has_c_flag: Bool = false;
     let mut is_daemon: Bool = false;
     let mut varlink_payload: String = "";
+    let mut script_file: String = "";
 
     let mut i: Int = 0;
     while i < n {
@@ -104,6 +146,10 @@ pub fn main(bind: &BindCap, fs_r: &FsReadCap, sys: &ProcessCap, sys_cap: &SysCap
             show_banner = false;
             varlink_payload = list_get(args, i + 1);
             i = i + 2;
+        } else if !str_starts_with(a, "-") && script_file == "" {
+            show_banner = false;
+            script_file = a;
+            i = i + 1;
         } else {
             i = i + 1;
         }
@@ -113,39 +159,43 @@ pub fn main(bind: &BindCap, fs_r: &FsReadCap, sys: &ProcessCap, sys_cap: &SysCap
     let cwd: String = match pr { Ok(s) => s, Err(_) => "." };
     let rec: FlightRecord = flight_init();
 
-    // Single-shot Varlink IPC call execution
     if varlink_payload != "" {
         let reply: String = ipc_route(sys, cwd, rec, varlink_payload);
         print(reply);
         return Ok(0);
     }
 
-    // Headless Varlink IPC control daemon
     if is_daemon {
-        let d_rc: Int = ipc_run_daemon(sys, env, cwd, rec);
+        let d_rc: Int = ipc_run_daemon(sys, env, ffi, cwd, rec);
         return Ok(d_rc);
     }
 
-    // Handle one-shot command execution (-c "cmd")
     if has_c_flag {
-        if str_trim(one_shot_cmd) == "" {
-            return Ok(0);
-        }
-        let res: DispatchResult = dispatch_line(fs_r, sys, env, cwd, one_shot_cmd, rec);
-        if res.exit_code != 0 {
-            process_exit(res.exit_code);
-        }
+        if str_trim(one_shot_cmd) == "" { return Ok(0); }
+        let res: DispatchResult = dispatch_line(fs_r, fs_w, sys, env, ffi, cwd, one_shot_cmd, rec);
+        if res.exit_code != 0 { process_exit(res.exit_code); }
         return Ok(res.exit_code);
+    }
+
+    if script_file != "" {
+        let s_rc: Int = run_script_file(fs_r, fs_w, sys, env, ffi, cwd, script_file, rec);
+        if s_rc != 0 { process_exit(s_rc); }
+        return Ok(s_rc);
+    }
+
+    // Source ~/.ooshrc on interactive startup if present
+    let hr: Result[String, String] = env_get(env, "HOME");
+    let home: String = match hr { Ok(h) => h, Err(_) => "" };
+    if home != "" {
+        let ooshrc_path: String = home + "/.ooshrc";
+        let _ = run_script_file(fs_r, fs_w, sys, env, ffi, cwd, ooshrc_path, rec);
     }
 
     if show_banner && ui_is_interactive(sys) {
         println(oosh_banner());
     }
 
-    // Launch interactive OODA REPL engine
-    let rc: Int = run_engine(fs_r, sys, env, time, bind, fs_w);
-    if rc != 0 {
-        process_exit(rc);
-    }
+    let rc: Int = run_engine(fs_r, sys, env, time, bind, fs_w, ffi);
+    if rc != 0 { process_exit(rc); }
     return Ok(rc);
 }

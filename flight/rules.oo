@@ -209,7 +209,7 @@ pub fn match_failure_rules(cmd: String, exit_code: Int, stderr_out: String, cwd:
     if str_contains(err_str, "Connection refused") || str_contains(err_str, "connect") || (str_contains(cmd, "sock") && str_contains(err_str, "No such file")) {
         return make_diagnostic("IPC_FAILURE", "Varlink IPC control socket is inactive or unreachable.", "oosh --daemon &", "ls -la /run/oosh/control.sock /tmp/oosh-control.sock", "No active listener on socket; launch daemon in background or check permissions.");
     }
-    if str_contains(err_str, "No such file or directory") || str_contains(err_str, "cannot access") || str_contains(err_str, "Not a directory") || str_contains(err_str, "No such directory") {
+    if bin == "cat" || bin == "head" || bin == "tail" || str_contains(err_str, "No such file or directory") || str_contains(err_str, "cannot access") || str_contains(err_str, "Not a directory") || str_contains(err_str, "No such directory") {
         return match_missing_path(bin, arg, cmd, err_str);
     }
     if bin == "cargo" || bin == "make" || bin == "oodac" || str_contains(cmd, "cargo ") || str_contains(cmd, "make ") || str_contains(cmd, "oodac ") || str_contains(err_str, "could not compile") || str_contains(err_str, "make: ***") {

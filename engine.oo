@@ -2,14 +2,13 @@
 //
 // Logline: Implements the interactive prompt loop: observes input, orients command intent, and executes actions.
 //
-// Setup: Takes FsReadCap, ProcessCap, EnvCap, TimeCap, BindCap, and FsWriteCap. Tracks flight telemetry and prompt pacing.
+// Setup: Takes FsReadCap, ProcessCap, EnvCap, TimeCap, BindCap, FsWriteCap, and FfiCap.
 //
 // Beats:
-//   1. Initialize active working directory and session flight record.
-//   2. Render prompt dock glyph and flush to standard output.
-//   3. Read input stream from stdin via oo_read_stdin_chunk.
+//   1. Initialize active working directory, session flight record, and persistent history.
+//   2. Manage raw mode terminal line editor with ANSI escape sequence decoding.
+//   3. Render real-time TrueColor syntax accenting and ghost auto-remedy suggestions.
 //   4. Measure execution latency and render post-execution telemetry badges.
-//   5. Terminate cleanly on EOF or explicit exit request.
 
 import "std/fs/process/env.oo";
 import "prompt.oo";
@@ -17,90 +16,210 @@ import "dispatch.oo";
 import "flight/anchor.oo";
 import "ui/anchor.oo";
 
-pub fn run_engine(fs_r: &FsReadCap, sys: &ProcessCap, env: &EnvCap, time: &TimeCap, bind: &BindCap, fs_w: &FsWriteCap) -> Int {
+fn parse_line_entries(s: String) -> List[String] {
+    let mut entries: List[String] = list_new();
+    let n: Int = chars_len(s);
+    let mut cur: String = "";
+    let mut i: Int = 0;
+    while i < n {
+        let ch: String = char_at(s, i);
+        if ch == "\n" {
+            let t: String = str_trim(cur);
+            if t != "" { entries = list_push(entries, t); }
+            cur = "";
+        } else if ch != "\r" {
+            cur = cur + ch;
+        }
+        i = i + 1;
+    }
+    if str_trim(cur) != "" { entries = list_push(entries, str_trim(cur)); }
+    return entries;
+}
+
+fn builtin_completion(prefix: String) -> String {
+    let builtins: String = "help:version:status:caps:whereami:history:clear:remedy:autopsy:export:unset:alias:take:pwd:exit";
+    let n: Int = chars_len(builtins);
+    let mut cur: String = "";
+    let mut i: Int = 0;
+    while i < n {
+        let ch: String = char_at(builtins, i);
+        if ch == ":" {
+            if str_starts_with(cur, prefix) { return cur; }
+            cur = "";
+        } else {
+            cur = cur + ch;
+        }
+        i = i + 1;
+    }
+    if cur != "" && str_starts_with(cur, prefix) { return cur; }
+    return prefix;
+}
+
+pub fn run_engine(fs_r: &FsReadCap, sys: &ProcessCap, env: &EnvCap, time: &TimeCap, bind: &BindCap, fs_w: &FsWriteCap, ffi: &FfiCap) -> Int {
     let pr: Result[String, String] = env_get(env, "PWD");
     let mut cwd: String = match pr { Ok(s) => s, Err(_) => "." };
     let mut rec: FlightRecord = flight_init();
     let is_interactive: Bool = ui_is_interactive(sys);
+    let esc: String = ansi_esc();
+
+    let hr: Result[String, String] = env_get(env, "HOME");
+    let home: String = match hr { Ok(h) => h, Err(_) => "" };
+    let hist_file: String = home + "/.oosh_history";
+    let mut history: List[String] = list_new();
+    let h_read: Result[String, String] = read_file(fs_r, hist_file);
+    if h_read.is_ok() {
+        history = parse_line_entries(match h_read { Ok(s) => s, Err(_) => "" });
+    }
 
     let mut running: Bool = true;
-    let mut need_prompt: Bool = true;
     let mut cur_line: String = "";
+    let mut cursor_pos: Int = 0;
+    let mut hist_idx: Int = list_len(history);
+
+    if is_interactive {
+        let _ = oo_tui_enable_raw(ffi, "");
+    }
 
     while running {
-        if need_prompt && is_interactive {
-            print(render_prompt_with_dock(sys, env, cwd, rec.has_failed, rec.last_exit_code));
-            need_prompt = false;
+        let mut remedy_hint: String = "";
+        let base_prompt: String = render_prompt(env, cwd);
+        if is_interactive {
+            let dock_prompt: String = render_prompt_with_dock(fs_r, env, cwd, rec.has_failed, rec.last_exit_code);
+            print(dock_prompt);
+
+            if rec.has_failed {
+                let diag = flight_rules_match(rec.last_failed_cmd, rec.last_exit_code, rec.last_stderr, cwd);
+                remedy_hint = diag.actionable_cmd;
+                if remedy_hint != "" {
+                    print(" \x1b[38;2;110;110;110mᛉ Auto-Remedy: " + remedy_hint + " [Tab to Accept]\x1b[0m");
+                    print(esc + "[" + (chars_len(remedy_hint) + 33).to_string() + "D");
+                }
+            }
         }
 
-        let cr: Result[String, String] = oo_read_stdin_chunk(fs_r, 100);
-        if cr.is_err() {
-            // EOF or closed pipe
-            let e: String = match cr { Ok(_) => "", Err(m) => m };
-            if e != "timeout" {
-                if cur_line != "" {
-                    let last_line: String = str_trim(cur_line);
-                    if is_interactive && last_line != "" {
-                        let accent: String = ui_render_accent(last_line);
-                        if accent != "" {
-                            println(accent);
-                        }
-                    }
-                    let t0: Int = now_ms(time);
-                    let res: DispatchResult = dispatch_line(fs_r, sys, env, cwd, last_line, rec);
-                    let dur: Int = now_ms(time) - t0;
-                    let mem: String = flight_memory(fs_r);
-                    if is_interactive && last_line != "" && !res.should_exit {
-                        println(flight_telemetry(dur, res.exit_code, mem));
-                    }
-                    cwd = res.next_cwd;
-                    rec = flight_update_duration(res.flight_rec, dur);
-                }
+        let mut line_done: Bool = false;
+        while !line_done && running {
+            let b_res: Result[String, String] = oo_tui_read_byte(ffi, "");
+            if b_res.is_err() {
                 running = false;
-                if is_interactive {
-                    println("");
-                }
+                line_done = true;
                 break;
             }
-        } else {
-            let chunk: String = match cr { Ok(s) => s, Err(_) => "" };
-            let n: Int = chars_len(chunk);
-            let mut i: Int = 0;
-            while i < n {
-                let ch: String = char_at(chunk, i);
-                if ch == "\r" {
-                    // Suppress carriage return to prevent duplicate prompt execution on CRLF
-                    i = i + 1;
-                } else if ch == "\n" {
-                    let line_to_run: String = str_trim(cur_line);
-                    cur_line = "";
-                    if is_interactive && line_to_run != "" {
-                        let accent: String = ui_render_accent(line_to_run);
-                        if accent != "" {
-                            println(accent);
+            let byte_val: String = match b_res { Ok(s) => s, Err(_) => "" };
+            let b: Int = if chars_len(byte_val) > 0 { byte_at(byte_val, 0) } else { 0 };
+
+            if is_interactive && b == 27 { // ANSI escape sequence
+                let seq1 = match oo_tui_read_byte(ffi, "") { Ok(s) => s, Err(_) => "" };
+                if seq1 == "[" {
+                    let seq2 = match oo_tui_read_byte(ffi, "") { Ok(s) => s, Err(_) => "" };
+                    if seq2 == "A" { // Up arrow
+                        if hist_idx > 0 && list_len(history) > 0 {
+                            hist_idx = hist_idx - 1;
+                            cur_line = list_get(history, hist_idx);
+                            cursor_pos = chars_len(cur_line);
                         }
-                    }
-                    let t0: Int = now_ms(time);
-                    let res: DispatchResult = dispatch_line(fs_r, sys, env, cwd, line_to_run, rec);
-                    let dur: Int = now_ms(time) - t0;
-                    let mem: String = flight_memory(fs_r);
-                    if is_interactive && line_to_run != "" && !res.should_exit {
-                        println(flight_telemetry(dur, res.exit_code, mem));
-                    }
-                    cwd = res.next_cwd;
-                    rec = flight_update_duration(res.flight_rec, dur);
-                    if res.should_exit {
-                        running = false;
-                        break;
-                    }
-                    need_prompt = true;
-                    i = i + 1;
+                    } else if seq2 == "B" { // Down arrow
+                        if hist_idx + 1 < list_len(history) {
+                            hist_idx = hist_idx + 1;
+                            cur_line = list_get(history, hist_idx);
+                            cursor_pos = chars_len(cur_line);
+                        } else {
+                            hist_idx = list_len(history);
+                            cur_line = "";
+                            cursor_pos = 0;
+                        }
+                    } else if seq2 == "C" { // Right arrow
+                        if cursor_pos < chars_len(cur_line) { cursor_pos = cursor_pos + 1; }
+                    } else if seq2 == "D" { // Left arrow
+                        if cursor_pos > 0 { cursor_pos = cursor_pos - 1; }
+                    } else if seq2 == "3" { // Delete
+                        let _ = oo_tui_read_byte(ffi, "");
+                        let clen: Int = chars_len(cur_line);
+                        if cursor_pos < clen {
+                            cur_line = str_slice(cur_line, 0, cursor_pos) + str_slice(cur_line, cursor_pos + 1, clen);
+                        }
+                    } else if seq2 == "H" { cursor_pos = 0; }
+                    else if seq2 == "F" { cursor_pos = chars_len(cur_line); }
+                }
+            } else if b == 13 || b == 10 { // Enter
+                if is_interactive { print("\r\n"); }
+                line_done = true;
+            } else if is_interactive && (b == 127 || b == 8) { // Backspace
+                if cursor_pos > 0 {
+                    let clen: Int = chars_len(cur_line);
+                    cur_line = str_slice(cur_line, 0, cursor_pos - 1) + str_slice(cur_line, cursor_pos, clen);
+                    cursor_pos = cursor_pos - 1;
+                }
+            } else if is_interactive && b == 9 { // Tab
+                if cur_line == "" && remedy_hint != "" {
+                    cur_line = remedy_hint;
+                    cursor_pos = chars_len(cur_line);
+                } else if cur_line != "" {
+                    cur_line = builtin_completion(cur_line);
+                    cursor_pos = chars_len(cur_line);
+                }
+            } else if is_interactive && b == 3 { // Ctrl+C
+                print("^C\r\n");
+                cur_line = "";
+                cursor_pos = 0;
+                line_done = true;
+            } else if is_interactive && b == 4 { // Ctrl+D
+                if cur_line == "" { running = false; break; }
+            } else if is_interactive && b == 1 { cursor_pos = 0; } // Ctrl+A
+            else if is_interactive && b == 5 { cursor_pos = chars_len(cur_line); } // Ctrl+E
+            else if is_interactive && b == 21 { cur_line = ""; cursor_pos = 0; } // Ctrl+U
+            else if b >= 32 || (!is_interactive && b == 9) { // Printable character or Tab in non-interactive
+                if is_interactive {
+                    let clen: Int = chars_len(cur_line);
+                    cur_line = str_slice(cur_line, 0, cursor_pos) + byte_val + str_slice(cur_line, cursor_pos, clen);
+                    cursor_pos = cursor_pos + 1;
                 } else {
-                    cur_line = cur_line + ch;
-                    i = i + 1;
+                    cur_line = cur_line + byte_val;
+                }
+            }
+
+            // Real-time TrueColor syntax accent redrawing
+            if is_interactive && !line_done && running {
+                let clen: Int = chars_len(cur_line);
+                let highlighted: String = accent_command_tokens(cur_line);
+                print("\r" + base_prompt + highlighted + esc + "[K");
+                if cursor_pos < clen {
+                    print(esc + "[" + (clen - cursor_pos).to_string() + "D");
                 }
             }
         }
+
+        if !running && cur_line == "" { break; }
+
+        let line_to_run: String = str_trim(cur_line);
+        cur_line = "";
+        cursor_pos = 0;
+        hist_idx = list_len(history);
+
+        if line_to_run != "" {
+            if is_interactive {
+                history = list_push(history, line_to_run);
+                let _ = file_append_sync(fs_w, hist_file, line_to_run + "\n");
+                let _ = oo_tui_disable_raw(ffi, "");
+            }
+            let t0: Int = now_ms(time);
+            let res: DispatchResult = dispatch_line(fs_r, fs_w, sys, env, ffi, cwd, line_to_run, rec);
+            let dur: Int = now_ms(time) - t0;
+            let mem: String = flight_memory(fs_r);
+            if is_interactive && !res.should_exit {
+                println(flight_telemetry(dur, res.exit_code, mem));
+            }
+            cwd = res.next_cwd;
+            rec = flight_update_duration(res.flight_rec, dur);
+            if is_interactive && !res.should_exit {
+                let _ = oo_tui_enable_raw(ffi, "");
+            }
+            if res.should_exit { running = false; break; }
+        }
     }
-    return 0;
+
+    if is_interactive {
+        let _ = oo_tui_disable_raw(ffi, "");
+    }
+    return rec.last_exit_code;
 }

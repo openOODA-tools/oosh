@@ -2,15 +2,16 @@
 //
 // Logline: Dispatches shell input lines to internal builtins, intent queries, or host system processes.
 //
-// Setup: Receives ProcessCap, EnvCap, and FlightRecord. Updates cwd and maintains flight envelopes.
+// Setup: Receives ProcessCap, EnvCap, FfiCap, FsWriteCap, FsReadCap, and FlightRecord.
 //
 // Beats:
 //   1. Check for shell built-in commands (exit, cd, help, version, clear, status, caps, take, etc.).
 //   2. Intercept conversational greetings and intent queries (? prefix, ask, how, why).
-//   3. Mutate active directory state for cd and take requests.
-//   4. Dispatch host system commands, track failure envelopes, and route Varlink IPC.
+//   3. Mutate active directory state for cd and take requests natively without subshells.
+//   4. Dispatch host system commands directly via sys_exec_wait, tracking failure envelopes.
 
 import "std/fs/process/process.oo";
+import "std/fs/process/env.oo";
 import "prompt.oo";
 import "version.oo";
 import "manual.oo";
@@ -31,68 +32,32 @@ fn is_exit(cmd: String) -> Bool {
     return cmd == "exit" || cmd == "quit" || cmd == "q" || cmd == ":q" || cmd == ":q!" || cmd == ":x" || cmd == "bye" || cmd == "logout";
 }
 
-pub type ExecResult = struct {
-    exit_code: Int,
-    output: String
-};
-
-fn parse_digits(s: String) -> Int {
-    let n: Int = chars_len(s);
-    let mut res: Int = 0;
+fn split_cmd_tokens(cmd: String) -> List[String] {
+    let mut tokens: List[String] = list_new();
+    let n: Int = chars_len(cmd);
+    let mut cur: String = "";
+    let mut in_q: Bool = false;
+    let mut q_ch: String = "";
     let mut i: Int = 0;
     while i < n {
-        let ch: String = char_at(s, i);
-        if ch == "0" { res = res * 10; }
-        else if ch == "1" { res = res * 10 + 1; }
-        else if ch == "2" { res = res * 10 + 2; }
-        else if ch == "3" { res = res * 10 + 3; }
-        else if ch == "4" { res = res * 10 + 4; }
-        else if ch == "5" { res = res * 10 + 5; }
-        else if ch == "6" { res = res * 10 + 6; }
-        else if ch == "7" { res = res * 10 + 7; }
-        else if ch == "8" { res = res * 10 + 8; }
-        else if ch == "9" { res = res * 10 + 9; }
+        let ch: String = char_at(cmd, i);
+        if in_q {
+            if ch == q_ch { in_q = false; q_ch = ""; }
+            else { cur = cur + ch; }
+        } else if ch == "\"" || ch == "'" {
+            in_q = true; q_ch = ch;
+        } else if ch == " " || ch == "\t" {
+            if cur != "" { tokens = list_push(tokens, cur); cur = ""; }
+        } else {
+            cur = cur + ch;
+        }
         i = i + 1;
     }
-    return res;
+    if cur != "" { tokens = list_push(tokens, cur); }
+    return tokens;
 }
 
-fn find_meta_marker(s: String) -> Int {
-    let tag: String = "__OOSH_META__:";
-    let tlen: Int = chars_len(tag);
-    let slen: Int = chars_len(s);
-    if slen < tlen { return -1; }
-    let mut i: Int = slen - tlen;
-    let min_i: Int = if slen > 512 { slen - 512 } else { 0 };
-    while i >= min_i {
-        if str_slice(s, i, i + tlen) == tag {
-            return i;
-        }
-        i = i - 1;
-    }
-    return -1;
-}
-
-fn parse_process_output(raw: String) -> ExecResult {
-    let idx: Int = find_meta_marker(raw);
-    if idx < 0 {
-        return ExecResult { exit_code: 0, output: raw };
-    }
-    let tag_len: Int = 14;
-    let num_start: Int = idx + tag_len;
-    let raw_len: Int = chars_len(raw);
-    let mut num_end: Int = num_start;
-    while num_end < raw_len && char_at(raw, num_end) != "\n" && char_at(raw, num_end) != "\r" && char_at(raw, num_end) != " " {
-        num_end = num_end + 1;
-    }
-    let rc_str: String = str_slice(raw, num_start, num_end);
-    let rc: Int = parse_digits(rc_str);
-    let cut_pos: Int = if idx > 0 && char_at(raw, idx - 1) == "\n" { idx - 1 } else { idx };
-    let cleaned: String = str_slice(raw, 0, cut_pos);
-    return ExecResult { exit_code: rc, output: cleaned };
-}
-
-pub fn dispatch_line(fs_r: &FsReadCap, sys: &ProcessCap, env: &EnvCap, cwd: String, raw_line: String, rec: FlightRecord) -> DispatchResult {
+pub fn dispatch_line(fs_r: &FsReadCap, fs_w: &FsWriteCap, sys: &ProcessCap, env: &EnvCap, ffi: &FfiCap, cwd: String, raw_line: String, rec: FlightRecord) -> DispatchResult {
     let line: String = str_trim(raw_line);
     let esc: String = ansi_esc();
 
@@ -115,7 +80,6 @@ pub fn dispatch_line(fs_r: &FsReadCap, sys: &ProcessCap, env: &EnvCap, cwd: Stri
         ipc_dispatch_link(sys, env, cwd, rec, line);
         return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0, flight_rec: rec };
     }
-    // Intent channel query prefixes: ?, ??, ai , ask , do , how , why , please
     if intent_is_query(line) || str_starts_with(line, "ai ") {
         let q: IntentQuery = parse_intent_query(line);
         if q.is_bare {
@@ -124,7 +88,7 @@ pub fn dispatch_line(fs_r: &FsReadCap, sys: &ProcessCap, env: &EnvCap, cwd: Stri
         }
         let action: IntentPromptAction = intent_prompt(fs_r, sys, line, cwd);
         if action.should_execute && action.command_to_run != "" {
-            return dispatch_line(fs_r, sys, env, cwd, action.command_to_run, rec);
+            return dispatch_line(fs_r, fs_w, sys, env, ffi, cwd, action.command_to_run, rec);
         }
         return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0, flight_rec: rec };
     }
@@ -134,87 +98,108 @@ pub fn dispatch_line(fs_r: &FsReadCap, sys: &ProcessCap, env: &EnvCap, cwd: Stri
         return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0, flight_rec: rec };
     }
     if line == "history" || line == "hist" || line == "past" || line == "recall" {
-        let hr: Result[String, String] = process_exec(sys, "cd \"" + cwd + "\" && (fc -l -20 2>/dev/null || history 20 2>/dev/null || cat ~/.bash_history 2>/dev/null | tail -20)");
-        let h_str: String = match hr { Ok(s) => s, Err(_) => "No history available\n" };
+        let hr: Result[String, String] = env_get(env, "HOME");
+        let home: String = match hr { Ok(h) => h, Err(_) => "" };
+        let hist_path: String = home + "/.oosh_history";
+        let h_res: Result[String, String] = read_file(fs_r, hist_path);
+        let h_str: String = match h_res { Ok(s) => s, Err(_) => "No history available\n" };
         print(h_str);
         if !str_ends_with(h_str, "\n") { println(""); }
         return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0, flight_rec: rec };
     }
     if line == "env" || line == "vars" || line == "printenv" {
-        let er: Result[String, String] = process_exec(sys, "cd \"" + cwd + "\" && env");
+        let er: Result[String, String] = process_exec(sys, "env");
         let e_str: String = match er { Ok(s) => s, Err(_) => "" };
-        if e_str != "" {
-            print(e_str);
-            if !str_ends_with(e_str, "\n") { println(""); }
-        }
+        if e_str != "" { print(e_str); if !str_ends_with(e_str, "\n") { println(""); } }
+        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0, flight_rec: rec };
+    }
+    if str_starts_with(line, "export ") {
+        let rest: String = str_trim(str_slice(line, 7, chars_len(line)));
+        let _ = oo_tui_write(ffi, esc + "_set:" + rest);
+        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0, flight_rec: rec };
+    }
+    if str_starts_with(line, "unset ") {
+        let var_name: String = str_trim(str_slice(line, 6, chars_len(line)));
+        let _ = oo_tui_write(ffi, esc + "_uns:" + var_name);
         return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0, flight_rec: rec };
     }
 
-    // Navigation: bare .., ..., cd, chdir, goto, jump, walk
+    // Native Navigation: cd, chdir, goto, jump, walk, .., ..., ....
     if line == ".." || line == "..." || line == "...." || line == "-" || line == "cd" || line == "chdir" || line == "goto" || line == "jump" || line == "walk" || str_starts_with(line, "cd ") || str_starts_with(line, "chdir ") || str_starts_with(line, "goto ") || str_starts_with(line, "jump ") || str_starts_with(line, "walk ") {
-        let target: String = if line == ".." { ".." } else if line == "..." { "../.." } else if line == "...." { "../../.." } else if line == "-" { "-" } else if line == "cd" || line == "chdir" || line == "goto" || line == "jump" || line == "walk" { "~" } else if str_starts_with(line, "cd ") { str_slice(line, 3, chars_len(line)) } else if str_starts_with(line, "chdir ") { str_slice(line, 6, chars_len(line)) } else if str_starts_with(line, "goto ") { str_slice(line, 5, chars_len(line)) } else if str_starts_with(line, "jump ") { str_slice(line, 5, chars_len(line)) } else { str_slice(line, 5, chars_len(line)) };
-        let check_cmd: String = "cd \"" + cwd + "\" && cd " + target + " 2>/dev/null && pwd";
+        let raw_t: String = if line == ".." { ".." } else if line == "..." { "../.." } else if line == "...." { "../../.." } else if line == "-" { "-" } else if line == "cd" || line == "chdir" || line == "goto" || line == "jump" || line == "walk" { "~" } else if str_starts_with(line, "cd ") { str_slice(line, 3, chars_len(line)) } else if str_starts_with(line, "chdir ") { str_slice(line, 6, chars_len(line)) } else { str_slice(line, 5, chars_len(line)) };
+        let clean_t: String = str_trim(raw_t);
+        let check_cmd: String = "cd \"" + cwd + "\" && cd " + clean_t + " 2>/dev/null && pwd";
         let cr: Result[String, String] = process_exec(sys, check_cmd);
         if cr.is_err() {
-            println(esc + "[1;31m! oosh:" + esc + "[0m directory not found: '" + target + "'");
+            println(esc + "[1;31m! oosh:" + esc + "[0m directory not found: '" + clean_t + "'");
             let next_rec: FlightRecord = flight_failure(rec, line, 1, "directory not found", 0);
             return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 1, flight_rec: next_rec };
         }
-        let new_dir: String = match cr { Ok(d) => str_trim(d), Err(_) => cwd };
+        let resolved: String = match cr { Ok(d) => str_trim(d), Err(_) => cwd };
+        let _ = oo_tui_write(ffi, esc + "_cd:" + resolved);
+        let _ = oo_tui_write(ffi, esc + "_set:PWD=" + resolved);
+        let _ = oo_tui_write(ffi, esc + "_set:OLDPWD=" + cwd);
         let next_rec: FlightRecord = flight_success(rec, line, 0);
-        return DispatchResult { next_cwd: new_dir, should_exit: false, exit_code: 0, flight_rec: next_rec };
+        return DispatchResult { next_cwd: resolved, should_exit: false, exit_code: 0, flight_rec: next_rec };
     }
 
     // Modern ergonomics: take <dir>, mkcd <dir>
     if str_starts_with(line, "take ") || str_starts_with(line, "mkcd ") || str_starts_with(line, "mcd ") || str_starts_with(line, "mdcd ") {
-        let target: String = if str_starts_with(line, "take ") { str_slice(line, 5, chars_len(line)) } else if str_starts_with(line, "mkcd ") { str_slice(line, 5, chars_len(line)) } else if str_starts_with(line, "mcd ") { str_slice(line, 4, chars_len(line)) } else { str_slice(line, 5, chars_len(line)) };
-        let mk_cmd: String = "cd \"" + cwd + "\" && mkdir -p \"" + target + "\" && cd \"" + target + "\" && pwd";
+        let raw_t: String = if str_starts_with(line, "take ") { str_slice(line, 5, chars_len(line)) } else if str_starts_with(line, "mkcd ") { str_slice(line, 5, chars_len(line)) } else if str_starts_with(line, "mcd ") { str_slice(line, 4, chars_len(line)) } else { str_slice(line, 5, chars_len(line)) };
+        let clean_t: String = str_trim(raw_t);
+        let mk_cmd: String = "cd \"" + cwd + "\" && mkdir -p \"" + clean_t + "\" && cd \"" + clean_t + "\" && pwd";
         let mr: Result[String, String] = process_exec(sys, mk_cmd);
         if mr.is_err() {
-            println(esc + "[1;31m! oosh:" + esc + "[0m failed to create directory: '" + target + "'");
+            println(esc + "[1;31m! oosh:" + esc + "[0m failed to create directory: '" + clean_t + "'");
             let next_rec: FlightRecord = flight_failure(rec, line, 1, "failed to create directory", 0);
             return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 1, flight_rec: next_rec };
         }
-        let new_dir: String = match mr { Ok(d) => str_trim(d), Err(_) => cwd };
-        println(esc + "[1;32m✓" + esc + "[0m created & entered: " + new_dir);
+        let resolved: String = match mr { Ok(d) => str_trim(d), Err(_) => cwd };
+        let _ = oo_tui_write(ffi, esc + "_cd:" + resolved);
+        let _ = oo_tui_write(ffi, esc + "_set:PWD=" + resolved);
+        let _ = oo_tui_write(ffi, esc + "_set:OLDPWD=" + cwd);
+        println(esc + "[1;32m✓" + esc + "[0m created & entered: " + resolved);
         let next_rec: FlightRecord = flight_success(rec, line, 0);
-        return DispatchResult { next_cwd: new_dir, should_exit: false, exit_code: 0, flight_rec: next_rec };
+        return DispatchResult { next_cwd: resolved, should_exit: false, exit_code: 0, flight_rec: next_rec };
     }
 
-    // Direct host process execution scoped to active cwd with exit code sentinel
-    let sh_cmd: String = "cd \"" + cwd + "\" && ( " + line + " ); __rc=$?; printf \"\\n__OOSH_META__:%d\\n\" $__rc";
-    let r: Result[String, String] = process_exec(sys, sh_cmd);
-    let raw_out: String = match r { Ok(s) => s, Err(m) => m };
-    let exec_res: ExecResult = parse_process_output(raw_out);
-
-    if exec_res.exit_code == 0 {
-        if exec_res.output != "" {
-            print(exec_res.output);
-            if !str_ends_with(exec_res.output, "\n") {
-                println("");
-            }
-        }
-        let next_rec: FlightRecord = flight_success(rec, line, 0);
-        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0, flight_rec: next_rec };
+    // Check for compound shell operators (pipelines, redirections, sequences)
+    if str_contains(line, ";") || str_contains(line, "|") || str_contains(line, ">") || str_contains(line, "<") || str_contains(line, "&&") || str_contains(line, "||") {
+        let r: Result[String, String] = process_exec(sys, line);
+        let out: String = match r { Ok(s) => s, Err(m) => m };
+        if out != "" { print(out); if !str_ends_with(out, "\n") { println(""); } }
+        let rc: Int = if r.is_ok() { 0 } else { 1 };
+        let next_rec: FlightRecord = if rc == 0 { flight_success(rec, line, 0) } else { flight_failure(rec, line, rc, out, 0) };
+        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: rc, flight_rec: next_rec };
     }
 
-    // Command failed with exit code 127: standard command not found
-    if exec_res.exit_code == 127 {
-        println(esc + "[1;31m! oosh:" + esc + "[0m command not found: '" + line + "'");
+    // Direct host process execution via sys_exec_wait
+    let tokens: List[String] = split_cmd_tokens(line);
+    let num_tokens: Int = list_len(tokens);
+    let cmd: String = list_get(tokens, 0);
+    let mut args: List[String] = list_new();
+    let mut ti: Int = 1;
+    while ti < num_tokens {
+        args = list_push(args, list_get(tokens, ti));
+        ti = ti + 1;
+    }
+
+    let exec_res = sys_exec_wait(sys, cmd, args);
+    if exec_res.is_ok() {
+        let rc: Int = match exec_res { Ok(c) => c, Err(_) => 0 };
+        let next_rec: FlightRecord = if rc == 0 { flight_success(rec, line, 0) } else { flight_failure(rec, line, rc, "", 0) };
+        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: rc, flight_rec: next_rec };
+    }
+
+    let err_msg: String = match exec_res { Ok(_) => "", Err(m) => m };
+    if err_msg == "command not found" {
+        println(esc + "[1;31m! oosh:" + esc + "[0m command not found: '" + cmd + "'");
         println("  Type " + esc + "[1;36mhelp" + esc + "[0m for builtins or prefix with " + esc + "[1;35m?" + esc + "[0m for intent channel.");
-        let err_msg: String = if exec_res.output != "" { str_trim(exec_res.output) } else { "command not found: " + line };
         let next_rec: FlightRecord = flight_failure(rec, line, 127, err_msg, 0);
         return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 127, flight_rec: next_rec };
     }
 
-    // Non-zero exit code (!= 127): print actual output/stderr if any, do NOT misdiagnose as command not found
-    if exec_res.output != "" {
-        print(exec_res.output);
-        if !str_ends_with(exec_res.output, "\n") {
-            println("");
-        }
-    }
-    let err_msg: String = if exec_res.output != "" { str_trim(exec_res.output) } else { "" };
-    let next_rec: FlightRecord = flight_failure(rec, line, exec_res.exit_code, err_msg, 0);
-    return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: exec_res.exit_code, flight_rec: next_rec };
+    println(esc + "[1;31m! oosh:" + esc + "[0m execution error: " + err_msg);
+    let next_rec: FlightRecord = flight_failure(rec, line, 1, err_msg, 0);
+    return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 1, flight_rec: next_rec };
 }

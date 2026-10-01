@@ -2,7 +2,7 @@
 //
 // Logline: Tracks execution flight telemetry, failure envelopes, and blackbox postmortems.
 //
-// Setup: In-memory circular ring buffer tracking recent command execution events and metrics.
+// Setup: In-memory circular ring buffer tracking execution events, peak memory, PID, and causality.
 //
 // Beats:
 //   1. Initialize session flight record state and circular execution trace.
@@ -19,7 +19,10 @@ pub type FlightEntry = struct {
     exit_code: Int,
     duration_ms: Int,
     status: String,
-    stderr_snippet: String
+    stderr_snippet: String,
+    peak_mem: String,
+    pid: Int,
+    causal_link: String
 };
 
 pub type FlightRecord = struct {
@@ -32,7 +35,10 @@ pub type FlightRecord = struct {
     failed_count: Int,
     last_success_cmd: String,
     entries: List[FlightEntry],
-    capacity: Int
+    capacity: Int,
+    last_peak_mem: String,
+    last_pid: Int,
+    last_causal_link: String
 };
 
 fn safe_str_prefix(s: String, max_chars: Int) -> String {
@@ -81,15 +87,21 @@ pub fn init_flight_record() -> FlightRecord {
     return FlightRecord {
         has_failed: false, last_failed_cmd: "", last_exit_code: 0,
         last_stderr: "", last_duration_ms: 0, total_commands: 0,
-        failed_count: 0, last_success_cmd: "", entries: empty_entries, capacity: 16
+        failed_count: 0, last_success_cmd: "", entries: empty_entries, capacity: 16,
+        last_peak_mem: "0.0 MB", last_pid: 0, last_causal_link: "root"
     };
 }
 
 pub fn record_flight_success(rec: FlightRecord, cmd: String, duration_ms: Int) -> FlightRecord {
+    return record_flight_success_full(rec, cmd, duration_ms, "0.0 MB", 0, "root");
+}
+
+pub fn record_flight_success_full(rec: FlightRecord, cmd: String, duration_ms: Int, mem: String, pid: Int, link: String) -> FlightRecord {
     let seq_num: Int = rec.total_commands + 1;
+    let causal: String = if link != "" { link } else if rec.total_commands > 0 { "seq#" + rec.total_commands.to_string() } else { "root" };
     let entry: FlightEntry = FlightEntry {
         seq: seq_num, cmd: cmd, exit_code: 0, duration_ms: duration_ms,
-        status: "OK", stderr_snippet: ""
+        status: "OK", stderr_snippet: "", peak_mem: mem, pid: pid, causal_link: causal
     };
     let new_entries: List[FlightEntry] = push_ring_entry(rec.entries, entry, rec.capacity);
     return FlightRecord {
@@ -97,22 +109,30 @@ pub fn record_flight_success(rec: FlightRecord, cmd: String, duration_ms: Int) -
         last_exit_code: rec.last_exit_code, last_stderr: rec.last_stderr,
         last_duration_ms: duration_ms, total_commands: seq_num,
         failed_count: rec.failed_count, last_success_cmd: cmd,
-        entries: new_entries, capacity: rec.capacity
+        entries: new_entries, capacity: rec.capacity,
+        last_peak_mem: mem, last_pid: pid, last_causal_link: causal
     };
 }
 
 pub fn record_flight_failure(rec: FlightRecord, cmd: String, exit_code: Int, stderr_out: String, duration_ms: Int) -> FlightRecord {
+    return record_flight_failure_full(rec, cmd, exit_code, stderr_out, duration_ms, "0.0 MB", 0, "root");
+}
+
+pub fn record_flight_failure_full(rec: FlightRecord, cmd: String, exit_code: Int, stderr_out: String, duration_ms: Int, mem: String, pid: Int, link: String) -> FlightRecord {
     let seq_num: Int = rec.total_commands + 1;
+    let causal: String = if link != "" { link } else if rec.total_commands > 0 { "seq#" + rec.total_commands.to_string() } else { "root" };
     let entry: FlightEntry = FlightEntry {
         seq: seq_num, cmd: cmd, exit_code: exit_code, duration_ms: duration_ms,
-        status: "FAIL", stderr_snippet: safe_str_prefix(stderr_out, 60)
+        status: "FAIL", stderr_snippet: safe_str_prefix(stderr_out, 60),
+        peak_mem: mem, pid: pid, causal_link: causal
     };
     let new_entries: List[FlightEntry] = push_ring_entry(rec.entries, entry, rec.capacity);
     return FlightRecord {
         has_failed: true, last_failed_cmd: cmd, last_exit_code: exit_code,
         last_stderr: stderr_out, last_duration_ms: duration_ms,
         total_commands: seq_num, failed_count: rec.failed_count + 1,
-        last_success_cmd: rec.last_success_cmd, entries: new_entries, capacity: rec.capacity
+        last_success_cmd: rec.last_success_cmd, entries: new_entries, capacity: rec.capacity,
+        last_peak_mem: mem, last_pid: pid, last_causal_link: causal
     };
 }
 
@@ -123,7 +143,8 @@ pub fn update_flight_duration(rec: FlightRecord, duration_ms: Int) -> FlightReco
     let last: FlightEntry = list_get(rec.entries, last_idx);
     let updated: FlightEntry = FlightEntry {
         seq: last.seq, cmd: last.cmd, exit_code: last.exit_code,
-        duration_ms: duration_ms, status: last.status, stderr_snippet: last.stderr_snippet
+        duration_ms: duration_ms, status: last.status, stderr_snippet: last.stderr_snippet,
+        peak_mem: last.peak_mem, pid: last.pid, causal_link: last.causal_link
     };
     let mut new_entries: List[FlightEntry] = list_new();
     let mut i: Int = 0;
@@ -137,7 +158,8 @@ pub fn update_flight_duration(rec: FlightRecord, duration_ms: Int) -> FlightReco
         last_exit_code: rec.last_exit_code, last_stderr: rec.last_stderr,
         last_duration_ms: duration_ms, total_commands: rec.total_commands,
         failed_count: rec.failed_count, last_success_cmd: rec.last_success_cmd,
-        entries: new_entries, capacity: rec.capacity
+        entries: new_entries, capacity: rec.capacity,
+        last_peak_mem: rec.last_peak_mem, last_pid: rec.last_pid, last_causal_link: rec.last_causal_link
     };
 }
 
@@ -156,9 +178,10 @@ fn format_trace_entry(entry: FlightEntry) -> String {
     };
     let dur_raw: String = entry.duration_ms.to_string() + "ms";
     let dur_str: String = cyan + "⏱ " + pad_left_str(dur_raw, 5) + rst;
-    let cmd_str: String = safe_str_prefix(entry.cmd, 32);
+    let pid_str: String = if entry.pid > 0 { " [" + entry.pid.to_string() + "]" } else { "" };
+    let cmd_str: String = safe_str_prefix(entry.cmd, 24);
 
-    return cyan + "║ " + rst + seq_str + "  " + status_str + " " + dur_str + "  " + cmd_str;
+    return cyan + "║ " + rst + seq_str + "  " + status_str + " " + dur_str + pid_str + "  " + cmd_str;
 }
 
 pub fn render_autopsy_card(rec: FlightRecord) -> String {
@@ -203,12 +226,14 @@ pub fn render_autopsy_card(rec: FlightRecord) -> String {
         card_row("Faulted Command", rec.last_failed_cmd) + "\n" +
         card_row_colored("Exit Code", code_str, cyber_red()) + "\n" +
         card_row("Fault Latency", dur_str) + "\n" +
+        card_row("Peak Memory", rec.last_peak_mem) + "\n" +
+        card_row("Causal Link", rec.last_causal_link) + "\n" +
         card_row_colored("Root Cause", root_cause, cyber_amber()) + "\n" +
         card_row("Captured Stderr", safe_str_prefix(rec.last_stderr, 100)) + "\n" +
         card_row("Remedy Hint", "Run 'remedy' or 'fix' for interactive recovery guidance")
     } else {
         card_row_colored("Postmortem", "Nominal (0 unhandled faults)", cyber_green()) + "\n" +
-        card_row("Causal trace", "Clean execution pipeline") + "\n" +
+        card_row("Causal trace", "Clean execution pipeline (" + rec.last_causal_link + ")") + "\n" +
         card_row("Last Successful", if rec.last_success_cmd == "" { "none" } else { rec.last_success_cmd })
     };
 

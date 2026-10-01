@@ -20,8 +20,8 @@ pub fn ui_is_interactive(sys: &ProcessCap) -> Bool {
     return r.is_ok();
 }
 
-pub fn ui_render_dock(sys: &ProcessCap, env: &EnvCap, cwd: String, has_failure: Bool, last_rc: Int) -> String {
-    return render_ambient_dock(sys, env, cwd, has_failure, last_rc);
+pub fn ui_render_dock(fs_r: &FsReadCap, env: &EnvCap, cwd: String, has_failure: Bool, last_rc: Int) -> String {
+    return render_ambient_dock(fs_r, env, cwd, has_failure, last_rc);
 }
 
 pub fn ui_render_accent(cmd: String) -> String {

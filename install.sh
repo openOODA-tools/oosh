@@ -4,7 +4,7 @@
 # "The intent-driven, ambient, capability-bounded interactive shell for the AI era."
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/openOODA-tools/oosh/main/install.sh | bash
+#   curl -fsSL https://openooda-tools.github.io/oosh/install.sh | bash
 #
 # Options:
 #   --prefix <dir>   Installation directory (default: /usr/local/bin or ~/.local/bin)
@@ -18,7 +18,7 @@ set -eu
 
 REPO="openOODA-tools/oosh"
 GITHUB_URL="https://github.com/${REPO}"
-RAW_URL="https://raw.githubusercontent.com/${REPO}/main"
+CANONICAL_URL="https://openooda-tools.github.io/oosh"
 VERSION_PIN="v0.2.1"
 
 # --- Styling & Human Interface Standard ---------------------------------------

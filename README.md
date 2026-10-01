@@ -12,7 +12,7 @@ Part of [openOODA-tools](https://github.com/openOODA-tools).
 Install `oosh` on any Linux machine (x86_64 / aarch64) with zero dependencies. Neither `openOODA` nor `syntropd` is required on the host:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/openOODA-tools/oosh/main/install.sh | bash
+curl -fsSL https://openooda-tools.github.io/oosh/install.sh | bash
 ```
 
 The installer verifies cryptographic SHA-256 checksums, places the binary in `/usr/local/bin` (or `~/.local/bin`), and tests execution.
@@ -20,10 +20,10 @@ The installer verifies cryptographic SHA-256 checksums, places the binary in `/u
 ### Options
 ```bash
 # Preview actions without modifying the host
-curl -fsSL https://raw.githubusercontent.com/openOODA-tools/oosh/main/install.sh | bash -s -- --dry-run
+curl -fsSL https://openooda-tools.github.io/oosh/install.sh | bash -s -- --dry-run
 
 # Uninstall
-curl -fsSL https://raw.githubusercontent.com/openOODA-tools/oosh/main/install.sh | bash -s -- --uninstall
+curl -fsSL https://openooda-tools.github.io/oosh/install.sh | bash -s -- --uninstall
 ```
 
 ---

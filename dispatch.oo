@@ -5,9 +5,9 @@
 // Setup: Receives ProcessCap and EnvCap. Updates current working directory and sanitizes error diagnostics.
 //
 // Beats:
-//   1. Check for shell built-in commands (exit, cd, help, version, clear, status).
-//   2. Intercept conversational greetings and intent queries (? prefix).
-//   3. Mutate active directory state for cd requests.
+//   1. Check for shell built-in commands (exit, cd, help, version, clear, status, caps, take, etc.).
+//   2. Intercept conversational greetings and intent queries (? prefix, ask, how, why).
+//   3. Mutate active directory state for cd and take requests.
 //   4. Dispatch host system commands and contain missing binary diagnostics.
 
 import "std/fs/process/process.oo";
@@ -15,6 +15,7 @@ import "std/fs/process/env.oo";
 import "std/fs/file/path.oo";
 import "prompt.oo";
 import "version.oo";
+import "manual.oo";
 
 pub type DispatchResult = struct {
     next_cwd: String,
@@ -34,70 +35,192 @@ pub fn resolve_cd(env: &EnvCap, cwd: String, target: String) -> String {
         let rest: String = str_slice(t, 2, chars_len(t));
         return path_join(home, rest);
     }
-    if path_is_absolute(t) {
-        return t;
-    }
-    if t == ".." {
-        return path_parent(cwd);
-    }
+    if path_is_absolute(t) { return t; }
+    if t == ".." { return path_parent(cwd); }
+    if t == "..." { return path_parent(path_parent(cwd)); }
     return path_join(cwd, t);
+}
+
+fn is_exit(cmd: String) -> Bool {
+    return cmd == "exit" || cmd == "quit" || cmd == "q" || cmd == ":q" || cmd == ":q!" || cmd == ":x" || cmd == "bye" || cmd == "logout" || cmd == "leave" || cmd == "close";
+}
+
+fn is_clear(cmd: String) -> Bool {
+    return cmd == "clear" || cmd == "cls" || cmd == "clean" || cmd == "reset" || cmd == "wipe" || cmd == "blank";
+}
+
+fn is_version(cmd: String) -> Bool {
+    return cmd == "version" || cmd == "-v" || cmd == "--version" || cmd == "-V" || cmd == "ver" || cmd == "banner" || cmd == "about" || cmd == "whoareyou";
+}
+
+fn is_pwd(cmd: String) -> Bool {
+    return cmd == "pwd" || cmd == "cwd" || cmd == "where" || cmd == "here" || cmd == "path";
+}
+
+fn is_caps(cmd: String) -> Bool {
+    return cmd == "caps" || cmd == "cap" || cmd == "capabilities" || cmd == "perms" || cmd == "permissions" || cmd == "tokens" || cmd == "authority" || cmd == "whoami";
+}
+
+fn is_status(cmd: String) -> Bool {
+    return cmd == "status" || cmd == "stat" || cmd == "info" || cmd == "health" || cmd == "posture" || cmd == "ping" || cmd == "check" || cmd == "--status" || cmd == "-s";
+}
+
+fn is_greeting(cmd: String) -> Bool {
+    return cmd == "hi" || cmd == "hello" || cmd == "hey" || cmd == "yo" || cmd == "greetings" || cmd == "howdy" || cmd == "sup" || cmd == "morning" || cmd == "evening";
+}
+
+fn is_help(cmd: String) -> Bool {
+    return cmd == "help" || cmd == "-h" || cmd == "--help" || cmd == "-?" || cmd == "/?" || cmd == "--h" || cmd == "?" || cmd == "man" || cmd == "manual" || cmd == "guide" || cmd == "docs" || cmd == "commands" || cmd == "what";
+}
+
+fn is_autopsy(cmd: String) -> Bool {
+    return cmd == "autopsy" || cmd == "bb" || cmd == "blackbox" || cmd == "flight" || cmd == "crash" || cmd == "postmortem" || cmd == "triage" || cmd == "coroner";
+}
+
+fn is_rune(cmd: String) -> Bool {
+    return cmd == "rune" || str_starts_with(cmd, "rune ") || cmd == "token" || str_starts_with(cmd, "token ") || cmd == "talisman" || cmd == "dongle" || cmd == "key" || cmd == "staff" || cmd == "haptic";
+}
+
+fn is_link(cmd: String) -> Bool {
+    return cmd == "link" || str_starts_with(cmd, "link ") || cmd == "connect" || str_starts_with(cmd, "connect ") || cmd == "sync" || cmd == "attach" || cmd == "bind" || cmd == "peer";
+}
+
+fn is_remedy(cmd: String) -> Bool {
+    return cmd == "remedy" || cmd == "fix" || cmd == "repair" || cmd == "heal" || cmd == "patch" || cmd == "resolve" || cmd == "cure" || cmd == "undo";
+}
+
+fn is_scry(cmd: String) -> Bool {
+    return cmd == "scry" || str_starts_with(cmd, "scry ") || cmd == "inspect" || str_starts_with(cmd, "inspect ") || cmd == "probe" || cmd == "trace" || cmd == "reveal" || cmd == "peek" || cmd == "diagnose";
 }
 
 pub fn dispatch_line(sys: &ProcessCap, env: &EnvCap, cwd: String, raw_line: String) -> DispatchResult {
     let line: String = str_trim(raw_line);
     let esc: String = ansi_esc();
 
-    if line == "" {
-        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0 };
-    }
-    if line == "exit" || line == "quit" {
-        return DispatchResult { next_cwd: cwd, should_exit: true, exit_code: 0 };
-    }
-    if line == "version" {
-        println(oosh_banner());
-        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0 };
-    }
-    if line == "clear" || line == "cls" {
+    if line == "" { return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0 }; }
+    if is_exit(line) { return DispatchResult { next_cwd: cwd, should_exit: true, exit_code: 0 }; }
+    if is_clear(line) {
         print(esc + "[2J" + esc + "[H");
         return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0 };
     }
-    if line == "help" {
-        println(esc + "[1;33mᚱ oosh sovereign builtins:" + esc + "[0m");
-        println("  cd [dir]    change working directory (~, .., absolute, relative)");
-        println("  status      display current node posture and syntropd link");
-        println("  clear       clear terminal viewport");
-        println("  version     display shell version and banner");
-        println("  exit        terminate shell session");
-        println("");
-        println(esc + "[1;36m✦ Spells & Intent:" + esc + "[0m");
-        println("  ? <query>   channel intent or request assistance");
-        println("  <binary>    any host executable (e.g. ls, git, cargo, uname, ps)");
+    if is_version(line) {
+        println(oosh_banner());
         return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0 };
     }
-    if line == "hi" || line == "hello" || line == "hey" || line == "greetings" {
+    if is_greeting(line) {
         println(esc + "[1;33m⚡ oosh:" + esc + "[0m Greetings, sovereign. The shell is listening.");
         println("   Type " + esc + "[1;36mhelp" + esc + "[0m for builtins or prefix queries with " + esc + "[1;35m?" + esc + "[0m for intent.");
         return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0 };
     }
-    if line == "status" {
-        println(esc + "[1;33m⚡ oosh node telemetry:" + esc + "[0m");
-        println("   Mode:       Standalone Sovereign Shell");
-        println("   CWD:        " + cwd);
-        println("   Substrate:  openOODA native runtime (glibc)");
-        println("   Syntropd:   Dormant (local control socket unlinked)");
+    if is_help(line) {
+        print_help_guide();
         return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0 };
     }
-    if str_starts_with(line, "?") {
-        let query: String = str_trim(str_slice(line, 1, chars_len(line)));
-        println(esc + "[1;35m✦ Intent Channel:" + esc + "[0m \"" + query + "\"");
+    if str_starts_with(line, "help ") || str_starts_with(line, "docs ") || str_starts_with(line, "guide ") {
+        let topic: String = if str_starts_with(line, "help ") { str_slice(line, 5, chars_len(line)) } else if str_starts_with(line, "docs ") { str_slice(line, 5, chars_len(line)) } else { str_slice(line, 6, chars_len(line)) };
+        print_context_help(topic);
+        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0 };
+    }
+    if is_status(line) {
+        print_status(cwd);
+        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0 };
+    }
+    if is_caps(line) {
+        print_caps(sys);
+        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0 };
+    }
+    if is_autopsy(line) {
+        print_autopsy();
+        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0 };
+    }
+    if is_rune(line) {
+        print_rune();
+        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0 };
+    }
+    if is_link(line) {
+        print_link();
+        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0 };
+    }
+    if is_remedy(line) {
+        print_remedy();
+        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0 };
+    }
+    if is_scry(line) {
+        print_scry(sys, cwd);
+        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0 };
+    }
+    if is_pwd(line) {
+        println(cwd);
+        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0 };
+    }
+    if line == "whereami" {
+        let git_r: Result[String, String] = process_exec(sys, "cd \"" + cwd + "\" && git rev-parse --abbrev-ref HEAD 2>/dev/null");
+        let branch: String = match git_r { Ok(b) => str_trim(b), Err(_) => "" };
+        println(esc + "[1;33m⚡ Location:" + esc + "[0m  " + cwd);
+        if branch != "" { println(esc + "[1;36m   Branch:" + esc + "[0m    " + branch); } else { println("   Context:   Host filesystem"); }
+        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0 };
+    }
+    if line == "history" || line == "hist" || line == "past" || line == "recall" {
+        let hr: Result[String, String] = process_exec(sys, "cd \"" + cwd + "\" && (fc -l -20 2>/dev/null || history 20 2>/dev/null || cat ~/.bash_history 2>/dev/null | tail -20)");
+        let h_str: String = match hr { Ok(s) => s, Err(_) => "No history available\n" };
+        print(h_str);
+        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0 };
+    }
+    if line == "env" || line == "vars" || line == "printenv" {
+        let er: Result[String, String] = process_exec(sys, "cd \"" + cwd + "\" && env");
+        let e_str: String = match er { Ok(s) => s, Err(_) => "" };
+        print(e_str);
+        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0 };
+    }
+    // Navigation: bare .., ..., cd, chdir, goto, jump, walk
+    if line == ".." || line == "..." || line == "...." || line == "-" || line == "cd" || line == "chdir" || line == "goto" || line == "jump" || line == "walk" || str_starts_with(line, "cd ") || str_starts_with(line, "chdir ") || str_starts_with(line, "goto ") || str_starts_with(line, "jump ") || str_starts_with(line, "walk ") {
+        let target: String = if line == ".." { ".." } else if line == "..." { "../.." } else if line == "...." { "../../.." } else if line == "-" { "-" } else if line == "cd" || line == "chdir" || line == "goto" || line == "jump" || line == "walk" { "~" } else if str_starts_with(line, "cd ") { str_slice(line, 3, chars_len(line)) } else if str_starts_with(line, "chdir ") { str_slice(line, 6, chars_len(line)) } else if str_starts_with(line, "goto ") { str_slice(line, 5, chars_len(line)) } else if str_starts_with(line, "jump ") { str_slice(line, 5, chars_len(line)) } else { str_slice(line, 5, chars_len(line)) };
+        let check_cmd: String = "cd \"" + cwd + "\" && cd " + target + " 2>/dev/null && pwd";
+        let cr: Result[String, String] = process_exec(sys, check_cmd);
+        if cr.is_err() {
+            println(esc + "[1;31m! oosh:" + esc + "[0m directory not found: '" + target + "'");
+            return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 1 };
+        }
+        let new_dir: String = match cr { Ok(d) => str_trim(d), Err(_) => cwd };
+        return DispatchResult { next_cwd: new_dir, should_exit: false, exit_code: 0 };
+    }
+    // Modern ergonomics: take <dir>, mkcd <dir>
+    if str_starts_with(line, "take ") || str_starts_with(line, "mkcd ") || str_starts_with(line, "mcd ") || str_starts_with(line, "mdcd ") {
+        let target: String = if str_starts_with(line, "take ") { str_slice(line, 5, chars_len(line)) } else if str_starts_with(line, "mkcd ") { str_slice(line, 5, chars_len(line)) } else if str_starts_with(line, "mcd ") { str_slice(line, 4, chars_len(line)) } else { str_slice(line, 5, chars_len(line)) };
+        let mk_cmd: String = "cd \"" + cwd + "\" && mkdir -p \"" + target + "\" && cd \"" + target + "\" && pwd";
+        let mr: Result[String, String] = process_exec(sys, mk_cmd);
+        if mr.is_err() {
+            println(esc + "[1;31m! oosh:" + esc + "[0m failed to create directory: '" + target + "'");
+            return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 1 };
+        }
+        let new_dir: String = match mr { Ok(d) => str_trim(d), Err(_) => cwd };
+        println(esc + "[1;32m✓" + esc + "[0m created & entered: " + new_dir);
+        return DispatchResult { next_cwd: new_dir, should_exit: false, exit_code: 0 };
+    }
+    // Modern ergonomics: open <target>, view <target>, show <target>
+    if str_starts_with(line, "open ") || str_starts_with(line, "view ") || str_starts_with(line, "show ") || str_starts_with(line, "launch ") {
+        let target: String = if str_starts_with(line, "open ") { str_slice(line, 5, chars_len(line)) } else if str_starts_with(line, "view ") { str_slice(line, 5, chars_len(line)) } else if str_starts_with(line, "show ") { str_slice(line, 5, chars_len(line)) } else { str_slice(line, 7, chars_len(line)) };
+        let open_cmd: String = "cd \"" + cwd + "\" && (xdg-open \"" + target + "\" 2>/dev/null || open \"" + target + "\" 2>/dev/null || cat \"" + target + "\")";
+        let _ = process_exec(sys, open_cmd);
+        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0 };
+    }
+    // Performance: time <cmd>, bench <cmd>
+    if str_starts_with(line, "time ") || str_starts_with(line, "bench ") || str_starts_with(line, "clock ") {
+        let rest: String = if str_starts_with(line, "time ") { str_slice(line, 5, chars_len(line)) } else if str_starts_with(line, "bench ") { str_slice(line, 6, chars_len(line)) } else { str_slice(line, 6, chars_len(line)) };
+        let time_cmd: String = "cd \"" + cwd + "\" && /usr/bin/time " + rest;
+        let tr: Result[String, String] = process_exec(sys, time_cmd);
+        let out: String = match tr { Ok(s) => s, Err(e) => e };
+        print(out);
+        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0 };
+    }
+    // Intent channel queries
+    if str_starts_with(line, "?") || str_starts_with(line, "ai ") || str_starts_with(line, "ask ") || str_starts_with(line, "do ") || str_starts_with(line, "how ") || str_starts_with(line, "why ") || str_starts_with(line, "please ") {
+        let query: String = if str_starts_with(line, "??") { str_slice(line, 2, chars_len(line)) } else if str_starts_with(line, "?") { str_slice(line, 1, chars_len(line)) } else if str_starts_with(line, "ai ") { str_slice(line, 3, chars_len(line)) } else if str_starts_with(line, "ask ") { str_slice(line, 4, chars_len(line)) } else if str_starts_with(line, "do ") { str_slice(line, 3, chars_len(line)) } else if str_starts_with(line, "how ") { str_slice(line, 4, chars_len(line)) } else if str_starts_with(line, "why ") { str_slice(line, 4, chars_len(line)) } else { str_slice(line, 7, chars_len(line)) };
+        println(esc + "[1;35m✦ Intent Channel:" + esc + "[0m \"" + str_trim(query) + "\"");
         println("   [syntropd offline] Running in standalone host mode.");
         println("   To execute system commands, enter standard binaries (e.g. 'ls', 'git', 'uname').");
+        println("   Type " + esc + "[1;36mhelp" + esc + "[0m for available sovereign commands and shortcuts.");
         return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0 };
-    }
-    if line == "cd" || str_starts_with(line, "cd ") {
-        let target: String = if line == "cd" { "" } else { str_slice(line, 3, chars_len(line)) };
-        let new_dir: String = resolve_cd(env, cwd, target);
-        return DispatchResult { next_cwd: new_dir, should_exit: false, exit_code: 0 };
     }
 
     // Direct host process execution scoped to active cwd

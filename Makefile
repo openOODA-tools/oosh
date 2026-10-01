@@ -1,4 +1,4 @@
-# oosh v0.2.0 Makefile
+# oosh v0.3.0 Makefile
 #
 # Build, verify, and test the openOODA sovereign shell.
 #
@@ -20,7 +20,7 @@ OODACODEX ?= $(HOME)/.openooda/northstar.oot
 OO_LIST_AMBIENT_QUOTA ?= 8589934592
 BIN := dist/oosh
 
-SRC := main.oo version.oo anchor.oo prompt.oo dispatch.oo engine.oo
+SRC := main.oo version.oo anchor.oo prompt.oo dispatch.oo engine.oo manual.oo
 
 .PHONY: all build test parity line-cap file-law academy check verify install clean
 
@@ -47,8 +47,22 @@ test: $(BIN)
 	@test "$$(./$(BIN) -c 'echo hello_sovereign')" = "hello_sovereign" && echo "PASS: -c execution"
 	@echo "=== testing pipe execution ==="
 	@echo "echo stream_ok" | ./$(BIN) --no-banner | grep -q "stream_ok" && echo "PASS: stream pipe"
-	@echo "=== testing builtin help ==="
+	@echo "=== testing builtin help & aliases ==="
 	@echo "help" | ./$(BIN) --no-banner | grep -q "sovereign builtins" && echo "PASS: builtin help"
+	@echo "-h" | ./$(BIN) --no-banner | grep -q "sovereign builtins" && echo "PASS: alias -h"
+	@echo "?" | ./$(BIN) --no-banner | grep -q "sovereign builtins" && echo "PASS: alias ?"
+	@echo "=== testing caps & identity ==="
+	@echo "caps" | ./$(BIN) --no-banner | grep -q "sovereign capability audit" && echo "PASS: caps audit"
+	@echo "=== testing whereami ==="
+	@echo "whereami" | ./$(BIN) --no-banner | grep -q "Location:" && echo "PASS: whereami"
+	@echo "=== testing bare .. navigation ==="
+	@echo -e "..\npwd" | ./$(BIN) --no-banner | grep -q "openOODA-tools" && echo "PASS: bare .. navigation"
+	@echo "=== testing intent channel triggers ==="
+	@echo "? inspect memory" | ./$(BIN) --no-banner | grep -q "Intent Channel" && echo "PASS: intent trigger ?"
+	@echo "ask how to build" | ./$(BIN) --no-banner | grep -q "Intent Channel" && echo "PASS: intent trigger ask"
+	@echo "=== testing vim exit triggers ==="
+	@echo ":q" | ./$(BIN) --no-banner > /dev/null && echo "PASS: exit :q"
+	@echo "bye" | ./$(BIN) --no-banner > /dev/null && echo "PASS: exit bye"
 	@echo "=== testing --unknown-flag (expect exit 2) ==="
 	@./$(BIN) --unknown-flag 2>/dev/null; test $$? -eq 2 && echo "PASS: error exit 2"
 	@echo "=== testing installer dry-run ==="

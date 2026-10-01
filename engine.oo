@@ -25,7 +25,7 @@ pub fn run_engine(fs_r: &FsReadCap, sys: &ProcessCap, env: &EnvCap) -> Int {
 
     while running {
         if need_prompt {
-            print(render_prompt(env));
+            print(render_prompt(env, cwd));
             need_prompt = false;
         }
 

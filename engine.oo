@@ -2,22 +2,24 @@
 //
 // Logline: Implements the interactive prompt loop: observes input, orients command intent, and executes actions.
 //
-// Setup: Takes FsReadCap, ProcessCap, and EnvCap. Handles CRLF terminal normalization and prompt pacing.
+// Setup: Takes FsReadCap, ProcessCap, EnvCap, TimeCap, BindCap, and FsWriteCap. Tracks flight telemetry and prompt pacing.
 //
 // Beats:
-//   1. Initialize active working directory from environment.
-//   2. Render prompt glyph and flush to standard output.
+//   1. Initialize active working directory and session flight record.
+//   2. Render prompt dock glyph and flush to standard output.
 //   3. Read input stream from stdin via oo_read_stdin_chunk.
-//   4. Normalize CRLF line discipline and dispatch complete lines.
+//   4. Measure execution latency and render post-execution telemetry badges.
 //   5. Terminate cleanly on EOF or explicit exit request.
 
 import "std/fs/process/env.oo";
 import "prompt.oo";
 import "dispatch.oo";
+import "flight/anchor.oo";
 
-pub fn run_engine(fs_r: &FsReadCap, sys: &ProcessCap, env: &EnvCap) -> Int {
+pub fn run_engine(fs_r: &FsReadCap, sys: &ProcessCap, env: &EnvCap, time: &TimeCap, bind: &BindCap, fs_w: &FsWriteCap) -> Int {
     let pr: Result[String, String] = env_get(env, "PWD");
     let mut cwd: String = match pr { Ok(s) => s, Err(_) => "." };
+    let mut rec: FlightRecord = flight_init();
 
     let mut running: Bool = true;
     let mut need_prompt: Bool = true;
@@ -25,7 +27,7 @@ pub fn run_engine(fs_r: &FsReadCap, sys: &ProcessCap, env: &EnvCap) -> Int {
 
     while running {
         if need_prompt {
-            print(render_prompt(env, cwd));
+            print(render_prompt_with_dock(sys, env, cwd, rec.has_failed, rec.last_exit_code));
             need_prompt = false;
         }
 
@@ -36,8 +38,13 @@ pub fn run_engine(fs_r: &FsReadCap, sys: &ProcessCap, env: &EnvCap) -> Int {
             if e != "timeout" {
                 if cur_line != "" {
                     let last_line: String = str_trim(cur_line);
-                    let res: DispatchResult = dispatch_line(sys, env, cwd, last_line);
+                    let t0: Int = now_ms(time);
+                    let res: DispatchResult = dispatch_line(sys, env, cwd, last_line, rec);
+                    let dur: Int = now_ms(time) - t0;
+                    let mem: String = flight_memory(fs_r);
+                    println(flight_telemetry(dur, res.exit_code, mem));
                     cwd = res.next_cwd;
+                    rec = res.flight_rec;
                 }
                 running = false;
                 println("");
@@ -55,8 +62,15 @@ pub fn run_engine(fs_r: &FsReadCap, sys: &ProcessCap, env: &EnvCap) -> Int {
                 } else if ch == "\n" {
                     let line_to_run: String = str_trim(cur_line);
                     cur_line = "";
-                    let res: DispatchResult = dispatch_line(sys, env, cwd, line_to_run);
+                    let t0: Int = now_ms(time);
+                    let res: DispatchResult = dispatch_line(sys, env, cwd, line_to_run, rec);
+                    let dur: Int = now_ms(time) - t0;
+                    let mem: String = flight_memory(fs_r);
+                    if line_to_run != "" && !res.should_exit {
+                        println(flight_telemetry(dur, res.exit_code, mem));
+                    }
                     cwd = res.next_cwd;
+                    rec = res.flight_rec;
                     if res.should_exit {
                         running = false;
                         break;

@@ -1,0 +1,99 @@
+// # Intent Query Synthesis Engine
+//
+// Logline: Intercepts natural language queries and synthesizes concrete POSIX shell commands.
+//
+// Setup: Pattern matches intent verbs against system, git, search, and build domains.
+//
+// Beats:
+//   1. Strip intent channel prefixes and normalize natural language query.
+//   2. Synthesize concrete POSIX shell commands and explanatory rationale.
+//   3. Render cyberpunk intent presentation card with safety badge.
+
+import "ui/anchor.oo";
+import "safety.oo";
+
+pub fn strip_intent_prefix(line: String) -> String {
+    let t: String = str_trim(line);
+    if str_starts_with(t, "??") { return str_trim(str_slice(t, 2, chars_len(t))); }
+    if str_starts_with(t, "?") { return str_trim(str_slice(t, 1, chars_len(t))); }
+    if str_starts_with(t, "ai ") { return str_trim(str_slice(t, 3, chars_len(t))); }
+    if str_starts_with(t, "ask ") { return str_trim(str_slice(t, 4, chars_len(t))); }
+    if str_starts_with(t, "do ") { return str_trim(str_slice(t, 3, chars_len(t))); }
+    if str_starts_with(t, "how ") { return str_trim(str_slice(t, 4, chars_len(t))); }
+    if str_starts_with(t, "why ") { return str_trim(str_slice(t, 4, chars_len(t))); }
+    if str_starts_with(t, "please ") { return str_trim(str_slice(t, 7, chars_len(t))); }
+    return t;
+}
+
+pub fn synthesize_command(q: String) -> String {
+    let query: String = str_trim(q);
+    if str_contains(query, "undo") && str_contains(query, "commit") { return "git reset --soft HEAD~1"; }
+    if str_contains(query, "recent commit") || str_contains(query, "commit log") || str_contains(query, "commits") { return "git log --oneline -n 10"; }
+    if str_contains(query, "discard") || str_contains(query, "revert") { return "git restore ."; }
+    if str_contains(query, "branch") { return "git branch -a"; }
+    if str_contains(query, "git status") || str_contains(query, "changed files") { return "git status -s"; }
+
+    if str_contains(query, "python") || str_contains(query, ".py") { return "find . -name \"*.py\""; }
+    if str_contains(query, "rust") || str_contains(query, ".rs") { return "find . -name \"*.rs\""; }
+    if str_contains(query, "ooda") || str_contains(query, ".oo") { return "find . -name \"*.oo\""; }
+    if str_contains(query, "large file") || str_contains(query, "big file") { return "find . -type f -size +50M"; }
+    if str_contains(query, "grep") || str_contains(query, "search for") { return "grep -rn \"TODO\" ."; }
+    if str_contains(query, "lines of code") || str_contains(query, "loc") || str_contains(query, "count lines") { return "find . -name \"*.oo\" | xargs wc -l"; }
+
+    if str_contains(query, "memory") || str_contains(query, "ram") { return "free -h"; }
+    if str_contains(query, "disk") || str_contains(query, "storage") || str_contains(query, "free space") { return "df -h ."; }
+    if str_contains(query, "top") || str_contains(query, "cpu") { return "ps aux --sort=-%cpu | head -10"; }
+    if str_contains(query, "port") || str_contains(query, "listen") { return "ss -tulpn 2>/dev/null || netstat -tulpn"; }
+    if str_contains(query, "uptime") || str_contains(query, "load") { return "uptime"; }
+
+    if str_contains(query, "build") || str_contains(query, "compile") { return "make all"; }
+    if str_contains(query, "test") { return "make test"; }
+    if str_contains(query, "verify") || str_contains(query, "check") { return "make verify"; }
+    if str_contains(query, "clean") { return "make clean"; }
+
+    if str_contains(query, "list") || str_contains(query, "files") { return "ls -la"; }
+    return query;
+}
+
+pub fn explain_command(cmd: String) -> String {
+    if str_starts_with(cmd, "git reset --soft") { return "Rewinds HEAD by one commit while preserving working tree changes staged in index."; }
+    if str_starts_with(cmd, "git log") { return "Displays the 10 most recent commits in compact single-line format."; }
+    if str_starts_with(cmd, "git restore") { return "Discards uncommitted working tree modifications across all tracked files."; }
+    if str_starts_with(cmd, "git branch") { return "Lists all local and remote branches in the current repository."; }
+    if str_starts_with(cmd, "git status") { return "Shows concise short status of modified, untracked, and staged files."; }
+    if str_starts_with(cmd, "find . -name \"*.py\"") { return "Recursively locates all Python source files (.py) under active working directory."; }
+    if str_starts_with(cmd, "find . -name \"*.oo\"") { return "Recursively locates all openOODA source files (.oo) under active working directory."; }
+    if str_starts_with(cmd, "find . -type f -size +50M") { return "Finds all regular files larger than 50 megabytes in the current filesystem tree."; }
+    if str_starts_with(cmd, "free -h") { return "Displays total, used, and available physical memory and swap in human-readable units."; }
+    if str_starts_with(cmd, "df -h .") { return "Displays mounted filesystem disk space allocation for active volume."; }
+    if str_starts_with(cmd, "ps aux") { return "Lists the top 10 processes consuming highest CPU percentage."; }
+    if str_starts_with(cmd, "make all") { return "Compiles binary and runs the complete verification gate."; }
+    if str_starts_with(cmd, "make test") { return "Executes automated test harness against built artifacts."; }
+    return "Executes POSIX host process scoped to the active working directory.";
+}
+
+pub fn render_intent_card(raw_line: String, cwd: String) -> String {
+    let q: String = strip_intent_prefix(raw_line);
+    let cmd: String = synthesize_command(q);
+    let exp: String = explain_command(cmd);
+    let s_badge: String = render_safety_badge(cmd);
+
+    let top: String = ui_card_top("✦", "INTENT CHANNEL — SYNTHESIS ENGINE");
+    let sec1: String = ui_card_section("QUERY ENVELOPE");
+    let r_q: String = ui_card_row("Intent Channel", "\"" + q + "\"");
+    let r_cwd: String = ui_card_row("Context Directory", cwd);
+
+    let sec2: String = ui_card_section("SYNTHESIZED POSIX COMMAND");
+    let r_cmd: String = ui_card_row("Synthesized", cmd);
+    let r_safe: String = ui_card_row("Safety Tier", s_badge);
+    let r_exp: String = ui_card_row("Rationale", exp);
+
+    let sec3: String = ui_card_section("EXECUTION DIRECTIVE");
+    let r_stat: String = ui_card_row("Engine State", "[syntropd offline] Pure deterministic synthesis active.");
+    let r_run: String = ui_card_row("To Execute", "Run: " + cmd);
+
+    let bot: String = ui_card_bottom("INTENT READY");
+    return top + "\n" + sec1 + "\n" + r_q + "\n" + r_cwd + "\n" +
+           sec2 + "\n" + r_cmd + "\n" + r_safe + "\n" + r_exp + "\n" +
+           sec3 + "\n" + r_stat + "\n" + r_run + "\n" + bot;
+}

@@ -1,0 +1,25 @@
+# oosh E2E Specification: Tier 2 Boundary & Corner Cases
+# Author: test_writer_e2e_1
+# Standard: openOODA House Laws (Page Rule: 16-256 lines)
+
+[T2-BND: Boundary & Corner Cases]
+- T2-BND-01: Unknown Flag - Flag --unknown-flag exits status 2; prints usage.
+- T2-BND-02: Empty -c Command - Option -c "" exits 0 cleanly with zero output.
+- T2-BND-03: Whitespace Only - Option -c "   " exits 0 cleanly without crash.
+- T2-BND-04: Multi-Line -c - Multiple newline-separated statements run sequentially.
+- T2-BND-05: 4096-Byte Command - Handles 4KB input line without buffer overflow.
+- T2-BND-06: Control Characters - Control characters (\0, \b, \t) handled safely.
+- T2-BND-07: Non-Existent Directory - cd /bad_path prints error, retains current PWD.
+- T2-BND-08: Bare cd - cd with no arguments cleanly navigates to $HOME directory.
+- T2-BND-09: Deep Traversal - ... and .... traverse multiple directory parents.
+- T2-BND-10: Empty Stdin Pipe - Zero-byte stdin stream terminates cleanly.
+- T2-BND-11: CRLF Normalization - DOS \r\n line endings normalized to Unix \n.
+- T2-BND-12: Exit Code 127 - Command not found returns status 127 to recorder.
+- T2-BND-13: Exit Code 126 - Permission denied returns status 126 to recorder.
+- T2-BND-14: Buffer Saturation - 20 consecutive failures do not leak ring buffer.
+- T2-BND-15: Bare ? Trigger - Bare ? opens help guide, not intent synthesis.
+- T2-BND-16: Bare Keywords - Bare ask, do, ai provide intent guidance.
+- T2-BND-17: Pipeline Intent - Complex queries with pipes parsed safely.
+- T2-BND-18: Malicious Intent - High-risk command flagged toxic red, blocked.
+- T2-BND-19: Truncated Varlink - Partial JSON wire frame buffered until NUL byte.
+- T2-BND-20: Missing Socket - Connect attempt to missing socket returns error cleanly.

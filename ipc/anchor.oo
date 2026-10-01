@@ -1,0 +1,44 @@
+// # IPC Subsystem Anchor - Varlink Control Plane
+//
+// Logline: Unified entry point for headless Varlink IPC daemon and socket control plane.
+//
+// Setup: Re-exports Varlink wire protocol router, socket path resolution, and daemon server loop.
+//
+// Beats:
+//   1. Expose Varlink NUL-delimited protocol serializer and error envelopes.
+//   2. Wire IPC method routing for external agents and syntropd.
+//   3. Bind headless daemon loop and control socket initialization.
+
+import "std/fs/process/process.oo";
+import "std/fs/process/env.oo";
+import "flight/anchor.oo";
+import "varlink.oo";
+import "daemon.oo";
+
+pub fn ipc_route(sys: &ProcessCap, cwd: String, rec: FlightRecord, raw: String) -> String {
+    return route_varlink_call(sys, cwd, rec, raw);
+}
+
+pub fn ipc_socket_path(env: &EnvCap) -> String {
+    return resolve_socket_path(env);
+}
+
+pub fn ipc_banner(sock: String) -> String {
+    return render_daemon_banner(sock);
+}
+
+pub fn ipc_run_daemon(sys: &ProcessCap, env: &EnvCap, cwd: String, rec: FlightRecord) -> Int {
+    return run_daemon_loop(sys, env, cwd, rec);
+}
+
+pub fn ipc_anchor_probe() -> String {
+    return "ipc-active";
+}
+
+pub fn ipc_default_socket_path() -> String {
+    return "/run/oosh/control.sock";
+}
+
+pub fn is_link_cmd(cmd: String) -> Bool {
+    return cmd == "link" || str_starts_with(cmd, "link ") || cmd == "connect" || str_starts_with(cmd, "connect ") || cmd == "sync" || cmd == "attach" || cmd == "bind" || cmd == "peer";
+}

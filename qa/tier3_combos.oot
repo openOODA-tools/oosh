@@ -1,0 +1,20 @@
+# oosh E2E Specification: Tier 3 Cross-Feature Combinations
+# Author: test_writer_e2e_1
+# Standard: openOODA House Laws (Page Rule: 16-256 lines)
+
+[T3-XFC: Cross-Feature Interactions]
+- T3-XFC-01: UI + Remedy - Failing command renders failure badge, remedy card with rune.
+- T3-XFC-02: UI + Intent - Intent query renders preview card with rune and [Y/n/e/?].
+- T3-XFC-03: Intent + Safety - HIGH_RISK query renders warning card, requires explicit confirmation.
+- T3-XFC-04: Varlink + Remedy - External agent queries GetLastFailure() over socket.
+- T3-XFC-05: Varlink + Control - External agent ExecuteCommand appears in flight log.
+- T3-XFC-06: Status Dock + Navigation - Running take updates PWD in ambient dock immediately.
+- T3-XFC-07: Flight Recorder + Autopsy - Multi-command session inspected via autopsy timeline.
+- T3-XFC-08: Capability + Security - Sandboxed child executed without leaking host tokens.
+- T3-XFC-09: Palette + Fallback - Dumb terminal gracefully strips TrueColor escape codes.
+- T3-XFC-10: Telemetry + Stdin - Multiple commands piped via stdin maintain metric accuracy.
+- T3-XFC-11: Remedy + Intent - Remedy suggests command, user confirms execution via prompt.
+- T3-XFC-12: Varlink + Introspection - Agent discovers Control1 schema and calls QueryPosture.
+- T3-XFC-13: Accenting + Dock - Ambient prompt accents builtins while dock updates git branch.
+- T3-XFC-14: Flight Buffer + Reset - Clear command resets screen while preserving flight log.
+- T3-XFC-15: Exit Code + Badge - Exit status 127 rendered as red failure badge with duration.

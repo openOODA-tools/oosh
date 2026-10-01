@@ -1,0 +1,90 @@
+// # UI Subsystem Anchor - Cyberpunk Terminal Interface
+//
+// Logline: Unified entry point for the cyberpunk terminal UI and ambient presentation subsystem.
+//
+// Setup: Re-exports palette styling, card renderers, ambient dock, and syntax accenting.
+//
+// Beats:
+//   1. Expose palette and color formatting interfaces.
+//   2. Bind card and visual container rendering functions.
+//   3. Wire status dock and command syntax accenting.
+
+import "palette.oo";
+import "card.oo";
+import "dock.oo";
+import "accent.oo";
+import "std/fs/process/process.oo";
+
+pub fn ui_render_dock(sys: &ProcessCap, env: &EnvCap, cwd: String, has_failure: Bool, last_rc: Int) -> String {
+    return render_ambient_dock(sys, env, cwd, has_failure, last_rc);
+}
+
+pub fn ui_render_accent(cmd: String) -> String {
+    return render_syntax_accent(cmd);
+}
+
+pub fn ui_card_top(rune: String, title: String) -> String {
+    return card_top(rune, title);
+}
+
+pub fn ui_card_bottom(badge: String) -> String {
+    return card_bottom(badge);
+}
+
+pub fn ui_card_row(label: String, val: String) -> String {
+    return card_row(label, val);
+}
+
+pub fn ui_card_row_colored(label: String, val: String, color: String) -> String {
+    return card_row_colored(label, val, color);
+}
+
+pub fn ui_card_section(title: String) -> String {
+    return card_section(title);
+}
+
+pub fn ui_card_divider() -> String {
+    return card_divider();
+}
+
+pub fn ui_paint_red(s: String) -> String {
+    return paint_red(s);
+}
+
+pub fn ui_paint_amber(s: String) -> String {
+    return paint_amber(s);
+}
+
+pub fn ui_paint_green(s: String) -> String {
+    return paint_green(s);
+}
+
+pub fn ui_anchor_probe() -> String {
+    return cyber_cyan();
+}
+
+pub fn is_clear_cmd(cmd: String) -> Bool {
+    return cmd == "clear" || cmd == "cls" || cmd == "clean" || cmd == "reset" || cmd == "wipe" || cmd == "blank";
+}
+
+pub fn dispatch_ui(sys: &ProcessCap, cwd: String, cmd: String) -> Bool {
+    let esc: String = bytes_to_str(bytes_push(bytes_new(), 27));
+    if is_clear_cmd(cmd) {
+        print(esc + "[2J" + esc + "[H");
+        return true;
+    }
+    if cmd == "whereami" {
+        let git_r: Result[String, String] = process_exec(sys, "cd \"" + cwd + "\" && git rev-parse --abbrev-ref HEAD 2>/dev/null");
+        let branch: String = match git_r { Ok(b) => str_trim(b), Err(_) => "" };
+        println(esc + "[1;33m⚡ Location:" + esc + "[0m  " + cwd);
+        if branch != "" { println(esc + "[1;36m   Branch:" + esc + "[0m    " + branch); } else { println("   Context:   Host filesystem"); }
+        return true;
+    }
+    if str_starts_with(cmd, "open ") || str_starts_with(cmd, "view ") || str_starts_with(cmd, "show ") || str_starts_with(cmd, "launch ") {
+        let target: String = if str_starts_with(cmd, "open ") { str_slice(cmd, 5, chars_len(cmd)) } else if str_starts_with(cmd, "view ") { str_slice(cmd, 5, chars_len(cmd)) } else if str_starts_with(cmd, "show ") { str_slice(cmd, 5, chars_len(cmd)) } else { str_slice(cmd, 7, chars_len(cmd)) };
+        let open_cmd: String = "cd \"" + cwd + "\" && (xdg-open \"" + target + "\" 2>/dev/null || open \"" + target + "\" 2>/dev/null || cat \"" + target + "\")";
+        let _ = process_exec(sys, open_cmd);
+        return true;
+    }
+    return false;
+}

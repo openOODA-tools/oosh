@@ -7,11 +7,16 @@
 // Beats:
 //   1. oosh_version() returns the release semver string.
 //   2. oosh_banner() returns the human-readable startup banner.
+//   3. is_version_cmd() matches version command aliases.
 
 pub fn oosh_version() -> String {
-    return "0.3.0";
+    return "0.4.0";
 }
 
 pub fn oosh_banner() -> String {
-    return "oosh v0.3.0 (openOODA sovereign shell)";
+    return "oosh v0.4.0 (openOODA sovereign shell)";
+}
+
+pub fn is_version_cmd(cmd: String) -> Bool {
+    return cmd == "version" || cmd == "-v" || cmd == "--version" || cmd == "-V" || cmd == "ver" || cmd == "banner" || cmd == "about" || cmd == "whoareyou";
 }

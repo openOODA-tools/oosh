@@ -1,29 +1,34 @@
 // # oosh Main - Argv Router and Interactive Shell Entry
 //
-// Logline: Parse startup flags, validate environment, and launch the sovereign shell session or execute commands.
+// Logline: Parse startup flags, validate environment, and launch sovereign shell or Varlink daemon.
 //
-// Setup: Wire capability tokens per openOODA capability model. Handle --help, --version, -c, and interactive REPL.
+// Setup: Wire capability tokens per openOODA capability model. Handle --help, --version, -c, --daemon.
 //
 // Beats:
 //   1. Pre-pass --help and --version without side effects.
 //   2. Validate startup flags; support one-shot -c command execution.
-//   3. Display shell startup banner in interactive mode.
+//   3. Handle headless Varlink IPC daemon mode when requested.
 //   4. Initialize prompt and dispatch to the OODA REPL engine.
 
 import "std/fs/process/env.oo";
 import "version.oo";
 import "engine.oo";
 import "dispatch.oo";
+import "flight/anchor.oo";
+import "ipc/anchor.oo";
 
 fn print_help() {
     println("oosh — openOODA sovereign shell");
     println("usage: oosh [flags] [-c <command>]");
     println("");
     println("flags:");
-    println("  -c <command>     execute specified command and exit");
-    println("  -h, --help       display this help message");
-    println("  -v, --version    display oosh version");
-    println("      --no-banner  suppress startup banner");
+    println("  -c <command>           execute specified command and exit");
+    println("  -h, --help             display this help message");
+    println("  -v, --version          display oosh version");
+    println("      --no-banner        suppress startup banner");
+    println("      --daemon           launch headless Varlink IPC control daemon");
+    println("      --varlink          launch headless Varlink IPC control daemon");
+    println("      --varlink-call <s> execute single-shot Varlink IPC JSON call");
 }
 
 fn validate_argv(args: List[String]) -> Result[String, String] {
@@ -39,13 +44,20 @@ fn validate_argv(args: List[String]) -> Result[String, String] {
             println("oosh " + oosh_version());
             return Ok("showed-version");
         }
-        if a == "--no-banner" {
+        if a == "--no-banner" || a == "--daemon" || a == "--varlink" {
             i = i + 1;
         } else if a == "-c" {
             if i + 1 >= n {
                 println("ERR\toosh\t-c requires a command string");
                 process_exit(2);
                 return Err("missing -c arg");
+            }
+            i = i + 2;
+        } else if a == "--varlink-call" {
+            if i + 1 >= n {
+                println("ERR\toosh\t--varlink-call requires a JSON string");
+                process_exit(2);
+                return Err("missing --varlink-call arg");
             }
             i = i + 2;
         } else {
@@ -67,6 +79,9 @@ pub fn main(bind: &BindCap, fs_r: &FsReadCap, sys: &ProcessCap, sys_cap: &SysCap
     let n: Int = list_len(args);
     let mut show_banner: Bool = true;
     let mut one_shot_cmd: String = "";
+    let mut has_c_flag: Bool = false;
+    let mut is_daemon: Bool = false;
+    let mut varlink_payload: String = "";
 
     let mut i: Int = 0;
     while i < n {
@@ -74,20 +89,47 @@ pub fn main(bind: &BindCap, fs_r: &FsReadCap, sys: &ProcessCap, sys_cap: &SysCap
         if a == "--no-banner" {
             show_banner = false;
             i = i + 1;
+        } else if a == "--daemon" || a == "--varlink" {
+            show_banner = false;
+            is_daemon = true;
+            i = i + 1;
         } else if a == "-c" {
             show_banner = false;
+            has_c_flag = true;
             one_shot_cmd = list_get(args, i + 1);
+            i = i + 2;
+        } else if a == "--varlink-call" {
+            show_banner = false;
+            varlink_payload = list_get(args, i + 1);
             i = i + 2;
         } else {
             i = i + 1;
         }
     }
 
+    let pr: Result[String, String] = env_get(env, "PWD");
+    let cwd: String = match pr { Ok(s) => s, Err(_) => "." };
+    let rec: FlightRecord = flight_init();
+
+    // Single-shot Varlink IPC call execution
+    if varlink_payload != "" {
+        let reply: String = ipc_route(sys, cwd, rec, varlink_payload);
+        print(reply);
+        return Ok(0);
+    }
+
+    // Headless Varlink IPC control daemon
+    if is_daemon {
+        let d_rc: Int = ipc_run_daemon(sys, env, cwd, rec);
+        return Ok(d_rc);
+    }
+
     // Handle one-shot command execution (-c "cmd")
-    if one_shot_cmd != "" {
-        let pr: Result[String, String] = env_get(env, "PWD");
-        let cwd: String = match pr { Ok(s) => s, Err(_) => "." };
-        let res: DispatchResult = dispatch_line(sys, env, cwd, one_shot_cmd);
+    if has_c_flag {
+        if str_trim(one_shot_cmd) == "" {
+            return Ok(0);
+        }
+        let res: DispatchResult = dispatch_line(sys, env, cwd, one_shot_cmd, rec);
         return Ok(res.exit_code);
     }
 
@@ -96,6 +138,6 @@ pub fn main(bind: &BindCap, fs_r: &FsReadCap, sys: &ProcessCap, sys_cap: &SysCap
     }
 
     // Launch interactive OODA REPL engine
-    let rc: Int = run_engine(fs_r, sys, env);
+    let rc: Int = run_engine(fs_r, sys, env, time, bind, fs_w);
     return Ok(rc);
 }

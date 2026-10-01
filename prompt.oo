@@ -9,7 +9,9 @@
 //   2. Abbreviate home directory path with tilde glyph when applicable.
 //   3. Render high-contrast sovereign rune symbol and active cursor dock.
 
+import "std/fs/process/process.oo";
 import "std/fs/process/env.oo";
+import "ui/anchor.oo";
 
 pub fn ansi_esc() -> String {
     return bytes_to_str(bytes_push(bytes_new(), 27));
@@ -29,11 +31,17 @@ pub fn format_prompt_path(env: &EnvCap, cwd: String) -> String {
 pub fn render_prompt(env: &EnvCap, cwd: String) -> String {
     let esc: String = ansi_esc();
     let display_path: String = format_prompt_path(env, cwd);
-    // Amber rune, cyan cwd path, green prompt arrow
-    let rune: String = esc + "[1;33mᚱ" + esc + "[0m";
-    let path_str: String = esc + "[1;36m" + display_path + esc + "[0m";
-    let arrow: String = esc + "[1;32m>" + esc + "[0m";
+    // TrueColor cyberpunk: Electric Amber rune, Neon Cyan cwd path, Toxic Green arrow
+    let rune: String = esc + "[38;2;255;184;0mᚱ" + esc + "[0m";
+    let path_str: String = esc + "[38;2;0;240;255m" + display_path + esc + "[0m";
+    let arrow: String = esc + "[38;2;0;255;102m>" + esc + "[0m";
     return rune + " " + path_str + " " + arrow + " ";
+}
+
+pub fn render_prompt_with_dock(sys: &ProcessCap, env: &EnvCap, cwd: String, has_failure: Bool, last_rc: Int) -> String {
+    let dock: String = ui_render_dock(sys, env, cwd, has_failure, last_rc);
+    let p: String = render_prompt(env, cwd);
+    return dock + p;
 }
 
 pub fn render_plain_prompt(env: &EnvCap, cwd: String) -> String {

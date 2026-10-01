@@ -1,0 +1,61 @@
+// # Intent Safety Classifier
+//
+// Logline: Evaluates synthesized commands to assign read-only, moderate, or high-risk safety badges.
+//
+// Setup: Pure string analysis. Imports ui/anchor.oo for TrueColor safety badges.
+//
+// Beats:
+//   1. Inspect command tokens for destructive or mutation operations.
+//   2. Assign safety tier (SAFE, MODERATE, or HIGH_RISK).
+//   3. Render styled cyberpunk safety badge.
+
+import "ui/anchor.oo";
+
+pub fn is_destructive_token(cmd: String) -> Bool {
+    return str_contains(cmd, "rm ") ||
+           str_contains(cmd, "rm -") ||
+           str_contains(cmd, "kill ") ||
+           str_contains(cmd, "pkill ") ||
+           str_contains(cmd, "killall ") ||
+           str_contains(cmd, "reset --hard") ||
+           str_contains(cmd, "clean -f") ||
+           str_contains(cmd, "drop ") ||
+           str_contains(cmd, "mkfs") ||
+           str_contains(cmd, "dd if=");
+}
+
+pub fn is_mutation_token(cmd: String) -> Bool {
+    return str_contains(cmd, "mkdir") ||
+           str_contains(cmd, "touch") ||
+           str_contains(cmd, "mv ") ||
+           str_contains(cmd, "cp ") ||
+           str_contains(cmd, "chmod") ||
+           str_contains(cmd, "chown") ||
+           str_contains(cmd, "tar -x") ||
+           str_contains(cmd, "git checkout") ||
+           str_contains(cmd, "git restore") ||
+           str_contains(cmd, "git reset") ||
+           str_contains(cmd, "make") ||
+           str_contains(cmd, "cargo build");
+}
+
+pub fn classify_safety_tier(cmd: String) -> String {
+    if is_destructive_token(cmd) {
+        return "HIGH_RISK";
+    }
+    if is_mutation_token(cmd) {
+        return "MODERATE";
+    }
+    return "SAFE";
+}
+
+pub fn render_safety_badge(cmd: String) -> String {
+    let tier: String = classify_safety_tier(cmd);
+    if tier == "HIGH_RISK" {
+        return ui_paint_red("[HIGH_RISK: REMOVES STATE]");
+    }
+    if tier == "MODERATE" {
+        return ui_paint_amber("[MODERATE: MODIFIES FS]");
+    }
+    return ui_paint_green("[SAFE: READ-ONLY]");
+}

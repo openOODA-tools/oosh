@@ -1,0 +1,87 @@
+# oosh E2E Specification: Tier 1 Features 1-12
+# Author: test_writer_e2e_1
+# Standard: openOODA House Laws (Page Rule: 16-256 lines)
+
+[T1-F01: Capability Plumbing]
+- T1-F01-01: TimeCap Monotonic Audit - Monotonic ms duration measured in engine.oo.
+- T1-F01-02: BindCap Socket Allocation - Bind capability passed for AF_UNIX control socket.
+- T1-F01-03: FsWriteCap File Creation - Write capability used for flight log / socket files.
+- T1-F01-04: Zero Ambient Authority - Submodules receive explicit capability references.
+- T1-F01-05: CLI Pass-Through - Capability plumbing preserves -c, --help, --version.
+
+[T1-F02: Submodule Scaffold]
+- T1-F02-01: Directory Layout - ui/, flight/ or diagnostics/, intent/, ipc/ exist.
+- T1-F02-02: Anchor Shims - Each submodule provides anchor.oo re-exporting public symbols.
+- T1-F02-03: Directory Density - Strictly <= 8 .oo files per directory.
+- T1-F02-04: Page Rule Compliance - 100% of .oo files strictly 16-256 lines.
+- T1-F02-05: Academy Docstrings - 100% of .oo files have 4-element docstrings.
+
+[T1-F03: Dispatch Refactoring]
+- T1-F03-01: Line Ceiling - dispatch.oo refactored to <= 160 lines (down from 248).
+- T1-F03-02: Builtin Delegation - Builtin handlers delegated to submodules cleanly.
+- T1-F03-03: Navigation Delegation - cd, .., take handled with next_cwd updates.
+- T1-F03-04: Process Fallback - Host executables executed via sys capability.
+- T1-F03-05: Exit Predicates - :q, exit, quit, bye terminate session cleanly.
+
+[T1-F04: TrueColor/ANSI Palette]
+- T1-F04-01: Neon Cyan Accent - Palette emits cyan ANSI sequence for builtins.
+- T1-F04-02: Electric Amber Accent - Palette emits amber sequence for warnings.
+- T1-F04-03: Ultraviolet Accent - Palette emits ultraviolet sequence for magic/intent.
+- T1-F04-04: Toxic Green Accent - Palette emits toxic green for success/navigation.
+- T1-F04-05: 16-Color Fallback - Graceful degradation on dumb/basic terminals.
+
+[T1-F05: Double-Lined Cards]
+- T1-F05-01: Corner Glyphs - Cards use double box characters: +---+, |   |.
+- T1-F05-02: Border Rows - Horizontal and vertical borders match card width.
+- T1-F05-03: Title Framing - Component titles embedded in top border.
+- T1-F05-04: Line Padding - Internal content padded to uniform right border.
+- T1-F05-05: Terminal Bounding - Preserves column discipline without line wraps.
+
+[T1-F06: Pixel Art Runes]
+- T1-F06-01: Status Rune - status card renders Odal rune glyph.
+- T1-F06-02: Caps Rune - caps card renders Tiwaz rune glyph.
+- T1-F06-03: Scry Rune - scry card renders Peorth rune glyph.
+- T1-F06-04: Autopsy Rune - autopsy card renders Hagalaz rune glyph.
+- T1-F06-05: Help/Remedy Runes - help renders Raidho; remedy renders Algiz.
+
+[T1-F07: Ambient Status Dock]
+- T1-F07-01: Two-Tier Layout - Header status dock plus input line.
+- T1-F07-02: Git Branch Display - Current branch displayed in prompt dock.
+- T1-F07-03: CWD Abbreviation - Home directory formatted as tilde (~).
+- T1-F07-04: Host Identity - Node hostname displayed in dock.
+- T1-F07-05: Security Posture - Sovereign status badge in prompt.
+
+[T1-F08: Telemetry Badges]
+- T1-F08-01: Duration Badge - Execution duration rendered in ms.
+- T1-F08-02: Success Badge - Green check glyph rendered on exit code 0.
+- T1-F08-03: Failure Badge - Red cross glyph rendered with non-zero exit code.
+- T1-F08-04: Memory Badge - Resident memory usage displayed after execution.
+- T1-F08-05: Prompt Discipline - Badges do not corrupt subsequent input line.
+
+[T1-F09: Syntax Accenting]
+- T1-F09-01: Builtin Accenting - Magic commands accented distinctly.
+- T1-F09-02: Intent Accenting - Intent prefixes accented in ultraviolet.
+- T1-F09-03: Navigation Accenting - cd, .., take accented in green.
+- T1-F09-04: Host Accenting - External binaries accented in neutral amber.
+- T1-F09-05: Quoted Arguments - Flags and strings accented separately.
+
+[T1-F10: Exit Code & Stream Capture]
+- T1-F10-01: Zero Exit Capture - Exact exit status 0 captured on success.
+- T1-F10-02: Non-Zero Exit Capture - Exact status (1, 2, 127) captured on failure.
+- T1-F10-03: Stdout Stream Capture - Standard output captured in envelope.
+- T1-F10-04: Stderr Stream Capture - Standard error captured in envelope.
+- T1-F10-05: Command & CWD Retention - Command string and invocation path saved.
+
+[T1-F11: Failure Envelope]
+- T1-F11-01: Envelope Struct - cmd, exit_code, output, cwd, timestamp, dur fields.
+- T1-F11-02: Session State - Shell retains active failure reference.
+- T1-F11-03: Overwrite on New Fail - Subsequent failure updates active envelope.
+- T1-F11-04: Preservation on Success - Successful command retains last failure.
+- T1-F11-05: Clean Initial State - Starts with empty failure record.
+
+[T1-F12: Diagnostic Pattern Rules]
+- T1-F12-01: Command Not Found - Status 127 matches missing binary rule.
+- T1-F12-02: Permission Denied - Status 126 matches permission rule.
+- T1-F12-03: Git Conflict - Conflict stderr matches git merge rule.
+- T1-F12-04: Build Failure - Compiler errors match build diagnosis rule.
+- T1-F12-05: Generic Fallback - Other failures receive actionable triage hint.

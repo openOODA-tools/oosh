@@ -1,0 +1,94 @@
+# oosh E2E Specification: Tier 1 Features 13-25
+# Author: test_writer_e2e_1
+# Standard: openOODA House Laws (Page Rule: 16-256 lines)
+
+[T1-F13: Remedy / Fix Builtin]
+- T1-F13-01: Empty State - remedy reports no active failure when session clean.
+- T1-F13-02: Visual Card - remedy renders double-lined frame with Algiz rune.
+- T1-F13-03: Diagnosis Section - Explains root cause of intercepted failure.
+- T1-F13-04: Proposed Command - Synthesizes actionable remediation shell line.
+- T1-F13-05: Fix Alias - fix alias produces identical output to remedy.
+
+[T1-F14: Flight Recorder Ring Buffer]
+- T1-F14-01: Capacity Bounding - Ring buffer stores fixed N recent executions.
+- T1-F14-02: Oldest Eviction - New executions evict oldest once capacity reached.
+- T1-F14-03: Autopsy Command - autopsy prints chronological execution timeline.
+- T1-F14-04: Blackbox Alias - bb alias prints identical flight recorder trace.
+- T1-F14-05: Failure Markers - Failed entries highlighted with status badges.
+
+[T1-F15: Query Prefix Interception]
+- T1-F15-01: Prefix ? Query - ? <query> routed to intent synthesis.
+- T1-F15-02: Prefix ?? Query - ?? <query> routed to deep intent synthesis.
+- T1-F15-03: Prefix ask Query - ask <query> routed to intent synthesis.
+- T1-F15-04: Keyword Prefixes - ai, do, how, why, please routed to intent.
+- T1-F15-05: Bare ? Disambiguation - Bare ? opens help guide, not intent.
+
+[T1-F16: POSIX Command Synthesis]
+- T1-F16-01: Workspace Discovery - Checks for .git, Cargo.toml, Makefile, etc.
+- T1-F16-02: Git Status Synthesis - Synthesizes git status for status intent.
+- T1-F16-03: File Search Synthesis - Synthesizes find command for search intent.
+- T1-F16-04: Resource Synthesis - Synthesizes free/top for system queries.
+- T1-F16-05: Build Synthesis - Synthesizes make/cargo for build queries.
+
+[T1-F17: Safety Classification]
+- T1-F17-01: SAFE Rating - Read-only commands (ls, git diff) classified SAFE.
+- T1-F17-02: MODERATE Rating - Mutating commands classified MODERATE.
+- T1-F17-03: HIGH_RISK Rating - Destructive commands (rm -rf) classified HIGH_RISK.
+- T1-F17-04: Risk Badges - Distinct ANSI color badges for each risk tier.
+- T1-F17-05: Ambiguous Fallback - Unknown commands default to MODERATE safety.
+
+[T1-F18: Preview & Execution Prompt]
+- T1-F18-01: Preview Card - Renders proposed command in styled preview box.
+- T1-F18-02: Interactive Prompt - Displays [Y/n/e/?] options before execution.
+- T1-F18-03: Confirm Execution - Y key triggers execution of proposed command.
+- T1-F18-04: Cancel Execution - n key cancels command without side effects.
+- T1-F18-05: Explicit Confirmation - HIGH_RISK requires explicit YES confirmation.
+
+[T1-F19: Nul-Delimited Wire Protocol]
+- T1-F19-01: NUL Termination - Varlink JSON frames terminated strictly by \0.
+- T1-F19-02: Frame Slicing - Incoming stream parsed on NUL boundary delimiter.
+- T1-F19-03: Multi-Frame Demux - Multiple concatenated frames parsed cleanly.
+- T1-F19-04: Malformed Rejection - Non-JSON or broken frames rejected with error.
+- T1-F19-05: UTF-8 Fidelity - Non-ASCII multibyte characters handled cleanly.
+
+[T1-F20: Varlink Introspection]
+- T1-F20-01: GetInfo Method - Returns vendor, product, version, interfaces.
+- T1-F20-02: Interface Listing - Lists org.varlink.service and Control1.
+- T1-F20-03: Interface Description - Returns valid IDL text for Control1.
+- T1-F20-04: InterfaceNotFound - Returns error for unknown interface queries.
+- T1-F20-05: MethodNotFound - Returns error for unknown method calls.
+
+[T1-F21: oosh Control Server]
+- T1-F21-01: Socket Binding - Binds AF_UNIX socket at /run/oosh/control.sock.
+- T1-F21-02: QueryPosture - Returns cwd, active user, capabilities, and version.
+- T1-F21-03: ExecuteCommand - Runs command via IPC and returns exit code + output.
+- T1-F21-04: GetLastFailure - Returns active FailureEnvelope over IPC socket.
+- T1-F21-05: Socket Cleanup - Cleans socket file on termination.
+
+[T1-F22: syntropd Integration]
+- T1-F22-01: Contextd Link - Probes /run/syntrop/io.syntrop.Context1 on failure.
+- T1-F22-02: Toold Link - Delegates sandboxed execution to io.syntrop.Tool1.
+- T1-F22-03: Sentry Link - Connects to io.syntrop.Sentry1 for crash triage.
+- T1-F22-04: Runtimed Link - Connects to io.syntrop.Runtime1 for intent LLM.
+- T1-F22-05: Standalone Fallback - Functions normally when syntropd is offline.
+
+[T1-F23: E2E Test Suite]
+- T1-F23-01: Suite Execution - make test and make test-e2e run cleanly.
+- T1-F23-02: Determinism - Double-run execution produces identical results.
+- T1-F23-03: Clean Teardown - Leaves zero leftover temporary files or sockets.
+- T1-F23-04: Clear Diagnostics - Logs test IDs and summary pass/fail counts.
+- T1-F23-05: Fail-Closed - Any individual failure halts or marks suite failed.
+
+[T1-F24: Adversarial Hardening]
+- T1-F24-01: Protocol Fuzzing - Resilient to malformed Varlink byte sequences.
+- T1-F24-02: Long Lines - Handles lines > 65k chars without buffer overflow.
+- T1-F24-03: Execution Churn - Rapid execution of 1,000 commands retains O(1) memory.
+- T1-F24-04: Signal Resilience - SIGINT does not terminate parent oosh process.
+- T1-F24-05: FD Cleanliness - Zero leaked file descriptors into child tasks.
+
+[T1-F25: Verification Gate]
+- T1-F25-01: make build - Clean build produces verified release binary.
+- T1-F25-02: make line-cap - 100% of .oo and .oot files satisfy 16-256 lines.
+- T1-F25-03: make file-law - Zero forbidden extensions exist in repository.
+- T1-F25-04: make academy - 100% of .oo files have 4-element Academy headers.
+- T1-F25-05: make all - build, verify, and test pass with zero errors.

@@ -1,0 +1,70 @@
+// # Command Syntax Accenting Engine
+//
+// Logline: Classifies input commands to dynamically accent builtins, host binaries, and intent queries.
+//
+// Setup: Pure string analysis. Imports ui/palette.oo for TrueColor classification badges.
+//
+// Beats:
+//   1. Extract primary command verb from input command string.
+//   2. Match verb against builtins, intent indicators, and system execution patterns.
+//   3. Render high-contrast cyberpunk category badge for terminal feedback.
+
+import "palette.oo";
+
+pub fn is_builtin_verb(verb: String) -> Bool {
+    return verb == "cd" || verb == "chdir" || verb == "goto" || verb == "jump" || verb == "walk" ||
+           verb == ".." || verb == "..." || verb == "take" || verb == "mkcd" ||
+           verb == "status" || verb == "stat" || verb == "info" || verb == "health" || verb == "posture" ||
+           verb == "caps" || verb == "cap" || verb == "whoami" || verb == "perms" || verb == "tokens" ||
+           verb == "help" || verb == "-h" || verb == "--help" || verb == "?" || verb == "guide" || verb == "docs" ||
+           verb == "scry" || verb == "inspect" || verb == "probe" || verb == "trace" ||
+           verb == "autopsy" || verb == "bb" || verb == "blackbox" || verb == "crash" ||
+           verb == "remedy" || verb == "fix" || verb == "repair" || verb == "heal" ||
+           verb == "rune" || verb == "token" || verb == "link" || verb == "connect" ||
+           verb == "pwd" || verb == "whereami" || verb == "clear" || verb == "cls" ||
+           verb == "open" || verb == "view" || verb == "show" || verb == "time" || verb == "bench" ||
+           verb == "exit" || verb == "quit" || verb == ":q" || verb == "bye" || verb == "version";
+}
+
+pub fn is_intent_query(cmd: String) -> Bool {
+    return str_starts_with(cmd, "?") ||
+           str_starts_with(cmd, "ai ") ||
+           str_starts_with(cmd, "ask ") ||
+           str_starts_with(cmd, "do ") ||
+           str_starts_with(cmd, "how ") ||
+           str_starts_with(cmd, "why ") ||
+           str_starts_with(cmd, "please ");
+}
+
+pub fn extract_verb(cmd: String) -> String {
+    let trimmed: String = str_trim(cmd);
+    let n: Int = chars_len(trimmed);
+    let mut i: Int = 0;
+    while i < n {
+        let ch: String = char_at(trimmed, i);
+        if ch == " " || ch == "\t" {
+            return str_slice(trimmed, 0, i);
+        }
+        i = i + 1;
+    }
+    return trimmed;
+}
+
+pub fn render_syntax_accent(cmd: String) -> String {
+    let trimmed: String = str_trim(cmd);
+    if trimmed == "" {
+        return "";
+    }
+    let rst: String = cyber_reset();
+
+    if is_intent_query(trimmed) {
+        return cyber_purple() + "✦ [INTENT CHANNEL]" + rst;
+    }
+
+    let verb: String = extract_verb(trimmed);
+    if is_builtin_verb(verb) {
+        return cyber_amber() + "ᚱ [SOVEREIGN BUILTIN: " + verb + "]" + rst;
+    }
+
+    return cyber_green() + "⚡ [HOST BINARY: " + verb + "]" + rst;
+}

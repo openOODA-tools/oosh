@@ -1,0 +1,62 @@
+// # Live Ambient Status Dock
+//
+// Logline: Renders real-time ambient status dock with node identity, git context, and posture.
+//
+// Setup: Formats ANSI cyberpunk status bar querying environment and capability indicators.
+//
+// Beats:
+//   1. Resolve active user identity and host node name.
+//   2. Query current git branch for directory context.
+//   3. Render ambient capability tokens and session posture badge.
+
+import "std/fs/process/process.oo";
+import "std/fs/process/env.oo";
+import "palette.oo";
+
+pub fn resolve_node_id(env: &EnvCap) -> String {
+    let ur: Result[String, String] = env_get(env, "USER");
+    let user_name: String = match ur { Ok(u) => u, Err(_) => "sovereign" };
+    let hr: Result[String, String] = env_get(env, "HOSTNAME");
+    let host_name: String = match hr { Ok(h) => h, Err(_) => "node" };
+    return user_name + "@" + host_name;
+}
+
+pub fn resolve_git_branch(sys: &ProcessCap, cwd: String) -> String {
+    let cmd: String = "cd \"" + cwd + "\" && git rev-parse --abbrev-ref HEAD 2>/dev/null";
+    let gr: Result[String, String] = process_exec(sys, cmd);
+    return match gr {
+        Ok(b) => str_trim(b),
+        Err(_) => ""
+    };
+}
+
+pub fn render_ambient_dock(sys: &ProcessCap, env: &EnvCap, cwd: String, has_failure: Bool, last_rc: Int) -> String {
+    let cyan: String = cyber_cyan();
+    let amber: String = cyber_amber();
+    let purp: String = cyber_purple();
+    let green: String = cyber_green();
+    let red: String = cyber_red();
+    let gray: String = cyber_gray();
+    let rst: String = cyber_reset();
+
+    let node: String = resolve_node_id(env);
+    let branch: String = resolve_git_branch(sys, cwd);
+
+    let mut dock: String = cyan + "╭─[ " + amber + "ᚱ " + node + cyan + " ]";
+
+    if branch != "" {
+        dock = dock + cyan + "─[ " + purp + " " + branch + cyan + " ]";
+    }
+
+    dock = dock + cyan + "─[ " + green + "◈ CAPS:PROC|ENV|FS|TIME" + cyan + " ]";
+
+    if has_failure {
+        let rc_str: String = last_rc.to_string();
+        dock = dock + cyan + "─[ " + red + "✘ POSTURE:ERR(" + rc_str + ")" + cyan + " ]";
+    } else {
+        dock = dock + cyan + "─[ " + green + "✔ POSTURE:NOMINAL" + cyan + " ]";
+    }
+
+    dock = dock + " " + gray + "░▒▓" + rst + "\n";
+    return dock;
+}

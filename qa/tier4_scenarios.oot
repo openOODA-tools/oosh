@@ -1,0 +1,43 @@
+# oosh E2E Specification: Tier 4 Real-World Scenarios
+# Author: test_writer_e2e_1
+# Standard: openOODA House Laws (Page Rule: 16-256 lines)
+
+[T4-SCN: Real-World Scenarios]
+- T4-SCN-01: Developer Failure & Autonomous Recovery
+  Step 1: Execute failing command (e.g. invalid git branch).
+  Step 2: Failure envelope records non-zero status and stderr.
+  Step 3: User calls remedy.
+  Step 4: Remedy displays double-lined card with Algiz rune and diagnosis.
+  Step 5: Remedy proposes fix; user accepts and executes.
+  Step 6: Command succeeds; telemetry badge shows duration and success glyph.
+
+- T4-SCN-02: Ambient Natural Language Cockpit Session
+  Step 1: Launch oosh; ambient status dock renders git branch and posture.
+  Step 2: Enter intent query (? list rust files).
+  Step 3: Intent scanner intercepts prefix; context engine scans directory.
+  Step 4: Synthesizer translates query into POSIX command.
+  Step 5: Safety rating displays SAFE green badge with preview card.
+  Step 6: User presses Y; command executes; telemetry badge output.
+
+- T4-SCN-03: Headless Varlink Autonomous Agent Orchestration
+  Step 1: Daemon binds /run/oosh/control.sock.
+  Step 2: External agent connects and queries GetInfo introspection.
+  Step 3: Agent calls QueryPosture to audit shell posture.
+  Step 4: Agent dispatches ExecuteCommand with parameters.
+  Step 5: Command output and exit code returned over NUL-delimited stream.
+  Step 6: Daemon remains alive and cleans up socket upon shutdown.
+
+- T4-SCN-04: Flight Recorder Postmortem Crash Autopsy
+  Step 1: Execute sequence of 5 maintenance and build commands.
+  Step 2: Intermediate command fails with non-zero exit code.
+  Step 3: User invokes autopsy (or bb).
+  Step 4: Double-lined card renders with Hagalaz rune.
+  Step 5: Chronological log displays all 5 executions with exact timings.
+
+- T4-SCN-05: Ambient Terminal Session with Capability Audit & Builtin Navigation
+  Step 1: User runs caps builtin to inspect unforgeable capability tokens.
+  Step 2: Double-lined card renders with Tiwaz rune.
+  Step 3: User runs whereami to verify host node and location.
+  Step 4: User navigates directories using bare .. and take.
+  Step 5: Ambient prompt updates path and git status dynamically.
+  Step 6: User enters :q to terminate session cleanly.

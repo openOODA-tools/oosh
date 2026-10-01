@@ -1,0 +1,62 @@
+// # Cyberpunk Visual Card Renderer
+//
+// Logline: Formats rich visual card containers, frames, and gradient borders with shadow accents.
+//
+// Setup: Pure string formatting. Imports ui/palette.oo for TrueColor sequence styling.
+//
+// Beats:
+//   1. Render top frame boundary with embedded rune and title banner.
+//   2. Format card row elements with aligned labels, dividers, and values.
+//   3. Render bottom frame boundary with shadow gradient block accents.
+
+import "palette.oo";
+
+pub fn card_shadow() -> String {
+    return cyber_gray() + "░▒▓" + cyber_reset();
+}
+
+pub fn card_top(rune: String, title: String) -> String {
+    let cyan: String = cyber_cyan();
+    let amber: String = cyber_amber();
+    let rst: String = cyber_reset();
+    let bold: String = cyber_bold();
+    return cyan + "╔═" + amber + "[ " + bold + rune + " " + title + rst + amber + " ]" + cyan + "══════════════════════════════════════════════════════╗" + rst;
+}
+
+pub fn card_section(title: String) -> String {
+    let cyan: String = cyber_cyan();
+    let purp: String = cyber_purple();
+    let rst: String = cyber_reset();
+    return cyan + "╟──" + purp + " " + title + " " + cyan + "───────────────────────────────────────────────────────╢" + rst;
+}
+
+pub fn card_row(label: String, val: String) -> String {
+    let cyan: String = cyber_cyan();
+    let amber: String = cyber_amber();
+    let rst: String = cyber_reset();
+    return cyan + "║ " + amber + label + rst + ": " + val;
+}
+
+pub fn card_row_colored(label: String, val: String, val_color: String) -> String {
+    let cyan: String = cyber_cyan();
+    let amber: String = cyber_amber();
+    let rst: String = cyber_reset();
+    return cyan + "║ " + amber + label + rst + ": " + val_color + val + rst;
+}
+
+pub fn card_divider() -> String {
+    let cyan: String = cyber_cyan();
+    let rst: String = cyber_reset();
+    return cyan + "╟──────────────────────────────────────────────────────────────────╢" + rst;
+}
+
+pub fn card_bottom(badge: String) -> String {
+    let cyan: String = cyber_cyan();
+    let green: String = cyber_green();
+    let rst: String = cyber_reset();
+    let shadow: String = card_shadow();
+    if badge == "" {
+        return cyan + "╚══════════════════════════════════════════════════════════════════╝" + rst + " " + shadow;
+    }
+    return cyan + "╚═" + green + "[ " + badge + " ]" + cyan + "═════════════════════════════════════════════════╝" + rst + " " + shadow;
+}

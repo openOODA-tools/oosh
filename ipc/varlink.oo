@@ -1,0 +1,115 @@
+// # Varlink Wire Protocol Engine
+//
+// Logline: Decodes Varlink JSON calls and encodes NUL-delimited replies for IPC streaming.
+//
+// Setup: Implements org.openooda.oosh and org.varlink.service specifications.
+//
+// Beats:
+//   1. Parse incoming Varlink method identifier and parameter dictionary.
+//   2. Route call to sovereign shell runtime or flight telemetry.
+//   3. Format NUL-terminated JSON response frame.
+
+import "std/fs/process/process.oo";
+import "flight/anchor.oo";
+
+pub fn varlink_nul() -> String {
+    return bytes_to_str(bytes_push(bytes_new(), 0));
+}
+
+pub fn varlink_ok(params_json: String) -> String {
+    return "{\"parameters\":" + params_json + "}" + varlink_nul();
+}
+
+pub fn varlink_err(err_name: String, params_json: String) -> String {
+    return "{\"error\":\"" + err_name + "\",\"parameters\":" + params_json + "}" + varlink_nul();
+}
+
+fn safe_str_prefix(s: String, max_chars: Int) -> String {
+    if chars_len(s) <= max_chars {
+        return s;
+    }
+    return str_slice(s, 0, max_chars);
+}
+
+pub fn extract_json_str_field(json: String, key: String) -> String {
+    let key_pat: String = "\"" + key + "\"";
+    let idx: Int = str_index_of(json, key_pat);
+    if idx < 0 {
+        return "";
+    }
+    let rest: String = str_slice(json, idx + chars_len(key_pat), chars_len(json));
+    let n: Int = chars_len(rest);
+    let mut i: Int = 0;
+    while i < n && char_at(rest, i) != ":" {
+        i = i + 1;
+    }
+    if i >= n { return ""; }
+    i = i + 1;
+    while i < n && (char_at(rest, i) == " " || char_at(rest, i) == "\t") {
+        i = i + 1;
+    }
+    if i >= n || char_at(rest, i) != "\"" { return ""; }
+    i = i + 1;
+    let start: Int = i;
+    while i < n && char_at(rest, i) != "\"" {
+        i = i + 1;
+    }
+    if i > n { return ""; }
+    return str_slice(rest, start, i);
+}
+
+pub fn route_varlink_call(sys: &ProcessCap, cwd: String, rec: FlightRecord, raw_call: String) -> String {
+    let call_str: String = str_trim(raw_call);
+    let method: String = extract_json_str_field(call_str, "method");
+
+    if method == "org.openooda.oosh.Ping" || method == "Ping" {
+        return varlink_ok("{\"pong\":true,\"version\":\"0.4.0\"}");
+    }
+
+    if method == "org.openooda.oosh.GetStatus" || method == "GetStatus" {
+        let posture: String = if rec.has_failed { "fault" } else { "nominal" };
+        let payload: String = "{\"version\":\"0.4.0\",\"mode\":\"sovereign\",\"posture\":\"" + posture + "\",\"cwd\":\"" + cwd + "\"}";
+        return varlink_ok(payload);
+    }
+
+    if method == "org.openooda.oosh.GetTelemetry" || method == "GetTelemetry" {
+        let tot_str: String = rec.total_commands.to_string();
+        let fail_str: String = rec.failed_count.to_string();
+        let payload: String = "{\"total_commands\":" + tot_str + ",\"failed_count\":" + fail_str + "}";
+        return varlink_ok(payload);
+    }
+
+    if method == "org.openooda.oosh.Remedy" || method == "Remedy" {
+        let r_diag: String = flight_remedy(rec);
+        let has_f: String = if rec.has_failed { "true" } else { "false" };
+        let payload: String = "{\"has_failed\":" + has_f + ",\"diagnostic\":\"" + safe_str_prefix(r_diag, 80) + "\"}";
+        return varlink_ok(payload);
+    }
+
+    if method == "org.openooda.oosh.GetAutopsy" || method == "GetAutopsy" {
+        let a_diag: String = flight_autopsy(rec);
+        let has_f: String = if rec.has_failed { "true" } else { "false" };
+        let payload: String = "{\"has_failed\":" + has_f + ",\"autopsy\":\"" + safe_str_prefix(a_diag, 80) + "\"}";
+        return varlink_ok(payload);
+    }
+
+    if method == "org.openooda.oosh.Execute" || method == "Execute" {
+        let cmd: String = extract_json_str_field(call_str, "command");
+        if cmd == "" {
+            return varlink_err("org.openooda.oosh.InvalidParameter", "{\"message\":\"missing command string\"}");
+        }
+        let full_cmd: String = "cd \"" + cwd + "\" && " + cmd;
+        let r: Result[String, String] = process_exec(sys, full_cmd);
+        let out_str: String = match r { Ok(s) => str_trim(s), Err(e) => str_trim(e) };
+        let rc: Int = if r.is_ok() { 0 } else { 1 };
+        let payload: String = "{\"exit_code\":" + rc.to_string() + ",\"output\":\"" + safe_str_prefix(out_str, 200) + "\"}";
+        return varlink_ok(payload);
+    }
+
+    if method == "org.varlink.service.GetInfo" {
+        let payload: String = "{\"vendor\":\"openOODA\",\"product\":\"oosh\",\"version\":\"0.4.0\",\"url\":\"https://openooda.org\",\"interfaces\":[\"org.openooda.oosh\",\"org.varlink.service\"]}";
+        return varlink_ok(payload);
+    }
+
+    return varlink_err("org.varlink.service.MethodNotFound", "{\"method\":\"" + method + "\"}");
+}

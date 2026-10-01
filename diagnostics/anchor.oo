@@ -1,0 +1,56 @@
+// # Diagnostics Anchor - Active Recovery Subsystem
+//
+// Logline: Unified entry point for failure envelopes, flight recorder, and remedy engine.
+//
+// Setup: Prepares failure state recording and postmortem diagnostic hooks.
+//
+// Beats:
+//   1. Expose diagnostic subsystem probe and readiness state.
+//   2. Provide flight recorder telemetry interface.
+//   3. Route diagnostic inspection queries.
+
+import "flight/anchor.oo";
+
+pub fn diagnostics_anchor_probe() -> String {
+    return "diagnostics-active";
+}
+
+pub fn diag_init() -> FlightRecord {
+    return flight_init();
+}
+
+pub fn diag_success(rec: FlightRecord, cmd: String, dur: Int) -> FlightRecord {
+    return flight_success(rec, cmd, dur);
+}
+
+pub fn diag_failure(rec: FlightRecord, cmd: String, code: Int, err: String, dur: Int) -> FlightRecord {
+    return flight_failure(rec, cmd, code, err, dur);
+}
+
+pub fn diag_autopsy(rec: FlightRecord) -> String {
+    return flight_autopsy(rec);
+}
+
+pub fn diag_remedy(rec: FlightRecord) -> String {
+    return flight_remedy(rec);
+}
+
+pub fn diag_telemetry(dur: Int, code: Int, mem: String) -> String {
+    return flight_telemetry(dur, code, mem);
+}
+
+pub fn diag_memory(fs_r: &FsReadCap) -> String {
+    return flight_memory(fs_r);
+}
+
+pub fn diag_autopsy_cmd(cmd: String) -> Bool {
+    return is_autopsy_cmd(cmd);
+}
+
+pub fn diag_remedy_cmd(cmd: String) -> Bool {
+    return is_remedy_cmd(cmd);
+}
+
+pub fn diag_scry_cmd(cmd: String) -> Bool {
+    return is_scry_cmd(cmd);
+}

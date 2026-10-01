@@ -1,0 +1,79 @@
+// # Flight Recorder Subsystem Anchor
+//
+// Logline: Unified entry point for the session flight recorder, telemetry, and remedy subsystem.
+//
+// Setup: Re-exports flight envelope data structures, post-execution badges, and remedy engine.
+//
+// Beats:
+//   1. Expose flight record lifecycle and event mutation functions.
+//   2. Wire post-execution telemetry badge formatting.
+//   3. Bind failure remedy and blackbox autopsy diagnostics.
+
+import "envelope.oo";
+import "telemetry.oo";
+import "remedy.oo";
+import "std/fs/process/process.oo";
+
+pub fn flight_init() -> FlightRecord {
+    return init_flight_record();
+}
+
+pub fn flight_success(rec: FlightRecord, cmd: String, dur: Int) -> FlightRecord {
+    return record_flight_success(rec, cmd, dur);
+}
+
+pub fn flight_failure(rec: FlightRecord, cmd: String, code: Int, err: String, dur: Int) -> FlightRecord {
+    return record_flight_failure(rec, cmd, code, err, dur);
+}
+
+pub fn flight_autopsy(rec: FlightRecord) -> String {
+    return render_autopsy_card(rec);
+}
+
+pub fn flight_telemetry(dur: Int, code: Int, mem: String) -> String {
+    return render_telemetry_badge(dur, code, mem);
+}
+
+pub fn flight_memory(fs_r: &FsReadCap) -> String {
+    return read_peak_memory(fs_r);
+}
+
+pub fn flight_remedy(rec: FlightRecord) -> String {
+    return diagnose_failure(rec);
+}
+
+pub fn flight_anchor_probe() -> String {
+    return "flight-active";
+}
+
+pub fn is_autopsy_cmd(cmd: String) -> Bool {
+    return cmd == "autopsy" || cmd == "bb" || cmd == "blackbox" || cmd == "flight" || cmd == "crash" || cmd == "postmortem" || cmd == "triage" || cmd == "coroner";
+}
+
+pub fn is_remedy_cmd(cmd: String) -> Bool {
+    return cmd == "remedy" || cmd == "fix" || cmd == "repair" || cmd == "heal" || cmd == "patch" || cmd == "resolve" || cmd == "cure" || cmd == "undo";
+}
+
+pub fn is_scry_cmd(cmd: String) -> Bool {
+    return cmd == "scry" || str_starts_with(cmd, "scry ") || cmd == "inspect" || str_starts_with(cmd, "inspect ") || cmd == "probe";
+}
+
+pub fn dispatch_diagnostics(sys: &ProcessCap, cwd: String, rec: FlightRecord, cmd: String) -> Bool {
+    if is_autopsy_cmd(cmd) {
+        println(flight_autopsy(rec));
+        return true;
+    }
+    if is_remedy_cmd(cmd) {
+        println(flight_remedy(rec));
+        return true;
+    }
+    if str_starts_with(cmd, "time ") || str_starts_with(cmd, "bench ") || str_starts_with(cmd, "clock ") {
+        let rest: String = if str_starts_with(cmd, "time ") { str_slice(cmd, 5, chars_len(cmd)) } else if str_starts_with(cmd, "bench ") { str_slice(cmd, 6, chars_len(cmd)) } else { str_slice(cmd, 6, chars_len(cmd)) };
+        let time_cmd: String = "cd \"" + cwd + "\" && /usr/bin/time " + rest;
+        let tr: Result[String, String] = process_exec(sys, time_cmd);
+        let out: String = match tr { Ok(s) => s, Err(e) => e };
+        print(out);
+        return true;
+    }
+    return false;
+}

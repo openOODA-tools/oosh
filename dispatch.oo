@@ -1,17 +1,19 @@
 // # oosh Command Dispatcher
 //
-// Logline: Dispatches shell input lines to internal builtins (cd, exit, help) or external processes under ProcessCap.
+// Logline: Dispatches shell input lines to internal builtins, intent queries, or host system processes.
 //
-// Setup: Receives ProcessCap and EnvCap. Updates current working directory and executes commands safely.
+// Setup: Receives ProcessCap and EnvCap. Updates current working directory and sanitizes error diagnostics.
 //
 // Beats:
-//   1. Check for shell built-in commands (exit, cd, help, version).
-//   2. Mutate active directory state for cd requests.
-//   3. Dispatch external system commands via process_exec scoped to cwd.
+//   1. Check for shell built-in commands (exit, cd, help, version, clear, status).
+//   2. Intercept conversational greetings and intent queries (? prefix).
+//   3. Mutate active directory state for cd requests.
+//   4. Dispatch host system commands and contain missing binary diagnostics.
 
 import "std/fs/process/process.oo";
 import "std/fs/process/env.oo";
 import "std/fs/file/path.oo";
+import "prompt.oo";
 import "version.oo";
 
 pub type DispatchResult = struct {
@@ -43,6 +45,8 @@ pub fn resolve_cd(env: &EnvCap, cwd: String, target: String) -> String {
 
 pub fn dispatch_line(sys: &ProcessCap, env: &EnvCap, cwd: String, raw_line: String) -> DispatchResult {
     let line: String = str_trim(raw_line);
+    let esc: String = ansi_esc();
+
     if line == "" {
         return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0 };
     }
@@ -53,9 +57,41 @@ pub fn dispatch_line(sys: &ProcessCap, env: &EnvCap, cwd: String, raw_line: Stri
         println(oosh_banner());
         return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0 };
     }
+    if line == "clear" || line == "cls" {
+        print(esc + "[2J" + esc + "[H");
+        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0 };
+    }
     if line == "help" {
-        println("oosh sovereign builtins: cd [dir], exit, version, help");
-        println("all other commands execute directly on the host system.");
+        println(esc + "[1;33mᚱ oosh sovereign builtins:" + esc + "[0m");
+        println("  cd [dir]    change working directory (~, .., absolute, relative)");
+        println("  status      display current node posture and syntropd link");
+        println("  clear       clear terminal viewport");
+        println("  version     display shell version and banner");
+        println("  exit        terminate shell session");
+        println("");
+        println(esc + "[1;36m✦ Spells & Intent:" + esc + "[0m");
+        println("  ? <query>   channel intent or request assistance");
+        println("  <binary>    any host executable (e.g. ls, git, cargo, uname, ps)");
+        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0 };
+    }
+    if line == "hi" || line == "hello" || line == "hey" || line == "greetings" {
+        println(esc + "[1;33m⚡ oosh:" + esc + "[0m Greetings, sovereign. The shell is listening.");
+        println("   Type " + esc + "[1;36mhelp" + esc + "[0m for builtins or prefix queries with " + esc + "[1;35m?" + esc + "[0m for intent.");
+        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0 };
+    }
+    if line == "status" {
+        println(esc + "[1;33m⚡ oosh node telemetry:" + esc + "[0m");
+        println("   Mode:       Standalone Sovereign Shell");
+        println("   CWD:        " + cwd);
+        println("   Substrate:  openOODA native runtime (glibc)");
+        println("   Syntropd:   Dormant (local control socket unlinked)");
+        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0 };
+    }
+    if str_starts_with(line, "?") {
+        let query: String = str_trim(str_slice(line, 1, chars_len(line)));
+        println(esc + "[1;35m✦ Intent Channel:" + esc + "[0m \"" + query + "\"");
+        println("   [syntropd offline] Running in standalone host mode.");
+        println("   To execute system commands, enter standard binaries (e.g. 'ls', 'git', 'uname').");
         return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0 };
     }
     if line == "cd" || str_starts_with(line, "cd ") {
@@ -64,12 +100,17 @@ pub fn dispatch_line(sys: &ProcessCap, env: &EnvCap, cwd: String, raw_line: Stri
         return DispatchResult { next_cwd: new_dir, should_exit: false, exit_code: 0 };
     }
 
-    // Direct process execution scoped to active cwd
+    // Direct host process execution scoped to active cwd
     let sh_cmd: String = "cd \"" + cwd + "\" && " + line;
     let r: Result[String, String] = process_exec(sys, sh_cmd);
     if r.is_err() {
         let err_msg: String = match r { Ok(_) => "", Err(m) => m };
-        println(err_msg);
+        if str_contains(err_msg, "not found") {
+            println(esc + "[1;31m! oosh:" + esc + "[0m command not recognized: '" + line + "'");
+            println("  Type " + esc + "[1;36mhelp" + esc + "[0m for builtins or prefix with " + esc + "[1;35m?" + esc + "[0m for intent channel.");
+        } else {
+            println(err_msg);
+        }
         return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 1 };
     }
     let output: String = match r { Ok(s) => s, Err(_) => "" };

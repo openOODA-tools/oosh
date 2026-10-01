@@ -4,7 +4,7 @@
 #
 # Usage:
 #   make build       - compile main.oo to dist/oosh
-#   make test        - run --help, --version, and flags
+#   make test        - run --help, --version, flags, and REPL smoke tests
 #   make parity      - verify binary hash
 #   make line-cap    - enforce 16-256 line cap on every .oo and .oot
 #   make file-law    - reject forbidden file extensions
@@ -20,13 +20,15 @@ OODACODEX ?= $(HOME)/.openooda/northstar.oot
 OO_LIST_AMBIENT_QUOTA ?= 8589934592
 BIN := dist/oosh
 
+SRC := main.oo version.oo anchor.oo prompt.oo dispatch.oo engine.oo
+
 .PHONY: all build test parity line-cap file-law academy check verify install clean
 
 all: build verify test
 
 build: $(BIN)
 
-$(BIN): main.oo version.oo anchor.oo
+$(BIN): $(SRC)
 	@mkdir -p dist .ooda-cache/ooda-tmp
 	OO_LIST_AMBIENT_QUOTA=$(OO_LIST_AMBIENT_QUOTA) OODACODEX=$(OODACODEX) OODA_COMPILER=$(OODA_COMPILER) OODA_NO_JAIL=1 $(OODA_COMPILER) build main.oo -o $(BIN)
 	@chmod +x $(BIN)
@@ -38,7 +40,13 @@ test: $(BIN)
 	@echo "=== testing --version ==="
 	@./$(BIN) --version > /dev/null && echo "PASS: --version"
 	@echo "=== testing banner ==="
-	@./$(BIN) > /dev/null && echo "PASS: banner"
+	@./$(BIN) -c "version" > /dev/null && echo "PASS: banner"
+	@echo "=== testing -c execution ==="
+	@test "$$(./$(BIN) -c 'echo hello_sovereign')" = "hello_sovereign" && echo "PASS: -c execution"
+	@echo "=== testing pipe execution ==="
+	@echo "echo stream_ok" | ./$(BIN) --no-banner | grep -q "stream_ok" && echo "PASS: stream pipe"
+	@echo "=== testing builtin help ==="
+	@echo "help" | ./$(BIN) --no-banner | grep -q "sovereign builtins" && echo "PASS: builtin help"
 	@echo "=== testing --unknown-flag (expect exit 2) ==="
 	@./$(BIN) --unknown-flag 2>/dev/null; test $$? -eq 2 && echo "PASS: error exit 2"
 

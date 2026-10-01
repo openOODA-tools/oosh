@@ -1,0 +1,83 @@
+// # oosh Command Dispatcher
+//
+// Logline: Dispatches shell input lines to internal builtins (cd, exit, help) or external processes under ProcessCap.
+//
+// Setup: Receives ProcessCap and EnvCap. Updates current working directory and executes commands safely.
+//
+// Beats:
+//   1. Check for shell built-in commands (exit, cd, help, version).
+//   2. Mutate active directory state for cd requests.
+//   3. Dispatch external system commands via process_exec scoped to cwd.
+
+import "std/fs/process/process.oo";
+import "std/fs/process/env.oo";
+import "std/fs/file/path.oo";
+import "version.oo";
+
+pub type DispatchResult = struct {
+    next_cwd: String,
+    should_exit: Bool,
+    exit_code: Int
+};
+
+pub fn resolve_cd(env: &EnvCap, cwd: String, target: String) -> String {
+    let t: String = str_trim(target);
+    if t == "" || t == "~" {
+        let hr: Result[String, String] = env_get(env, "HOME");
+        return match hr { Ok(h) => h, Err(_) => cwd };
+    }
+    if str_starts_with(t, "~/") {
+        let hr: Result[String, String] = env_get(env, "HOME");
+        let home: String = match hr { Ok(h) => h, Err(_) => "" };
+        let rest: String = str_slice(t, 2, chars_len(t));
+        return path_join(home, rest);
+    }
+    if path_is_absolute(t) {
+        return t;
+    }
+    if t == ".." {
+        return path_parent(cwd);
+    }
+    return path_join(cwd, t);
+}
+
+pub fn dispatch_line(sys: &ProcessCap, env: &EnvCap, cwd: String, raw_line: String) -> DispatchResult {
+    let line: String = str_trim(raw_line);
+    if line == "" {
+        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0 };
+    }
+    if line == "exit" || line == "quit" {
+        return DispatchResult { next_cwd: cwd, should_exit: true, exit_code: 0 };
+    }
+    if line == "version" {
+        println(oosh_banner());
+        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0 };
+    }
+    if line == "help" {
+        println("oosh sovereign builtins: cd [dir], exit, version, help");
+        println("all other commands execute directly on the host system.");
+        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0 };
+    }
+    if line == "cd" || str_starts_with(line, "cd ") {
+        let target: String = if line == "cd" { "" } else { str_slice(line, 3, chars_len(line)) };
+        let new_dir: String = resolve_cd(env, cwd, target);
+        return DispatchResult { next_cwd: new_dir, should_exit: false, exit_code: 0 };
+    }
+
+    // Direct process execution scoped to active cwd
+    let sh_cmd: String = "cd \"" + cwd + "\" && " + line;
+    let r: Result[String, String] = process_exec(sys, sh_cmd);
+    if r.is_err() {
+        let err_msg: String = match r { Ok(_) => "", Err(m) => m };
+        println(err_msg);
+        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 1 };
+    }
+    let output: String = match r { Ok(s) => s, Err(_) => "" };
+    if output != "" {
+        print(output);
+        if !str_ends_with(output, "\n") {
+            println("");
+        }
+    }
+    return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0 };
+}

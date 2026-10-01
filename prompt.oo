@@ -1,0 +1,44 @@
+// # oosh Prompt Renderer
+//
+// Logline: Renders the sovereign shell prompt glyph and current working directory path with ANSI styling.
+//
+// Setup: Pure string formatting. Reads current directory from EnvCap or falls back to root.
+//
+// Beats:
+//   1. Resolve active directory string safely.
+//   2. Abbreviate home directory path with tilde glyph when applicable.
+//   3. Render high-contrast sovereign rune symbol and active cursor dock.
+
+import "std/fs/process/env.oo";
+
+pub fn ansi_esc() -> String {
+    return bytes_to_str(bytes_push(bytes_new(), 27));
+}
+
+pub fn prompt_cwd(env: &EnvCap) -> String {
+    let pr: Result[String, String] = env_get(env, "PWD");
+    let cwd: String = match pr { Ok(s) => s, Err(_) => "." };
+    let hr: Result[String, String] = env_get(env, "HOME");
+    let home: String = match hr { Ok(s) => s, Err(_) => "" };
+
+    if home != "" && str_starts_with(cwd, home) {
+        let rest: String = str_slice(cwd, chars_len(home), chars_len(cwd));
+        return "~" + rest;
+    }
+    return cwd;
+}
+
+pub fn render_prompt(env: &EnvCap) -> String {
+    let esc: String = ansi_esc();
+    let cwd: String = prompt_cwd(env);
+    // Amber rune, cyan cwd path, green prompt arrow
+    let rune: String = esc + "[1;33mᚱ" + esc + "[0m";
+    let path_str: String = esc + "[1;36m" + cwd + esc + "[0m";
+    let arrow: String = esc + "[1;32m>" + esc + "[0m";
+    return rune + " " + path_str + " " + arrow + " ";
+}
+
+pub fn render_plain_prompt(env: &EnvCap) -> String {
+    let cwd: String = prompt_cwd(env);
+    return "ᚱ " + cwd + " > ";
+}

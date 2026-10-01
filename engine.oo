@@ -1,0 +1,68 @@
+// # oosh Interactive Engine - The OODA REPL Loop
+//
+// Logline: Implements the interactive prompt loop: observes input, orients command intent, and executes actions.
+//
+// Setup: Takes FsReadCap, ProcessCap, and EnvCap. Manages active working directory state across turns.
+//
+// Beats:
+//   1. Initialize active working directory from environment.
+//   2. Render prompt glyph and flush to standard output.
+//   3. Read input stream from stdin via oo_read_stdin_chunk.
+//   4. Accumulate lines and dispatch via dispatch_line.
+//   5. Terminate cleanly on EOF or explicit exit request.
+
+import "std/fs/process/env.oo";
+import "prompt.oo";
+import "dispatch.oo";
+
+pub fn run_engine(fs_r: &FsReadCap, sys: &ProcessCap, env: &EnvCap) -> Int {
+    let pr: Result[String, String] = env_get(env, "PWD");
+    let mut cwd: String = match pr { Ok(s) => s, Err(_) => "." };
+
+    let mut running: Bool = true;
+    let mut need_prompt: Bool = true;
+    let mut cur_line: String = "";
+
+    while running {
+        if need_prompt {
+            print(render_prompt(env));
+            need_prompt = false;
+        }
+
+        let cr: Result[String, String] = oo_read_stdin_chunk(fs_r, 100);
+        if cr.is_err() {
+            // EOF or closed pipe
+            let e: String = match cr { Ok(_) => "", Err(m) => m };
+            if e != "timeout" {
+                if cur_line != "" {
+                    let res: DispatchResult = dispatch_line(sys, env, cwd, cur_line);
+                    cwd = res.next_cwd;
+                }
+                running = false;
+                println("");
+                break;
+            }
+        } else {
+            let chunk: String = match cr { Ok(s) => s, Err(_) => "" };
+            let n: Int = chars_len(chunk);
+            let mut i: Int = 0;
+            while i < n {
+                let ch: String = char_at(chunk, i);
+                if ch == "\n" || ch == "\r" {
+                    let res: DispatchResult = dispatch_line(sys, env, cwd, cur_line);
+                    cwd = res.next_cwd;
+                    cur_line = "";
+                    if res.should_exit {
+                        running = false;
+                        break;
+                    }
+                    need_prompt = true;
+                } else {
+                    cur_line = cur_line + ch;
+                }
+                i = i + 1;
+            }
+        }
+    }
+    return 0;
+}

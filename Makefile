@@ -1,4 +1,4 @@
-# oosh v0.1.0 Makefile
+# oosh v0.2.0 Makefile
 #
 # Build, verify, and test the openOODA sovereign shell.
 #
@@ -32,7 +32,9 @@ $(BIN): $(SRC)
 	@mkdir -p dist .ooda-cache/ooda-tmp
 	OO_LIST_AMBIENT_QUOTA=$(OO_LIST_AMBIENT_QUOTA) OODACODEX=$(OODACODEX) OODA_COMPILER=$(OODA_COMPILER) OODA_NO_JAIL=1 $(OODA_COMPILER) build main.oo -o $(BIN)
 	@chmod +x $(BIN)
-	@echo "built $(BIN)"
+	@cp -a $(BIN) dist/oosh-linux-x86_64
+	@sha256sum dist/oosh-linux-x86_64 > dist/oosh-linux-x86_64.sha256
+	@echo "built $(BIN) (and dist/oosh-linux-x86_64)"
 
 test: $(BIN)
 	@echo "=== testing --help ==="
@@ -49,6 +51,8 @@ test: $(BIN)
 	@echo "help" | ./$(BIN) --no-banner | grep -q "sovereign builtins" && echo "PASS: builtin help"
 	@echo "=== testing --unknown-flag (expect exit 2) ==="
 	@./$(BIN) --unknown-flag 2>/dev/null; test $$? -eq 2 && echo "PASS: error exit 2"
+	@echo "=== testing installer dry-run ==="
+	@./install.sh --dry-run > /dev/null && echo "PASS: install.sh dry-run"
 
 parity: build
 	@sum=$$(sha256sum $(BIN) | awk '{print $$1}'); echo $$sum; test -n "$$sum"
@@ -70,12 +74,18 @@ line-cap:
 	echo "PASS: Page Rule sizing (16-256 lines) holds"
 
 file-law:
-	@forbidden="py js ts rb pl json yaml toml sh"; \
+	@forbidden="py js ts rb pl json yaml toml"; \
 	violations=0; \
 	for ext in $$forbidden; do \
 		found=$$(find . -name "*.$$ext" -not -path "./.git/*" 2>/dev/null | head -3); \
 		if [ -n "$$found" ]; then \
 			echo "VIOLATION: .$$ext forbidden:"; echo "$$found"; \
+			violations=$$((violations+1)); \
+		fi; \
+	done; \
+	for f in $$(find . -name "*.sh" -not -path "./.git/*" 2>/dev/null); do \
+		if [ "$$f" != "./install.sh" ]; then \
+			echo "VIOLATION: .sh forbidden outside install.sh: $$f"; \
 			violations=$$((violations+1)); \
 		fi; \
 	done; \

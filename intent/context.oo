@@ -1,0 +1,167 @@
+// # Workspace Context Engine
+//
+// Logline: Analyzes active directory markers to synthesize ecosystem-aware POSIX commands.
+//
+// Setup: Inspects cwd for Rust, Node, Python, C/Make, openOODA, Git, and Docker markers.
+//
+// Beats:
+//   1. Define WorkspaceContext struct tracking detected project ecosystems.
+//   2. Probe directory markers using system capability and POSIX shell test expressions.
+//   3. Provide ecosystem query predicates and command resolvers for intent synthesis.
+
+import "std/fs/process/process.oo";
+
+pub type WorkspaceContext = struct {
+    has_cargo: Bool,
+    has_make: Bool,
+    has_npm: Bool,
+    has_git: Bool,
+    has_python: Bool,
+    has_docker: Bool,
+    has_ooda: Bool,
+    primary_ecosystem: String
+};
+
+pub fn workspace_context_empty() -> WorkspaceContext {
+    return WorkspaceContext {
+        has_cargo: false,
+        has_make: false,
+        has_npm: false,
+        has_git: false,
+        has_python: false,
+        has_docker: false,
+        has_ooda: false,
+        primary_ecosystem: "generic"
+    };
+}
+
+pub fn probe_workspace(sys: &ProcessCap, cwd: String) -> WorkspaceContext {
+    let probe_cmd: String = "cd \"" + cwd + "\" 2>/dev/null && " +
+        "printf \"cargo:%d;make:%d;npm:%d;git:%d;py:%d;docker:%d;ooda:%d;\" " +
+        "$(test -f Cargo.toml && echo 1 || echo 0) " +
+        "$(test -f Makefile && echo 1 || echo 0) " +
+        "$(test -f package.json && echo 1 || echo 0) " +
+        "$((test -d .git || git rev-parse --git-dir >/dev/null 2>&1) && echo 1 || echo 0) " +
+        "$((test -f pyproject.toml || test -f requirements.txt) && echo 1 || echo 0) " +
+        "$((test -f Dockerfile || test -f Containerfile) && echo 1 || echo 0) " +
+        "$((test -f northstar.oot || test -f AGENTS.md) && echo 1 || echo 0)";
+
+    let pr: Result[String, String] = process_exec(sys, probe_cmd);
+    let s: String = match pr {
+        Ok(v) => v,
+        Err(_) => ""
+    };
+    if s == "" {
+        return workspace_context_empty();
+    }
+
+    let c_cargo: Bool = str_contains(s, "cargo:1");
+    let c_make: Bool = str_contains(s, "make:1");
+    let c_npm: Bool = str_contains(s, "npm:1");
+    let c_git: Bool = str_contains(s, "git:1");
+    let c_py: Bool = str_contains(s, "py:1");
+    let c_docker: Bool = str_contains(s, "docker:1");
+    let c_ooda: Bool = str_contains(s, "ooda:1");
+
+    let primary: String = if c_cargo {
+        "rust"
+    } else if c_ooda {
+        "openooda"
+    } else if c_make {
+        "make"
+    } else if c_npm {
+        "node"
+    } else if c_py {
+        "python"
+    } else if c_docker {
+        "docker"
+    } else if c_git {
+        "git"
+    } else {
+        "generic"
+    };
+
+    return WorkspaceContext {
+        has_cargo: c_cargo,
+        has_make: c_make,
+        has_npm: c_npm,
+        has_git: c_git,
+        has_python: c_py,
+        has_docker: c_docker,
+        has_ooda: c_ooda,
+        primary_ecosystem: primary
+    };
+}
+
+pub fn is_rust_workspace(ctx: WorkspaceContext) -> Bool { return ctx.has_cargo; }
+pub fn is_make_workspace(ctx: WorkspaceContext) -> Bool { return ctx.has_make; }
+pub fn is_node_workspace(ctx: WorkspaceContext) -> Bool { return ctx.has_npm; }
+pub fn is_git_workspace(ctx: WorkspaceContext) -> Bool { return ctx.has_git; }
+pub fn is_python_workspace(ctx: WorkspaceContext) -> Bool { return ctx.has_python; }
+pub fn is_docker_workspace(ctx: WorkspaceContext) -> Bool { return ctx.has_docker; }
+pub fn is_ooda_workspace(ctx: WorkspaceContext) -> Bool { return ctx.has_ooda; }
+
+pub fn context_build_cmd(ctx: WorkspaceContext) -> String {
+    if ctx.has_cargo { return "cargo build"; }
+    if ctx.has_npm { return "npm run build"; }
+    if ctx.has_ooda { return "make all"; }
+    if ctx.has_make { return "make all"; }
+    if ctx.has_python { return "python3 -m build 2>/dev/null || pip install -e ."; }
+    if ctx.has_docker { return "podman build -t app . 2>/dev/null || docker build -t app ."; }
+    return "make all";
+}
+
+pub fn context_test_cmd(ctx: WorkspaceContext) -> String {
+    if ctx.has_cargo { return "cargo test"; }
+    if ctx.has_npm { return "npm test"; }
+    if ctx.has_python { return "pytest"; }
+    if ctx.has_ooda || ctx.has_make { return "make test"; }
+    return "make test";
+}
+
+pub fn context_check_cmd(ctx: WorkspaceContext) -> String {
+    if ctx.has_cargo { return "cargo check"; }
+    if ctx.has_ooda { return "make verify"; }
+    if ctx.has_make { return "make check"; }
+    if ctx.has_npm { return "npm test"; }
+    if ctx.has_python { return "pytest"; }
+    return "make check";
+}
+
+pub fn context_run_cmd(ctx: WorkspaceContext) -> String {
+    if ctx.has_cargo { return "cargo run"; }
+    if ctx.has_npm { return "npm start"; }
+    if ctx.has_python { return "python3 main.py"; }
+    if ctx.has_ooda || ctx.has_make { return "make run"; }
+    return "./main";
+}
+
+pub fn context_clean_cmd(ctx: WorkspaceContext) -> String {
+    if ctx.has_cargo { return "cargo clean"; }
+    if ctx.has_ooda || ctx.has_make { return "make clean"; }
+    if ctx.has_npm { return "rm -rf dist node_modules"; }
+    if ctx.has_python { return "rm -rf __pycache__ .pytest_cache dist build *.egg-info"; }
+    return "make clean";
+}
+
+pub fn context_loc_cmd(ctx: WorkspaceContext) -> String {
+    if ctx.has_cargo { return "find . -name \"*.rs\" -not -path '*/target/*' | xargs wc -l"; }
+    if ctx.has_npm { return "find . -name \"*.js\" -o -name \"*.ts\" -not -path '*/node_modules/*' | xargs wc -l"; }
+    if ctx.has_python { return "find . -name \"*.py\" -not -path '*/.*' | xargs wc -l"; }
+    if ctx.has_ooda { return "find . -name \"*.oo\" | xargs wc -l"; }
+    if ctx.has_make { return "find . -name \"*.c\" -o -name \"*.h\" | xargs wc -l"; }
+    return "find . -name \"*.oo\" | xargs wc -l";
+}
+
+pub fn context_search_cmd(ctx: WorkspaceContext, query: String) -> String {
+    if str_contains(query, "python") || str_contains(query, ".py") { return "find . -name \"*.py\""; }
+    if str_contains(query, "rust") || str_contains(query, ".rs") { return "find . -name \"*.rs\""; }
+    if str_contains(query, "ooda") || str_contains(query, ".oo") { return "find . -name \"*.oo\""; }
+    if str_contains(query, "js") || str_contains(query, "ts") || str_contains(query, "node") { return "find . -name \"*.js\" -o -name \"*.ts\""; }
+    if str_contains(query, "c") || str_contains(query, ".c") { return "find . -name \"*.c\" -o -name \"*.h\""; }
+    if ctx.has_cargo { return "find . -name \"*.rs\""; }
+    if ctx.has_python { return "find . -name \"*.py\""; }
+    if ctx.has_npm { return "find . -name \"*.js\" -o -name \"*.ts\""; }
+    if ctx.has_ooda { return "find . -name \"*.oo\""; }
+    return "find . -maxdepth 2 -not -path '*/.*'";
+}

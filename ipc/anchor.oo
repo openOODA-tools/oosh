@@ -12,8 +12,107 @@
 import "std/fs/process/process.oo";
 import "std/fs/process/env.oo";
 import "flight/anchor.oo";
+import "ui/anchor.oo";
 import "varlink.oo";
 import "daemon.oo";
+
+pub type SyntropStatus = struct {
+    contextd: Bool,
+    toold: Bool,
+    sentry: Bool,
+    runtimed: Bool,
+    control: Bool
+};
+
+pub fn probe_syntrop(sys: &ProcessCap) -> SyntropStatus {
+    let probe_cmd: String = "printf \"contextd:%d;toold:%d;sentry:%d;runtimed:%d;control:%d;\" " +
+        "$( (test -e /run/syntrop/contextd.sock || test -e /run/syntrop/io.syntrop.Context1) && echo 1 || echo 0 ) " +
+        "$( (test -e /run/syntrop/toold.sock || test -e /run/syntrop/io.syntrop.Tool1) && echo 1 || echo 0 ) " +
+        "$( (test -e /run/syntrop/sentry.sock || test -e /run/syntrop/io.syntrop.Sentry1) && echo 1 || echo 0 ) " +
+        "$( (test -e /run/syntrop/runtimed.sock || test -e /run/syntrop/io.syntrop.Runtime1) && echo 1 || echo 0 ) " +
+        "$( (test -e /run/oosh/control.sock || test -e /tmp/oosh-control.sock) && echo 1 || echo 0 )";
+    let pr: Result[String, String] = process_exec(sys, probe_cmd);
+    let s: String = match pr {
+        Ok(v) => v,
+        Err(_) => ""
+    };
+    return SyntropStatus {
+        contextd: str_contains(s, "contextd:1"),
+        toold: str_contains(s, "toold:1"),
+        sentry: str_contains(s, "sentry:1"),
+        runtimed: str_contains(s, "runtimed:1"),
+        control: str_contains(s, "control:1")
+    };
+}
+
+pub fn syntrop_online_count(st: SyntropStatus) -> Int {
+    let mut count: Int = 0;
+    if st.contextd { count = count + 1; }
+    if st.toold { count = count + 1; }
+    if st.sentry { count = count + 1; }
+    if st.runtimed { count = count + 1; }
+    return count;
+}
+
+pub fn render_link_card(sys: &ProcessCap, env: &EnvCap) -> String {
+    let st: SyntropStatus = probe_syntrop(sys);
+    let sock: String = resolve_socket_path(env);
+    let count: Int = syntrop_online_count(st);
+
+    let top: String = ui_card_top("⬡", "SYNTROPD IPC LINK COORDINATOR");
+    let r_wire: String = ui_card_row("Wire Framing", "Varlink NUL-delimited (\\0) JSON RPC");
+    let r_sock: String = ui_card_row("Local Socket", sock);
+    let sec_peers: String = ui_card_section("Syntropd Ecosystem Daemons");
+    let r_ctx: String = ui_card_row("  contextd", if st.contextd { "ONLINE  (/run/syntrop/io.syntrop.Context1)" } else { "OFFLINE" });
+    let r_tool: String = ui_card_row("  toold   ", if st.toold { "ONLINE  (/run/syntrop/io.syntrop.Tool1)" } else { "OFFLINE" });
+    let r_sentry: String = ui_card_row("  sentry  ", if st.sentry { "ONLINE  (/run/syntrop/sentry.sock)" } else { "OFFLINE" });
+    let r_rt: String = ui_card_row("  runtimed", if st.runtimed { "ONLINE  (/run/syntrop/io.syntrop.Runtime1)" } else { "OFFLINE" });
+    let badge: String = if count == 4 { "MESH LINKED (4/4 ACTIVE)" } else if count > 0 { "MESH PARTIAL (" + count.to_string() + "/4 ACTIVE)" } else { "STANDBY (SYNTHETIC FALLBACK)" };
+    let bot: String = ui_card_bottom(badge);
+
+    return top + "\n" + r_wire + "\n" + r_sock + "\n" + sec_peers + "\n" + r_ctx + "\n" + r_tool + "\n" + r_sentry + "\n" + r_rt + "\n" + bot;
+}
+
+pub fn ipc_dispatch_link(sys: &ProcessCap, env: &EnvCap, cwd: String, rec: FlightRecord, line: String) {
+    if str_starts_with(line, "link call ") {
+        let json_payload: String = str_slice(line, 10, chars_len(line));
+        let reply: String = route_varlink_call(sys, cwd, rec, json_payload);
+        print(reply);
+        return;
+    }
+    if str_starts_with(line, "connect call ") {
+        let json_payload: String = str_slice(line, 13, chars_len(line));
+        let reply: String = route_varlink_call(sys, cwd, rec, json_payload);
+        print(reply);
+        return;
+    }
+    if line == "link test" || line == "link ping" || line == "connect test" || line == "connect ping" {
+        println(ui_card_top("⬡", "IPC SELF-TEST & PROBE"));
+        let st: SyntropStatus = probe_syntrop(sys);
+        let c_str: String = syntrop_online_count(st).to_string();
+        println(ui_card_row("Syntrop Mesh", c_str + "/4 daemons responsive"));
+        let ping_req: String = "{\"method\":\"org.openooda.oosh.Ping\"}";
+        let ping_res: String = route_varlink_call(sys, cwd, rec, ping_req);
+        println(ui_card_row("Internal RPC", str_trim(ping_res)));
+        println(ui_card_bottom("SELF-TEST NOMINAL"));
+        return;
+    }
+    if line == "link endpoints" || line == "link peers" || line == "link sockets" || line == "connect endpoints" {
+        println(ui_card_top("⬡", "IPC ENDPOINT DIRECTORY"));
+        println(ui_card_row("contextd", "/run/syntrop/io.syntrop.Context1"));
+        println(ui_card_row("toold", "/run/syntrop/io.syntrop.Tool1"));
+        println(ui_card_row("sentry", "/run/syntrop/sentry.sock"));
+        println(ui_card_row("runtimed", "/run/syntrop/io.syntrop.Runtime1"));
+        println(ui_card_row("control", resolve_socket_path(env)));
+        println(ui_card_bottom("5 ENDPOINTS REGISTERED"));
+        return;
+    }
+    println(render_link_card(sys, env));
+}
+
+pub fn ipc_handle_link(sys: &ProcessCap, env: &EnvCap, cwd: String, rec: FlightRecord, line: String) {
+    ipc_dispatch_link(sys, env, cwd, rec, line);
+}
 
 pub fn ipc_route(sys: &ProcessCap, cwd: String, rec: FlightRecord, raw: String) -> String {
     return route_varlink_call(sys, cwd, rec, raw);

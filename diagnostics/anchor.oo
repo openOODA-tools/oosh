@@ -10,6 +10,8 @@
 //   3. Route diagnostic inspection queries.
 
 import "flight/anchor.oo";
+import "flight/envelope.oo";
+import "flight/rules.oo";
 
 pub fn diagnostics_anchor_probe() -> String {
     return "diagnostics-active";
@@ -27,12 +29,32 @@ pub fn diag_failure(rec: FlightRecord, cmd: String, code: Int, err: String, dur:
     return flight_failure(rec, cmd, code, err, dur);
 }
 
+pub fn diag_update_duration(rec: FlightRecord, dur: Int) -> FlightRecord {
+    return flight_update_duration(rec, dur);
+}
+
 pub fn diag_autopsy(rec: FlightRecord) -> String {
     return flight_autopsy(rec);
 }
 
 pub fn diag_remedy(rec: FlightRecord) -> String {
     return flight_remedy(rec);
+}
+
+pub fn diag_remedy_cwd(rec: FlightRecord, cwd: String) -> String {
+    return flight_remedy_cwd(rec, cwd);
+}
+
+pub fn diag_envelope(env: FailureEnvelope) -> String {
+    return flight_remedy_envelope(env);
+}
+
+pub fn diag_rules_match(cmd: String, code: Int, err: String, cwd: String) -> DiagnosticResult {
+    return flight_rules_match(cmd, code, err, cwd);
+}
+
+pub fn diag_to_envelope(rec: FlightRecord, cwd: String) -> FailureEnvelope {
+    return flight_to_envelope(rec, cwd);
 }
 
 pub fn diag_telemetry(dur: Int, code: Int, mem: String) -> String {

@@ -15,18 +15,20 @@ import "std/fs/process/env.oo";
 import "prompt.oo";
 import "dispatch.oo";
 import "flight/anchor.oo";
+import "ui/anchor.oo";
 
 pub fn run_engine(fs_r: &FsReadCap, sys: &ProcessCap, env: &EnvCap, time: &TimeCap, bind: &BindCap, fs_w: &FsWriteCap) -> Int {
     let pr: Result[String, String] = env_get(env, "PWD");
     let mut cwd: String = match pr { Ok(s) => s, Err(_) => "." };
     let mut rec: FlightRecord = flight_init();
+    let is_interactive: Bool = ui_is_interactive(sys);
 
     let mut running: Bool = true;
     let mut need_prompt: Bool = true;
     let mut cur_line: String = "";
 
     while running {
-        if need_prompt {
+        if need_prompt && is_interactive {
             print(render_prompt_with_dock(sys, env, cwd, rec.has_failed, rec.last_exit_code));
             need_prompt = false;
         }
@@ -38,16 +40,26 @@ pub fn run_engine(fs_r: &FsReadCap, sys: &ProcessCap, env: &EnvCap, time: &TimeC
             if e != "timeout" {
                 if cur_line != "" {
                     let last_line: String = str_trim(cur_line);
+                    if is_interactive && last_line != "" {
+                        let accent: String = ui_render_accent(last_line);
+                        if accent != "" {
+                            println(accent);
+                        }
+                    }
                     let t0: Int = now_ms(time);
-                    let res: DispatchResult = dispatch_line(sys, env, cwd, last_line, rec);
+                    let res: DispatchResult = dispatch_line(fs_r, sys, env, cwd, last_line, rec);
                     let dur: Int = now_ms(time) - t0;
                     let mem: String = flight_memory(fs_r);
-                    println(flight_telemetry(dur, res.exit_code, mem));
+                    if is_interactive && last_line != "" && !res.should_exit {
+                        println(flight_telemetry(dur, res.exit_code, mem));
+                    }
                     cwd = res.next_cwd;
-                    rec = res.flight_rec;
+                    rec = flight_update_duration(res.flight_rec, dur);
                 }
                 running = false;
-                println("");
+                if is_interactive {
+                    println("");
+                }
                 break;
             }
         } else {
@@ -62,15 +74,21 @@ pub fn run_engine(fs_r: &FsReadCap, sys: &ProcessCap, env: &EnvCap, time: &TimeC
                 } else if ch == "\n" {
                     let line_to_run: String = str_trim(cur_line);
                     cur_line = "";
+                    if is_interactive && line_to_run != "" {
+                        let accent: String = ui_render_accent(line_to_run);
+                        if accent != "" {
+                            println(accent);
+                        }
+                    }
                     let t0: Int = now_ms(time);
-                    let res: DispatchResult = dispatch_line(sys, env, cwd, line_to_run, rec);
+                    let res: DispatchResult = dispatch_line(fs_r, sys, env, cwd, line_to_run, rec);
                     let dur: Int = now_ms(time) - t0;
                     let mem: String = flight_memory(fs_r);
-                    if line_to_run != "" && !res.should_exit {
+                    if is_interactive && line_to_run != "" && !res.should_exit {
                         println(flight_telemetry(dur, res.exit_code, mem));
                     }
                     cwd = res.next_cwd;
-                    rec = res.flight_rec;
+                    rec = flight_update_duration(res.flight_rec, dur);
                     if res.should_exit {
                         running = false;
                         break;

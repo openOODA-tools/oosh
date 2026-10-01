@@ -11,6 +11,16 @@
 
 import "palette.oo";
 
+fn repeat_char(ch: String, count: Int) -> String {
+    let mut s: String = "";
+    let mut i: Int = 0;
+    while i < count {
+        s = s + ch;
+        i = i + 1;
+    }
+    return s;
+}
+
 pub fn card_shadow() -> String {
     return cyber_gray() + "░▒▓" + cyber_reset();
 }
@@ -20,21 +30,29 @@ pub fn card_top(rune: String, title: String) -> String {
     let amber: String = cyber_amber();
     let rst: String = cyber_reset();
     let bold: String = cyber_bold();
-    return cyan + "╔═" + amber + "[ " + bold + rune + " " + title + rst + amber + " ]" + cyan + "══════════════════════════════════════════════════════╗" + rst;
+    let t_len: Int = chars_len(title);
+    let rem: Int = 68 - (t_len + 8) - 1;
+    let bar_len: Int = if rem < 4 { 4 } else { rem };
+    let bar: String = repeat_char("═", bar_len);
+    return cyan + "╔═" + amber + "[ " + bold + rune + " " + title + rst + amber + " ]" + cyan + bar + "╗" + rst;
 }
 
 pub fn card_section(title: String) -> String {
     let cyan: String = cyber_cyan();
     let purp: String = cyber_purple();
     let rst: String = cyber_reset();
-    return cyan + "╟──" + purp + " " + title + " " + cyan + "───────────────────────────────────────────────────────╢" + rst;
+    let t_len: Int = chars_len(title);
+    let rem: Int = 68 - (t_len + 5) - 1;
+    let bar_len: Int = if rem < 4 { 4 } else { rem };
+    let bar: String = repeat_char("─", bar_len);
+    return cyan + "╟──" + purp + " " + title + " " + cyan + bar + "╢" + rst;
 }
 
 pub fn card_row(label: String, val: String) -> String {
     let cyan: String = cyber_cyan();
     let amber: String = cyber_amber();
     let rst: String = cyber_reset();
-    return cyan + "║ " + amber + label + rst + ": " + val;
+    return cyan + "║ " + amber + label + rst + ": " + val + rst;
 }
 
 pub fn card_row_colored(label: String, val: String, val_color: String) -> String {
@@ -58,5 +76,9 @@ pub fn card_bottom(badge: String) -> String {
     if badge == "" {
         return cyan + "╚══════════════════════════════════════════════════════════════════╝" + rst + " " + shadow;
     }
-    return cyan + "╚═" + green + "[ " + badge + " ]" + cyan + "═════════════════════════════════════════════════╝" + rst + " " + shadow;
+    let b_len: Int = chars_len(badge);
+    let rem: Int = 68 - (b_len + 6) - 1;
+    let bar_len: Int = if rem < 4 { 4 } else { rem };
+    let bar: String = repeat_char("═", bar_len);
+    return cyan + "╚═" + green + "[ " + badge + " ]" + cyan + bar + "╝" + rst + " " + shadow;
 }

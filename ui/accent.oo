@@ -11,9 +11,15 @@
 
 import "palette.oo";
 
-pub fn is_builtin_verb(verb: String) -> Bool {
+pub fn is_navigation_verb(verb: String) -> Bool {
     return verb == "cd" || verb == "chdir" || verb == "goto" || verb == "jump" || verb == "walk" ||
-           verb == ".." || verb == "..." || verb == "take" || verb == "mkcd" ||
+           verb == ".." || verb == "..." || verb == "...." || verb == "-" ||
+           verb == "take" || verb == "mkcd" || verb == "mcd" || verb == "mdcd" ||
+           verb == "pwd" || verb == "cwd" || verb == "where" || verb == "here";
+}
+
+pub fn is_builtin_verb(verb: String) -> Bool {
+    return is_navigation_verb(verb) ||
            verb == "status" || verb == "stat" || verb == "info" || verb == "health" || verb == "posture" ||
            verb == "caps" || verb == "cap" || verb == "whoami" || verb == "perms" || verb == "tokens" ||
            verb == "help" || verb == "-h" || verb == "--help" || verb == "?" || verb == "guide" || verb == "docs" ||
@@ -21,19 +27,26 @@ pub fn is_builtin_verb(verb: String) -> Bool {
            verb == "autopsy" || verb == "bb" || verb == "blackbox" || verb == "crash" ||
            verb == "remedy" || verb == "fix" || verb == "repair" || verb == "heal" ||
            verb == "rune" || verb == "token" || verb == "link" || verb == "connect" ||
-           verb == "pwd" || verb == "whereami" || verb == "clear" || verb == "cls" ||
+           verb == "clear" || verb == "cls" || verb == "clean" || verb == "reset" || verb == "wipe" || verb == "blank" ||
            verb == "open" || verb == "view" || verb == "show" || verb == "time" || verb == "bench" ||
-           verb == "exit" || verb == "quit" || verb == ":q" || verb == "bye" || verb == "version";
+           verb == "exit" || verb == "quit" || verb == "q" || verb == ":q" || verb == ":q!" || verb == ":x" || verb == "bye" ||
+           verb == "version" || verb == "ver" || verb == "about" ||
+           verb == "history" || verb == "hist" || verb == "past" || verb == "recall" ||
+           verb == "env" || verb == "vars" || verb == "printenv";
 }
 
 pub fn is_intent_query(cmd: String) -> Bool {
-    return str_starts_with(cmd, "?") ||
-           str_starts_with(cmd, "ai ") ||
-           str_starts_with(cmd, "ask ") ||
-           str_starts_with(cmd, "do ") ||
-           str_starts_with(cmd, "how ") ||
-           str_starts_with(cmd, "why ") ||
-           str_starts_with(cmd, "please ");
+    let trimmed: String = str_trim(cmd);
+    if trimmed == "?" {
+        return false;
+    }
+    return str_starts_with(trimmed, "?") ||
+           str_starts_with(trimmed, "ai ") ||
+           str_starts_with(trimmed, "ask ") ||
+           str_starts_with(trimmed, "do ") ||
+           str_starts_with(trimmed, "how ") ||
+           str_starts_with(trimmed, "why ") ||
+           str_starts_with(trimmed, "please ");
 }
 
 pub fn extract_verb(cmd: String) -> String {
@@ -62,9 +75,38 @@ pub fn render_syntax_accent(cmd: String) -> String {
     }
 
     let verb: String = extract_verb(trimmed);
+    if is_navigation_verb(verb) {
+        return cyber_green() + "→ [NAVIGATION: " + verb + "]" + rst;
+    }
     if is_builtin_verb(verb) {
         return cyber_amber() + "ᚱ [SOVEREIGN BUILTIN: " + verb + "]" + rst;
     }
 
-    return cyber_green() + "⚡ [HOST BINARY: " + verb + "]" + rst;
+    return cyber_cyan() + "⚡ [HOST BINARY: " + verb + "]" + rst;
+}
+
+pub fn accent_command_tokens(cmd: String) -> String {
+    let trimmed: String = str_trim(cmd);
+    if trimmed == "" {
+        return "";
+    }
+    let verb: String = extract_verb(trimmed);
+    let rst: String = cyber_reset();
+    let rest: String = if chars_len(trimmed) > chars_len(verb) {
+        str_slice(trimmed, chars_len(verb), chars_len(trimmed))
+    } else {
+        ""
+    };
+
+    let verb_colored: String = if is_intent_query(trimmed) {
+        cyber_purple() + verb + rst
+    } else if is_navigation_verb(verb) {
+        cyber_green() + verb + rst
+    } else if is_builtin_verb(verb) {
+        cyber_amber() + verb + rst
+    } else {
+        cyber_cyan() + verb + rst
+    };
+
+    return verb_colored + rest;
 }

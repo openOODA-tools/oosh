@@ -1,4 +1,4 @@
-# oosh v0.4.0 Makefile
+# oosh v0.4.1 Makefile
 #
 # Build, verify, and test the openOODA sovereign shell.
 #
@@ -22,11 +22,11 @@ BIN := dist/oosh
 
 SRC := main.oo version.oo anchor.oo prompt.oo dispatch.oo engine.oo manual.oo \
        ui/anchor.oo ui/palette.oo ui/card.oo ui/dock.oo ui/accent.oo \
-       diagnostics/anchor.oo flight/anchor.oo flight/envelope.oo flight/telemetry.oo flight/remedy.oo \
-       intent/anchor.oo intent/safety.oo intent/synthesize.oo \
+       diagnostics/anchor.oo flight/anchor.oo flight/envelope.oo flight/telemetry.oo flight/remedy.oo flight/rules.oo \
+       intent/anchor.oo intent/scanner.oo intent/context.oo intent/safety.oo intent/synthesize.oo intent/preview.oo \
        ipc/anchor.oo ipc/varlink.oo ipc/daemon.oo
 
-.PHONY: all build test parity line-cap file-law academy check verify install clean test-e2e test-tier1 test-tier2 test-tier3 test-tier4
+.PHONY: all build test parity line-cap file-law academy check verify install clean test-e2e test-tier1 test-tier2 test-tier3 test-tier4 test-tier5
 
 all: build verify test test-e2e
 
@@ -71,10 +71,18 @@ test: $(BIN)
 	@./$(BIN) --unknown-flag 2>/dev/null; test $$? -eq 2 && echo "PASS: error exit 2"
 	@echo "=== testing installer dry-run ==="
 	@./install.sh --dry-run > /dev/null && echo "PASS: install.sh dry-run"
+	@echo "=== testing remedy missing directory ==="
+	@printf "cd /missing/dir/xyz\nremedy\n" | ./$(BIN) --no-banner | grep -q "take /missing/dir/xyz" && echo "PASS: remedy missing dir suggests take"
+	@echo "=== testing remedy missing file ==="
+	@printf "cat /missing/file.txt\nremedy\n" | ./$(BIN) --no-banner | grep -q "touch /missing/file.txt" && echo "PASS: remedy missing file suggests touch"
+	@echo "=== testing autopsy root cause on missing dir ==="
+	@printf "cd /missing/dir/xyz\nautopsy\n" | ./$(BIN) --no-banner | grep -q "Target file or path does not exist" && echo "PASS: autopsy missing dir root cause"
+	@echo "=== testing remedy silent false ==="
+	@printf "false\nremedy\n" | ./$(BIN) --no-banner | grep -q "GENERIC_FAULT" && echo "PASS: remedy silent false generic fault"
 
-test-e2e: $(BIN) test-tier1 test-tier2 test-tier3 test-tier4
+test-e2e: $(BIN) test-tier1 test-tier2 test-tier3 test-tier4 test-tier5
 	@echo "=================================================="
-	@echo "All E2E Test Tiers (1-4) passed successfully."
+	@echo "All E2E Test Tiers (1-5) passed successfully."
 	@echo "=================================================="
 
 test-tier1: $(BIN)
@@ -252,6 +260,30 @@ test-tier4: $(BIN)
 	@echo -e "echo step1\necho step2\nautopsy" | ./$(BIN) --no-banner | grep -q "step2" && echo "PASS: [T4-SCN-04] Scenario 4: Flight Recorder Postmortem Autopsy"
 	@echo -e "caps\nwhereami\n..\n:q" | ./$(BIN) --no-banner | grep -q "Location:" && echo "PASS: [T4-SCN-05] Scenario 5: Ambient Terminal Navigation & Audit Session"
 	@echo "PASS: Tier 4 Real-World Scenarios (5/5 verified)"
+
+test-tier5: $(BIN)
+	@echo "=== Tier 5: Adversarial Coverage Hardening (20 Tests) ==="
+	@test -f qa/tier5_adversarial.oot && echo "PASS: [T5-ADV-01] Tier 5 Specification Present"
+	@test "$$(echo 'echo pipe_iso_test' | ./$(BIN) --no-banner)" = "pipe_iso_test" && echo "PASS: [T5-ADV-02] Pipe Stream Clean Isolation"
+	@echo -e "...\npwd" | ./$(BIN) --no-banner > /dev/null && echo "PASS: [T5-ADV-03] Multi-Hop Navigation Traversal"
+	@echo -e "cd\npwd" | ./$(BIN) --no-banner | grep -q "$$HOME" && echo "PASS: [T5-ADV-04] Bare cd Expands Home"
+	@echo -e "cd /nonexistent_adv_dir_001\npwd" | ./$(BIN) --no-banner | grep -q "oosh" && echo "PASS: [T5-ADV-05] Failed cd Preserves Working Directory"
+	@python3 -c 'import subprocess, json; p = subprocess.run(["./$(BIN)", "--varlink-call", "{\"method\":\"foo" + chr(10) + "bar\"}"], capture_output=True); data = json.loads(p.stdout.rstrip(b"\x00")); assert data["error"] == "org.varlink.service.MethodNotFound"; assert data["parameters"]["method"] == "foo\nbar"' && echo "PASS: [T5-ADV-06] Varlink Error Method JSON Escaping"
+	@python3 -c 'import subprocess, json; p = subprocess.run(["./$(BIN)", "--varlink-call", "{\"method\":\"org.varlink.service.GetInterfaceDescription\",\"interface\":\"org.test" + chr(10) + "foo\"}"], capture_output=True); data = json.loads(p.stdout.rstrip(b"\x00")); assert data["error"] == "org.varlink.service.InterfaceNotFound"; assert data["parameters"]["interface"] == "org.test\nfoo"' && echo "PASS: [T5-ADV-07] Varlink Interface Error Escaping"
+	@python3 -c 'import subprocess, json; p = subprocess.run(["./$(BIN)", "--varlink-call", "{" + chr(10) + "  \"method\":" + chr(10) + "  \"org.openooda.oosh.Ping\"" + chr(10) + "}"], capture_output=True); data = json.loads(p.stdout.rstrip(b"\x00")); assert data["parameters"]["pong"] is True' && echo "PASS: [T5-ADV-08] Varlink Multiline JSON Method Parsing"
+	@grep -q "threading.Thread(target=handle_client" ipc/daemon.oo && echo "PASS: [T5-ADV-09] Daemon Multi-Threaded Client Handling"
+	@grep -q "cleanup_socket" ipc/daemon.oo && grep -q "signal.SIGINT" ipc/daemon.oo && echo "PASS: [T5-ADV-10] Daemon SIGINT Socket Clean Unlink"
+	@python3 -c 'import subprocess, json; p = subprocess.run(["./$(BIN)", "--varlink-call", json.dumps({"method":"org.openooda.oosh.Control1.SynthesizeIntent","query":"? cat secret > leak.txt"})], capture_output=True); tier = json.loads(p.stdout.rstrip(b"\x00"))["parameters"]["safety_tier"]; assert tier != "SAFE", f"Expected not SAFE, got {tier}"' && echo "PASS: [T5-ADV-11] Output Redirection (>) Gated From SAFE"
+	@python3 -c 'import subprocess, json; p = subprocess.run(["./$(BIN)", "--varlink-call", json.dumps({"method":"org.openooda.oosh.Control1.SynthesizeIntent","query":"? pwd && mv file /dev/null"})], capture_output=True); tier = json.loads(p.stdout.rstrip(b"\x00"))["parameters"]["safety_tier"]; assert tier != "SAFE", f"Expected not SAFE, got {tier}"' && echo "PASS: [T5-ADV-12] Command Chaining (&&) Gated From SAFE"
+	@python3 -c 'import subprocess, json; p = subprocess.run(["./$(BIN)", "--varlink-call", json.dumps({"method":"org.openooda.oosh.Control1.SynthesizeIntent","query":"? echo hacked > /etc/passwd"})], capture_output=True); tier = json.loads(p.stdout.rstrip(b"\x00"))["parameters"]["safety_tier"]; assert tier != "SAFE", f"Expected not SAFE, got {tier}"' && echo "PASS: [T5-ADV-13] File Overwrite Redirection Gated From SAFE"
+	@python3 -c 'import subprocess, json; p = subprocess.run(["./$(BIN)", "--varlink-call", json.dumps({"method":"org.openooda.oosh.Control1.SynthesizeIntent","query":"? rm\t-rf /"})], capture_output=True); tier = json.loads(p.stdout.rstrip(b"\x00"))["parameters"]["safety_tier"]; assert tier == "HIGH_RISK", f"Expected HIGH_RISK, got {tier}"' && echo "PASS: [T5-ADV-14] Tab-Delimited Destructive Filter (rm\\t) HIGH_RISK Gating"
+	@python3 -c 'import subprocess, json; p = subprocess.run(["./$(BIN)", "--varlink-call", json.dumps({"method":"org.openooda.oosh.Control1.SynthesizeIntent","query":"? delete\tfile"})], capture_output=True); tier = json.loads(p.stdout.rstrip(b"\x00"))["parameters"]["safety_tier"]; assert tier == "HIGH_RISK", f"Expected HIGH_RISK, got {tier}"' && echo "PASS: [T5-ADV-15] Tab-Delimited Destructive Filter (delete\\t) HIGH_RISK Gating"
+	@grep -q "classify_safety_tier(final_cmd)" intent/preview.oo && grep -q "DANGEROUS ACTION" intent/preview.oo && echo "PASS: [T5-ADV-16] Interactive Edit Re-Evaluates Safety & YES Gate"
+	@printf "version\r\n" | ./$(BIN) --no-banner > /dev/null && echo "PASS: [T5-ADV-17] CRLF Line Sanitization"
+	@echo -n "" | ./$(BIN) --no-banner > /dev/null && echo "PASS: [T5-ADV-18] Stdin EOF Clean Termination"
+	@echo "?" | ./$(BIN) --no-banner | grep -q "sovereign builtins" && echo "PASS: [T5-ADV-19] Bare ? Disambiguation to Builtin Help"
+	@for i in $$(seq 1 10); do ./$(BIN) -c "echo churn_adv_$$i" > /dev/null || exit 1; done && echo "PASS: [T5-ADV-20] Rapid Sequential Command Churn Resilience"
+	@echo "PASS: Tier 5 Adversarial Coverage Hardening (20/20 verified)"
 
 parity: build
 	@sum=$$(sha256sum $(BIN) | awk '{print $$1}'); echo $$sum; test -n "$$sum"

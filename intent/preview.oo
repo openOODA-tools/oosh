@@ -1,0 +1,172 @@
+// # Intent Preview Card & Interactive Prompt Engine
+//
+// Logline: Formats 68-col cyberpunk preview cards, audits intent reasoning, and handles [Y/n/e/?] execution prompts.
+//
+// Setup: Uses FsReadCap and ProcessCap. Gated by ui_is_interactive to prevent hangs during automated pipes.
+//
+// Beats:
+//   1. Render 68-col double-lined preview card with Os rune (ᚩ) and neon safety badge.
+//   2. Format detailed reasoning audit card for the '?' prompt explanation channel.
+//   3. Gate non-interactive execution (test -t 0) to ensure automated test suites never block.
+//   4. Execute interactive [Y/n/e/?] loop: Y/Enter executes, n aborts, e edits, ? explains, and YES confirms high-risk.
+
+import "ui/palette.oo";
+import "ui/card.oo";
+import "ui/anchor.oo";
+import "safety.oo";
+import "scanner.oo";
+import "context.oo";
+import "synthesize.oo";
+
+pub type IntentPromptAction = struct {
+    should_execute: Bool,
+    command_to_run: String,
+    was_cancelled: Bool
+};
+
+fn safe_trunc(s: String, max_chars: Int) -> String {
+    if chars_len(s) <= max_chars { return s; }
+    return str_slice(s, 0, max_chars);
+}
+
+pub fn read_prompt_line(fs_r: &FsReadCap) -> String {
+    let mut buf: String = "";
+    while true {
+        let cr: Result[String, String] = oo_read_stdin_chunk(fs_r, 100);
+        if cr.is_err() {
+            let e: String = match cr { Ok(_) => "", Err(m) => m };
+            if e != "timeout" {
+                return str_trim(buf);
+            }
+        } else {
+            let chunk: String = match cr { Ok(s) => s, Err(_) => "" };
+            let n: Int = chars_len(chunk);
+            let mut i: Int = 0;
+            while i < n {
+                let ch: String = char_at(chunk, i);
+                if ch == "\n" {
+                    return str_trim(buf);
+                } else if ch != "\r" {
+                    buf = buf + ch;
+                }
+                i = i + 1;
+            }
+        }
+    }
+    return str_trim(buf);
+}
+
+pub fn render_intent_preview(raw_line: String, cwd: String) -> String {
+    return render_intent_card(raw_line, cwd);
+}
+
+pub fn render_intent_reasoning(raw_line: String, cwd: String, ctx: WorkspaceContext) -> String {
+    let q: IntentQuery = parse_intent_query(raw_line);
+    let cmd: String = synthesize_with_context(q.clean_query, ctx);
+    let exp: String = explain_command(cmd);
+    let tier: String = classify_safety_tier(cmd);
+    let s_badge: String = render_safety_badge(cmd);
+
+    let domain: String = if str_contains(cmd, "git") {
+        "Version Control System (Git)"
+    } else if str_contains(cmd, "make") || str_contains(cmd, "cargo") {
+        "Build & Verification Pipeline"
+    } else if str_contains(cmd, "find") || str_contains(cmd, "grep") {
+        "Filesystem Index & Search"
+    } else {
+        "POSIX Host Process Utility"
+    };
+
+    let impact: String = if tier == "HIGH_RISK" || tier == "DANGEROUS" {
+        "Destructive mutation / state deletion"
+    } else if tier == "MODERATE" || tier == "WARN" {
+        "Modifies filesystem or repository state"
+    } else {
+        "Read-only query; zero persistent side effects"
+    };
+
+    let top: String = card_top("ᚩ", "INTENT REASONING & SAFETY AUDIT");
+    let sec1: String = card_section("SYNTHESIS HEURISTICS");
+    let r_env: String = card_row("Query Envelope", "\"" + q.raw_query + "\"");
+    let r_dom: String = card_row("Domain Category", domain);
+    let r_act: String = card_row("Target Action", cmd);
+
+    let sec2: String = card_section("SAFETY CLASSIFICATION AUDIT");
+    let r_tier: String = card_row("Assigned Tier", s_badge);
+    let r_imp: String = card_row("State Impact", impact);
+    let r_perm: String = card_row("Security Scope", "Standard user privileges scoped to active cwd");
+
+    let sec3: String = card_section("POSIX ARGUMENT BREAKDOWN");
+    let r_sig: String = card_row("Command Signature", safe_trunc(cmd, 45));
+    let r_rat: String = card_row("Detailed Rationale", exp);
+
+    let bot: String = card_bottom("AUDIT COMPLETE");
+    return top + "\n" + sec1 + "\n" + r_env + "\n" + r_dom + "\n" + r_act + "\n" +
+           sec2 + "\n" + r_tier + "\n" + r_imp + "\n" + r_perm + "\n" +
+           sec3 + "\n" + r_sig + "\n" + r_rat + "\n" + bot;
+}
+
+pub fn prompt_intent_execution(fs_r: &FsReadCap, sys: &ProcessCap, raw_line: String, cwd: String) -> IntentPromptAction {
+    let ctx: WorkspaceContext = probe_workspace(sys, cwd);
+    let q: IntentQuery = parse_intent_query(raw_line);
+    let cmd: String = synthesize_with_context(q.clean_query, ctx);
+    let tier: String = classify_safety_tier(cmd);
+
+    // Print visual 68-col card
+    println(render_intent_card_ctx(raw_line, cwd, ctx));
+
+    // Non-interactive pipe gating (test -t 0): never block automated tests or pipes
+    if !ui_is_interactive(sys) {
+        return IntentPromptAction { should_execute: false, command_to_run: "", was_cancelled: false };
+    }
+
+    let cyan: String = cyber_cyan();
+    let amber: String = cyber_amber();
+    let red: String = cyber_red();
+    let rst: String = cyber_reset();
+
+    while true {
+        print(cyan + "Execute synthesized command? " + amber + "[Y/n/e/?] " + rst);
+        let choice: String = read_prompt_line(fs_r);
+
+        if choice == "y" || choice == "Y" || choice == "" {
+            // High-risk safety gating: require explicit YES confirmation
+            if tier == "HIGH_RISK" || tier == "DANGEROUS" {
+                print(red + "⚠️  DANGEROUS ACTION: Confirm execution by typing 'YES': " + rst);
+                let conf: String = read_prompt_line(fs_r);
+                if conf == "YES" {
+                    return IntentPromptAction { should_execute: true, command_to_run: cmd, was_cancelled: false };
+                }
+                println(amber + "✦ Dangerous execution cancelled (confirmation was '" + conf + "', expected 'YES')." + rst);
+                return IntentPromptAction { should_execute: false, command_to_run: "", was_cancelled: true };
+            }
+            return IntentPromptAction { should_execute: true, command_to_run: cmd, was_cancelled: false };
+        } else if choice == "n" || choice == "N" {
+            println(amber + "✦ Execution cancelled by user." + rst);
+            return IntentPromptAction { should_execute: false, command_to_run: "", was_cancelled: true };
+        } else if choice == "e" || choice == "E" {
+            print(cyan + "Edit command [" + cmd + "]: " + rst);
+            let edited: String = read_prompt_line(fs_r);
+            let final_cmd: String = if edited == "" { cmd } else { edited };
+            let edited_tier: String = classify_safety_tier(final_cmd);
+            if edited_tier == "HIGH_RISK" || edited_tier == "DANGEROUS" {
+                print(red + "⚠️  DANGEROUS ACTION: Confirm execution by typing 'YES': " + rst);
+                let conf: String = read_prompt_line(fs_r);
+                if conf == "YES" {
+                    return IntentPromptAction { should_execute: true, command_to_run: final_cmd, was_cancelled: false };
+                }
+                println(amber + "✦ Dangerous execution cancelled (confirmation was '" + conf + "', expected 'YES')." + rst);
+                return IntentPromptAction { should_execute: false, command_to_run: "", was_cancelled: true };
+            }
+            return IntentPromptAction { should_execute: true, command_to_run: final_cmd, was_cancelled: false };
+        } else if choice == "?" {
+            println(render_intent_reasoning(raw_line, cwd, ctx));
+            // Loop continues to re-prompt [Y/n/e/?]
+        } else {
+            println(amber + "✦ Cancelled (unrecognized option '" + choice + "')." + rst);
+            return IntentPromptAction { should_execute: false, command_to_run: "", was_cancelled: true };
+        }
+    }
+
+    return IntentPromptAction { should_execute: false, command_to_run: "", was_cancelled: true };
+}

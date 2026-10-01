@@ -1,83 +1,67 @@
-// # Active Failure Diagnostics & Recovery Engine
+// # Active Failure Diagnostics & Remedy Engine
 //
 // Logline: Analyzes failure envelopes to generate targeted root cause diagnostics and remediation commands.
 //
-// Setup: Inspects session FlightRecord state and produces formatted recovery cards.
+// Setup: Inspects session FlightRecord and FailureEnvelope, renders 68-col Algiz card.
 //
 // Beats:
 //   1. Inspect failure envelope from active flight recorder.
-//   2. Pattern match error stream to identify root failure cause.
-//   3. Synthesize actionable remediation commands and guidance card.
+//   2. Route failure parameters through diagnostic rules engine (command not found, permission, git, build).
+//   3. Synthesize actionable remediation commands and 68-col Algiz (ᛉ) guidance card.
 
 import "ui/palette.oo";
 import "ui/card.oo";
 import "envelope.oo";
+import "rules.oo";
 
-fn safe_str_prefix(s: String, max_chars: Int) -> String {
-    if chars_len(s) <= max_chars {
-        return s;
-    }
+fn safe_prefix(s: String, max_chars: Int) -> String {
+    if chars_len(s) <= max_chars { return s; }
     return str_slice(s, 0, max_chars);
 }
 
-pub fn diagnose_failure(rec: FlightRecord) -> String {
-    let top: String = card_top("✦", "OOSH REMEDY FAILURE DIAGNOSTICS");
+pub fn render_remedy_card(has_failed: Bool, cmd: String, exit_code: Int, err_str: String, cwd: String) -> String {
+    let top: String = card_top("ᛉ", "OOSH REMEDY FAILURE DIAGNOSTICS");
 
-    if !rec.has_failed {
+    if !has_failed {
         let r1: String = card_row("Diagnostic", "No active failure trace detected in current scope.");
         let r2: String = card_row("Status", "Nominal operating envelope. Zero faults detected.");
-        let r3: String = card_row("Hint", "If a command fails, invoke 'remedy' immediately to diagnose.");
+        let r3: String = card_row("Hint", "If a command fails, invoke 'remedy' or 'fix' immediately.");
         let bot: String = card_bottom("ENVELOPE NOMINAL");
         return top + "\n" + r1 + "\n" + r2 + "\n" + r3 + "\n" + bot;
     }
 
-    let code_str: String = rec.last_exit_code.to_string();
-    let err_str: String = rec.last_stderr;
+    let code_str: String = exit_code.to_string();
+    let diag: DiagnosticResult = match_failure_rules(cmd, exit_code, err_str, cwd);
 
     let sec1: String = card_section("FAULT ENVELOPE");
-    let r_cmd: String = card_row("Faulted Command", rec.last_failed_cmd);
+    let r_cmd: String = card_row("Faulted Command", safe_prefix(cmd, 50));
     let r_rc: String = card_row_colored("Exit Code", code_str, cyber_red());
-    let r_err: String = card_row("Captured Stream", safe_str_prefix(err_str, 100));
+    let r_err_val: String = if err_str == "" { "(no captured stream)" } else { safe_prefix(err_str, 50) };
+    let r_err: String = card_row("Captured Stream", r_err_val);
 
     let sec2: String = card_section("ROOT CAUSE ANALYSIS");
+    let r_cat: String = card_row_colored("Category", diag.category, cyber_purple());
+    let r_diag: String = card_row_colored("Diagnosis", diag.summary, cyber_amber());
+    let r_exp: String = card_row("Reasoning", diag.explanation);
+
     let sec3: String = card_section("PROPOSED REMEDIATION");
+    let r_act: String = card_row_colored("Actionable", diag.actionable_cmd, cyber_green());
+    let r_sec: String = card_row_colored("Alternative", diag.secondary_cmd, cyber_cyan());
 
-    let is_not_found: Bool = str_contains(err_str, "not found") || str_contains(err_str, "not recognized") || rec.last_exit_code == 127;
-    let is_perm_denied: Bool = str_contains(err_str, "Permission denied") || rec.last_exit_code == 126;
-    let is_no_file: Bool = str_contains(err_str, "No such file or directory");
-    let is_no_git: Bool = str_contains(err_str, "not a git repository");
-    let is_conn_refused: Bool = str_contains(err_str, "Connection refused") || str_contains(err_str, "connect");
-
-    let mut diag: String = "";
-    let mut fix: String = "";
-
-    if is_not_found {
-        diag = card_row_colored("Diagnosis", "Executable binary not found in PATH or command mistyped.", cyber_amber());
-        fix = card_row_colored("Remedy 1", "Verify command name or search builtins with 'help'", cyber_green()) + "\n" +
-              card_row_colored("Remedy 2", "Install binary or check host environment variables", cyber_cyan());
-    } else if is_perm_denied {
-        diag = card_row_colored("Diagnosis", "Insufficient execution permissions or missing file execute bit.", cyber_amber());
-        fix = card_row_colored("Remedy 1", "Grant execute permissions: chmod +x <target>", cyber_green()) + "\n" +
-              card_row_colored("Remedy 2", "Inspect capability tokens with 'caps'", cyber_cyan());
-    } else if is_no_file {
-        diag = card_row_colored("Diagnosis", "Target file or directory path does not exist in current context.", cyber_amber());
-        fix = card_row_colored("Remedy 1", "List directory contents with 'ls -la' to verify path", cyber_green()) + "\n" +
-              card_row_colored("Remedy 2", "Create parent directories recursively with 'mkdir -p'", cyber_cyan());
-    } else if is_no_git {
-        diag = card_row_colored("Diagnosis", "Current working directory is not inside a git repository.", cyber_amber());
-        fix = card_row_colored("Remedy 1", "Initialize new repository with 'git init'", cyber_green()) + "\n" +
-              card_row_colored("Remedy 2", "Navigate to parent tree with '..' or inspect with 'whereami'", cyber_cyan());
-    } else if is_conn_refused {
-        diag = card_row_colored("Diagnosis", "IPC daemon socket or network target is inactive or unreachable.", cyber_amber());
-        fix = card_row_colored("Remedy 1", "Check daemon service status: systemctl status syntropd", cyber_green()) + "\n" +
-              card_row_colored("Remedy 2", "Verify Varlink IPC socket path in /run/oosh/control.sock", cyber_cyan());
-    } else {
-        diag = card_row_colored("Diagnosis", "Command exited with non-zero status code: " + code_str, cyber_amber());
-        fix = card_row_colored("Remedy 1", "Re-run command with profiling: time " + rec.last_failed_cmd, cyber_green()) + "\n" +
-              card_row_colored("Remedy 2", "Inspect full crash envelope with 'autopsy'", cyber_cyan());
-    }
-
-    let bot: String = card_bottom("DIAGNOSTIC READY");
+    let bot: String = card_bottom("REMEDY READY");
     return top + "\n" + sec1 + "\n" + r_cmd + "\n" + r_rc + "\n" + r_err + "\n" +
-           sec2 + "\n" + diag + "\n" + sec3 + "\n" + fix + "\n" + bot;
+           sec2 + "\n" + r_cat + "\n" + r_diag + "\n" + r_exp + "\n" +
+           sec3 + "\n" + r_act + "\n" + r_sec + "\n" + bot;
+}
+
+pub fn diagnose_failure(rec: FlightRecord) -> String {
+    return render_remedy_card(rec.has_failed, rec.last_failed_cmd, rec.last_exit_code, rec.last_stderr, "");
+}
+
+pub fn diagnose_failure_cwd(rec: FlightRecord, cwd: String) -> String {
+    return render_remedy_card(rec.has_failed, rec.last_failed_cmd, rec.last_exit_code, rec.last_stderr, cwd);
+}
+
+pub fn diagnose_envelope(env: FailureEnvelope) -> String {
+    return render_remedy_card(env.has_failed, env.cmd, env.exit_code, env.output, env.cwd);
 }

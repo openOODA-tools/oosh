@@ -2,86 +2,192 @@
 //
 // Logline: Intercepts natural language queries and synthesizes concrete POSIX shell commands.
 //
-// Setup: Pattern matches intent verbs against system, git, search, and build domains.
+// Setup: Pattern matches intent verbs against system, git, search, and workspace markers.
 //
 // Beats:
 //   1. Strip intent channel prefixes and normalize natural language query.
-//   2. Synthesize concrete POSIX shell commands and explanatory rationale.
+//   2. Synthesize context-aware POSIX shell commands and explanatory rationale.
 //   3. Render cyberpunk intent presentation card with safety badge.
 
 import "ui/anchor.oo";
 import "safety.oo";
-
-pub fn strip_intent_prefix(line: String) -> String {
-    let t: String = str_trim(line);
-    if str_starts_with(t, "??") { return str_trim(str_slice(t, 2, chars_len(t))); }
-    if str_starts_with(t, "?") { return str_trim(str_slice(t, 1, chars_len(t))); }
-    if str_starts_with(t, "ai ") { return str_trim(str_slice(t, 3, chars_len(t))); }
-    if str_starts_with(t, "ask ") { return str_trim(str_slice(t, 4, chars_len(t))); }
-    if str_starts_with(t, "do ") { return str_trim(str_slice(t, 3, chars_len(t))); }
-    if str_starts_with(t, "how ") { return str_trim(str_slice(t, 4, chars_len(t))); }
-    if str_starts_with(t, "why ") { return str_trim(str_slice(t, 4, chars_len(t))); }
-    if str_starts_with(t, "please ") { return str_trim(str_slice(t, 7, chars_len(t))); }
-    return t;
-}
+import "context.oo";
+import "scanner.oo";
 
 pub fn synthesize_command(q: String) -> String {
-    let query: String = str_trim(q);
+    return synthesize_with_context(q, workspace_context_empty());
+}
+
+pub fn synthesize_with_context(q: String, ctx: WorkspaceContext) -> String {
+    let raw_trimmed: String = str_trim(q);
+    let query: String = to_lower_str(raw_trimmed);
+
+    // 1. Destructive Git & reset operations (prioritized before generic queries)
+    if str_contains(query, "reset hard") || str_contains(query, "hard reset") || str_contains(query, "reset --hard") {
+        return "git reset --hard";
+    }
+
+    // 2. Destructive branch operations (prioritized before generic 'branch' query)
+    if str_contains(query, "branch") && (str_contains(query, "delete") || str_contains(query, "remove") || str_contains(query, "drop") || str_contains(query, "-d")) {
+        let b_idx: Int = str_index_of(query, "branch ");
+        if b_idx >= 0 {
+            let rest: String = str_slice(raw_trimmed, b_idx + 7, chars_len(raw_trimmed));
+            let b_target: String = str_trim(rest);
+            if str_starts_with(b_target, "-d ") || str_starts_with(b_target, "-D ") {
+                let stripped: String = str_trim(str_slice(b_target, 3, chars_len(b_target)));
+                if stripped != "" {
+                    return "git branch -D " + stripped;
+                }
+            } else if b_target != "" {
+                return "git branch -D " + b_target;
+            }
+        }
+        return "git branch -D";
+    }
+
+    // 3. Destructive file operations (prioritized before 'test', 'files', '.py', etc.)
+    if str_starts_with(query, "rm ") || str_contains(query, " rm ") ||
+       str_starts_with(query, "rm -") || str_contains(query, " rm -") ||
+       str_starts_with(query, "rmdir ") || str_contains(query, " rmdir ") ||
+       str_starts_with(query, "unlink ") || str_contains(query, " unlink ") {
+        return raw_trimmed;
+    }
+
+    if str_contains(query, "remove ") || str_contains(query, "delete ") ||
+       query == "remove" || query == "delete" {
+        let r_idx: Int = str_index_of(query, "remove ");
+        let d_idx: Int = str_index_of(query, "delete ");
+        let v_idx: Int = if r_idx >= 0 { r_idx + 7 } else if d_idx >= 0 { d_idx + 7 } else { -1 };
+        if v_idx >= 0 {
+            let rest: String = str_trim(str_slice(raw_trimmed, v_idx, chars_len(raw_trimmed)));
+            let rest_lower: String = to_lower_str(rest);
+            if str_starts_with(rest_lower, "file ") {
+                let f_target: String = str_trim(str_slice(rest, 5, chars_len(rest)));
+                if f_target != "" {
+                    return "rm " + f_target;
+                }
+            } else if str_starts_with(rest_lower, "files ") {
+                let f_target: String = str_trim(str_slice(rest, 6, chars_len(rest)));
+                if f_target != "" {
+                    return "rm " + f_target;
+                }
+            } else if rest != "" {
+                return "rm " + rest;
+            }
+        }
+        return "rm";
+    }
+
+    // 4. Process termination operations (prioritized before 'test', 'run', etc.)
+    if str_starts_with(query, "kill ") || str_contains(query, " kill ") ||
+       str_starts_with(query, "kill -") || str_contains(query, " kill -") ||
+       str_starts_with(query, "pkill ") || str_contains(query, " pkill ") ||
+       str_starts_with(query, "killall ") || str_contains(query, " killall ") {
+        return raw_trimmed;
+    }
+
+    // 5. Database & table drop operations
+    if str_starts_with(query, "drop ") || str_contains(query, " drop ") {
+        return raw_trimmed;
+    }
+
+    // Git operations (read-only / non-destructive)
     if str_contains(query, "undo") && str_contains(query, "commit") { return "git reset --soft HEAD~1"; }
     if str_contains(query, "recent commit") || str_contains(query, "commit log") || str_contains(query, "commits") { return "git log --oneline -n 10"; }
     if str_contains(query, "discard") || str_contains(query, "revert") { return "git restore ."; }
     if str_contains(query, "branch") { return "git branch -a"; }
-    if str_contains(query, "git status") || str_contains(query, "changed files") { return "git status -s"; }
+    if str_contains(query, "git status") || str_contains(query, "changed files") || (str_contains(query, "status") && !str_contains(query, "system")) { return "git status -s"; }
+    if str_contains(query, "git diff") || (str_contains(query, "diff") && !str_contains(query, "different")) { return "git diff"; }
 
+    // Build & Compile (context-aware)
+    if str_contains(query, "build") || str_contains(query, "compile") { return context_build_cmd(ctx); }
+
+    // Test (context-aware)
+    if str_contains(query, "test") { return context_test_cmd(ctx); }
+
+    // Check & Verify & Lint (context-aware)
+    if str_contains(query, "verify") || str_contains(query, "check") || str_contains(query, "lint") { return context_check_cmd(ctx); }
+
+    // Clean (context-aware)
+    if str_contains(query, "clean") { return context_clean_cmd(ctx); }
+
+    // Run / Start (context-aware)
+    if str_contains(query, "run") || str_contains(query, "start") { return context_run_cmd(ctx); }
+
+    // Line counting / LOC (context-aware)
+    if str_contains(query, "lines of code") || str_contains(query, "loc") || str_contains(query, "count lines") { return context_loc_cmd(ctx); }
+
+    // File searching (context-aware)
     if str_contains(query, "python") || str_contains(query, ".py") { return "find . -name \"*.py\""; }
     if str_contains(query, "rust") || str_contains(query, ".rs") { return "find . -name \"*.rs\""; }
     if str_contains(query, "ooda") || str_contains(query, ".oo") { return "find . -name \"*.oo\""; }
     if str_contains(query, "large file") || str_contains(query, "big file") { return "find . -type f -size +50M"; }
     if str_contains(query, "grep") || str_contains(query, "search for") { return "grep -rn \"TODO\" ."; }
-    if str_contains(query, "lines of code") || str_contains(query, "loc") || str_contains(query, "count lines") { return "find . -name \"*.oo\" | xargs wc -l"; }
+    if str_contains(query, "find") || str_contains(query, "search") { return context_search_cmd(ctx, query); }
 
+    // System resources & network
     if str_contains(query, "memory") || str_contains(query, "ram") { return "free -h"; }
     if str_contains(query, "disk") || str_contains(query, "storage") || str_contains(query, "free space") { return "df -h ."; }
     if str_contains(query, "top") || str_contains(query, "cpu") { return "ps aux --sort=-%cpu | head -10"; }
-    if str_contains(query, "port") || str_contains(query, "listen") { return "ss -tulpn 2>/dev/null || netstat -tulpn"; }
+    if str_contains(query, "port") || str_contains(query, "listen") || str_contains(query, "network") { return "ss -tulpn 2>/dev/null || netstat -tulpn"; }
     if str_contains(query, "uptime") || str_contains(query, "load") { return "uptime"; }
+    if str_contains(query, "ip") || str_contains(query, "address") { return "ip -br addr 2>/dev/null || ifconfig"; }
+    if str_contains(query, "who") || str_contains(query, "user") { return "whoami"; }
 
-    if str_contains(query, "build") || str_contains(query, "compile") { return "make all"; }
-    if str_contains(query, "test") { return "make test"; }
-    if str_contains(query, "verify") || str_contains(query, "check") { return "make verify"; }
-    if str_contains(query, "clean") { return "make clean"; }
-
+    // Listing
     if str_contains(query, "list") || str_contains(query, "files") { return "ls -la"; }
-    return query;
+
+    return raw_trimmed;
 }
 
 pub fn explain_command(cmd: String) -> String {
+    if str_starts_with(cmd, "git reset --hard") { return "Discards all uncommitted changes and resets repository state to HEAD."; }
     if str_starts_with(cmd, "git reset --soft") { return "Rewinds HEAD by one commit while preserving working tree changes staged in index."; }
     if str_starts_with(cmd, "git log") { return "Displays the 10 most recent commits in compact single-line format."; }
     if str_starts_with(cmd, "git restore") { return "Discards uncommitted working tree modifications across all tracked files."; }
+    if str_starts_with(cmd, "git branch -D") || str_starts_with(cmd, "git branch -d") { return "Forcefully deletes the specified git branch from local repository."; }
     if str_starts_with(cmd, "git branch") { return "Lists all local and remote branches in the current repository."; }
     if str_starts_with(cmd, "git status") { return "Shows concise short status of modified, untracked, and staged files."; }
+    if str_starts_with(cmd, "git diff") { return "Inspects unstaged file modifications across the active working tree."; }
+    if str_starts_with(cmd, "rm ") || str_starts_with(cmd, "rm -") || str_starts_with(cmd, "unlink ") { return "Removes specified files or directory hierarchies from the filesystem."; }
+    if str_starts_with(cmd, "kill ") || str_starts_with(cmd, "pkill ") || str_starts_with(cmd, "killall ") { return "Sends termination signal to specified running processes."; }
+    if str_starts_with(cmd, "cargo build") { return "Compiles the active Rust package and dependencies with cargo."; }
+    if str_starts_with(cmd, "cargo test") { return "Executes automated unit and integration tests with cargo."; }
+    if str_starts_with(cmd, "cargo check") { return "Analyzes Rust packages for compilation errors without generating binaries."; }
+    if str_starts_with(cmd, "cargo run") { return "Compiles and executes the binary artifact of the active Rust package."; }
+    if str_starts_with(cmd, "cargo clean") { return "Removes generated build artifacts from target directory."; }
+    if str_starts_with(cmd, "npm run build") { return "Executes the Node.js production build script defined in package.json."; }
+    if str_starts_with(cmd, "npm test") { return "Executes test runner scripts defined in package.json."; }
+    if str_starts_with(cmd, "npm start") { return "Starts the Node.js application service defined in package.json."; }
+    if str_starts_with(cmd, "pytest") { return "Discovers and runs Python test suites using the pytest framework."; }
+    if str_starts_with(cmd, "make all") { return "Compiles binary and runs the complete verification gate."; }
+    if str_starts_with(cmd, "make test") { return "Executes automated test harness against built artifacts."; }
+    if str_starts_with(cmd, "make verify") { return "Validates source compliance, line caps, and compiler checks."; }
+    if str_starts_with(cmd, "make clean") { return "Removes compiled build artifacts and temporary cache directories."; }
     if str_starts_with(cmd, "find . -name \"*.py\"") { return "Recursively locates all Python source files (.py) under active working directory."; }
+    if str_starts_with(cmd, "find . -name \"*.rs\"") { return "Recursively locates all Rust source files (.rs) under active working directory."; }
     if str_starts_with(cmd, "find . -name \"*.oo\"") { return "Recursively locates all openOODA source files (.oo) under active working directory."; }
     if str_starts_with(cmd, "find . -type f -size +50M") { return "Finds all regular files larger than 50 megabytes in the current filesystem tree."; }
     if str_starts_with(cmd, "free -h") { return "Displays total, used, and available physical memory and swap in human-readable units."; }
     if str_starts_with(cmd, "df -h .") { return "Displays mounted filesystem disk space allocation for active volume."; }
     if str_starts_with(cmd, "ps aux") { return "Lists the top 10 processes consuming highest CPU percentage."; }
-    if str_starts_with(cmd, "make all") { return "Compiles binary and runs the complete verification gate."; }
-    if str_starts_with(cmd, "make test") { return "Executes automated test harness against built artifacts."; }
+    if str_starts_with(cmd, "ss -tulpn") { return "Displays active listening TCP/UDP sockets and network bindings."; }
+    if str_starts_with(cmd, "ls -la") { return "Lists directory entries including hidden files with detailed metadata."; }
     return "Executes POSIX host process scoped to the active working directory.";
 }
 
-pub fn render_intent_card(raw_line: String, cwd: String) -> String {
-    let q: String = strip_intent_prefix(raw_line);
-    let cmd: String = synthesize_command(q);
+pub fn render_intent_card_ctx(raw_line: String, cwd: String, ctx: WorkspaceContext) -> String {
+    let q: IntentQuery = parse_intent_query(raw_line);
+    let cmd: String = synthesize_with_context(q.clean_query, ctx);
     let exp: String = explain_command(cmd);
     let s_badge: String = render_safety_badge(cmd);
 
-    let top: String = ui_card_top("✦", "INTENT CHANNEL — SYNTHESIS ENGINE");
+    let title: String = if q.is_deep { "INTENT CHANNEL — DEEP REASONING" } else { "INTENT CHANNEL — SYNTHESIS ENGINE" };
+    let top: String = ui_card_top("ᚩ", title);
     let sec1: String = ui_card_section("QUERY ENVELOPE");
-    let r_q: String = ui_card_row("Intent Channel", "\"" + q + "\"");
-    let r_cwd: String = ui_card_row("Context Directory", cwd);
+    let r_p: String = ui_card_row("Query Prefix", q.prefix);
+    let r_q: String = ui_card_row("Intent Channel", "\"" + q.raw_query + "\"");
+    let r_cwd: String = ui_card_row("Context Scope", cwd + " [" + ctx.primary_ecosystem + "]");
 
     let sec2: String = ui_card_section("SYNTHESIZED POSIX COMMAND");
     let r_cmd: String = ui_card_row("Synthesized", cmd);
@@ -89,11 +195,20 @@ pub fn render_intent_card(raw_line: String, cwd: String) -> String {
     let r_exp: String = ui_card_row("Rationale", exp);
 
     let sec3: String = ui_card_section("EXECUTION DIRECTIVE");
-    let r_stat: String = ui_card_row("Engine State", "[syntropd offline] Pure deterministic synthesis active.");
-    let r_run: String = ui_card_row("To Execute", "Run: " + cmd);
+    let r_stat: String = ui_card_row("Engine State", "[syntropd offline] Context-aware deterministic synthesis active.");
+    let r_run: String = ui_card_row("Target Action", cmd);
 
     let bot: String = ui_card_bottom("INTENT READY");
-    return top + "\n" + sec1 + "\n" + r_q + "\n" + r_cwd + "\n" +
+    return top + "\n" + sec1 + "\n" + r_p + "\n" + r_q + "\n" + r_cwd + "\n" +
            sec2 + "\n" + r_cmd + "\n" + r_safe + "\n" + r_exp + "\n" +
            sec3 + "\n" + r_stat + "\n" + r_run + "\n" + bot;
+}
+
+pub fn render_intent_card(raw_line: String, cwd: String) -> String {
+    return render_intent_card_ctx(raw_line, cwd, workspace_context_empty());
+}
+
+pub fn render_intent_card_sys(sys: &ProcessCap, raw_line: String, cwd: String) -> String {
+    let ctx: WorkspaceContext = probe_workspace(sys, cwd);
+    return render_intent_card_ctx(raw_line, cwd, ctx);
 }

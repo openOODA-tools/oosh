@@ -16,6 +16,7 @@ import "engine.oo";
 import "dispatch.oo";
 import "flight/anchor.oo";
 import "ipc/anchor.oo";
+import "ui/anchor.oo";
 
 fn print_help() {
     println("oosh — openOODA sovereign shell");
@@ -28,6 +29,7 @@ fn print_help() {
     println("      --no-banner        suppress startup banner");
     println("      --daemon           launch headless Varlink IPC control daemon");
     println("      --varlink          launch headless Varlink IPC control daemon");
+    println("      --varlink-daemon   launch headless Varlink IPC control daemon");
     println("      --varlink-call <s> execute single-shot Varlink IPC JSON call");
 }
 
@@ -44,7 +46,7 @@ fn validate_argv(args: List[String]) -> Result[String, String] {
             println("oosh " + oosh_version());
             return Ok("showed-version");
         }
-        if a == "--no-banner" || a == "--daemon" || a == "--varlink" {
+        if a == "--no-banner" || a == "--daemon" || a == "--varlink" || a == "--varlink-daemon" {
             i = i + 1;
         } else if a == "-c" {
             if i + 1 >= n {
@@ -89,7 +91,7 @@ pub fn main(bind: &BindCap, fs_r: &FsReadCap, sys: &ProcessCap, sys_cap: &SysCap
         if a == "--no-banner" {
             show_banner = false;
             i = i + 1;
-        } else if a == "--daemon" || a == "--varlink" {
+        } else if a == "--daemon" || a == "--varlink" || a == "--varlink-daemon" {
             show_banner = false;
             is_daemon = true;
             i = i + 1;
@@ -129,15 +131,21 @@ pub fn main(bind: &BindCap, fs_r: &FsReadCap, sys: &ProcessCap, sys_cap: &SysCap
         if str_trim(one_shot_cmd) == "" {
             return Ok(0);
         }
-        let res: DispatchResult = dispatch_line(sys, env, cwd, one_shot_cmd, rec);
+        let res: DispatchResult = dispatch_line(fs_r, sys, env, cwd, one_shot_cmd, rec);
+        if res.exit_code != 0 {
+            process_exit(res.exit_code);
+        }
         return Ok(res.exit_code);
     }
 
-    if show_banner {
+    if show_banner && ui_is_interactive(sys) {
         println(oosh_banner());
     }
 
     // Launch interactive OODA REPL engine
     let rc: Int = run_engine(fs_r, sys, env, time, bind, fs_w);
+    if rc != 0 {
+        process_exit(rc);
+    }
     return Ok(rc);
 }

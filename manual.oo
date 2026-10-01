@@ -59,14 +59,14 @@ pub fn print_context_help(raw_topic: String) {
         return;
     }
     if topic == "caps" || topic == "whoami" || topic == "perms" || topic == "tokens" {
-        println(ui_card_top("◈", "caps / perms / whoami"));
+        println(ui_card_top("ᛏ", "caps / perms / whoami"));
         println(ui_card_row("Summary", "Audits active openOODA unforgeable capability tokens and host identity."));
         println(ui_card_row("Aliases", "cap, capabilities, perms, permissions, tokens, authority, whoami"));
         println(ui_card_bottom("CAPABILITIES HELP"));
         return;
     }
     if topic == "status" || topic == "health" || topic == "info" {
-        println(ui_card_top("⚡", "status / health / info"));
+        println(ui_card_top("ᛟ", "status / health / info"));
         println(ui_card_row("Summary", "Displays node posture, active substrate, and syntropd link telemetry."));
         println(ui_card_row("Aliases", "stat, info, health, posture, ping, check, --status, -s"));
         println(ui_card_bottom("STATUS HELP"));
@@ -80,21 +80,34 @@ pub fn print_context_help(raw_topic: String) {
         return;
     }
     if topic == "remedy" || topic == "fix" || topic == "repair" {
-        println(ui_card_top("✦", "remedy / fix / repair"));
+        println(ui_card_top("ᛉ", "remedy / fix / repair"));
         println(ui_card_row("Summary", "Analyzes the flight recorder failure envelope and generates recovery commands."));
         println(ui_card_row("Aliases", "fix, repair, heal, patch, resolve"));
         println(ui_card_bottom("DIAGNOSTICS HELP"));
         return;
     }
+    if topic == "autopsy" || topic == "bb" || topic == "blackbox" || topic == "flight" || topic == "crash" {
+        println(ui_card_top("ᚺ", "autopsy / bb / blackbox"));
+        println(ui_card_row("Summary", "Renders flight recorder chronological timeline and failure postmortem."));
+        println(ui_card_row("Aliases", "bb, blackbox, flight, crash, postmortem"));
+        println(ui_card_bottom("BLACKBOX HELP"));
+        return;
+    }
     print_help_guide();
 }
 
-pub fn print_status(cwd: String) {
-    println(ui_card_top("⚡", "oosh node telemetry & posture"));
+pub fn print_status(sys: &ProcessCap, cwd: String) {
+    println(ui_card_top("ᛟ", "oosh node telemetry & posture"));
     println(ui_card_row("Mode", "Standalone Sovereign Shell"));
     println(ui_card_row("CWD", cwd));
     println(ui_card_row("Substrate", "openOODA native runtime (glibc x86_64)"));
-    println(ui_card_row("Syntropd", "Headless Varlink IPC Control Plane Ready"));
+    let pr: Result[String, String] = process_exec(sys, "test -d /run/syntrop && echo 1 || echo 0");
+    let has_syntrop: Bool = match pr { Ok(s) => str_trim(s) == "1", Err(_) => false };
+    if has_syntrop {
+        println(ui_card_row("Syntropd", "Mesh Linked (/run/syntrop: contextd, toold, sentry, runtimed)"));
+    } else {
+        println(ui_card_row("Syntropd", "Headless Varlink IPC Control Plane Ready"));
+    }
     println(ui_card_row("Latency", "< 1ms interactive dispatch"));
     println(ui_card_bottom("POSTURE NOMINAL"));
 }
@@ -102,7 +115,7 @@ pub fn print_status(cwd: String) {
 pub fn print_caps(sys: &ProcessCap) {
     let user_res: Result[String, String] = process_exec(sys, "id -un 2>/dev/null || whoami");
     let user_str: String = match user_res { Ok(u) => str_trim(u), Err(_) => "sovereign" };
-    println(ui_card_top("◈", "sovereign capability audit"));
+    println(ui_card_top("ᛏ", "sovereign capability audit"));
     println(ui_card_row("Identity", user_str));
     println(ui_card_row("Tokens Held", "&ProcessCap (host process execution)"));
     println(ui_card_row("            ", "&EnvCap     (environment isolation)"));
@@ -114,7 +127,7 @@ pub fn print_caps(sys: &ProcessCap) {
 }
 
 pub fn print_autopsy() {
-    println(ui_card_top("ᚦ", "oosh flight recorder (blackbox)"));
+    println(ui_card_top("ᚺ", "oosh flight recorder (blackbox)"));
     println(ui_card_row("Postmortem", "Nominal (0 unhandled faults)"));
     println(ui_card_row("Causal trace", "Clean execution pipeline"));
     println(ui_card_row("Flight log", "Armed (in-memory ring buffer)"));
@@ -138,14 +151,14 @@ pub fn print_link() {
 }
 
 pub fn print_remedy() {
-    println(ui_card_top("✦", "oosh remedy engine"));
+    println(ui_card_top("ᛉ", "oosh remedy engine"));
     println(ui_card_row("Diagnostic", "No active failure trace detected in current scope."));
     println(ui_card_row("Hint", "If a command fails, invoke 'remedy' immediately to diagnose."));
     println(ui_card_bottom("ENVELOPE NOMINAL"));
 }
 
 pub fn print_scry(sys: &ProcessCap, cwd: String) {
-    println(ui_card_top("ᚲ", "scry system observation & telemetry"));
+    println(ui_card_top("ᛈ", "scry system observation & telemetry"));
     let diag: Result[String, String] = process_exec(sys, "cd \"" + cwd + "\" && (uptime && free -h | head -2) 2>/dev/null");
     let diag_str: String = match diag { Ok(s) => s, Err(_) => "system telemetry unavailable\n" };
     print(diag_str);
@@ -193,7 +206,7 @@ pub fn dispatch_manual(sys: &ProcessCap, cwd: String, line: String) -> Bool {
         return true;
     }
     if is_status_cmd(line) {
-        print_status(cwd);
+        print_status(sys, cwd);
         return true;
     }
     if is_caps_cmd(line) {

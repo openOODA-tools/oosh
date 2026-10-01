@@ -48,7 +48,7 @@ pub fn render_ambient_dock(sys: &ProcessCap, env: &EnvCap, cwd: String, has_fail
         dock = dock + cyan + "─[ " + purp + " " + branch + cyan + " ]";
     }
 
-    dock = dock + cyan + "─[ " + green + "◈ CAPS:PROC|ENV|FS|TIME" + cyan + " ]";
+    dock = dock + cyan + "─[ " + green + "ᛏ CAPS:PROC|ENV|FS|TIME" + cyan + " ]";
 
     if has_failure {
         let rc_str: String = last_rc.to_string();

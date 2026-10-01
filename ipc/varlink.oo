@@ -2,15 +2,16 @@
 //
 // Logline: Decodes Varlink JSON calls and encodes NUL-delimited replies for IPC streaming.
 //
-// Setup: Implements org.openooda.oosh and org.varlink.service specifications.
+// Setup: Implements org.openooda.oosh.Control1 and org.varlink.service specifications.
 //
 // Beats:
 //   1. Parse incoming Varlink method identifier and parameter dictionary.
-//   2. Route call to sovereign shell runtime or flight telemetry.
-//   3. Format NUL-terminated JSON response frame.
+//   2. Route call to sovereign shell runtime, flight telemetry, or intent synthesis.
+//   3. Format NUL-terminated JSON response or standard Varlink error frame.
 
 import "std/fs/process/process.oo";
 import "flight/anchor.oo";
+import "intent/anchor.oo";
 
 pub fn varlink_nul() -> String {
     return bytes_to_str(bytes_push(bytes_new(), 0));
@@ -31,6 +32,27 @@ fn safe_str_prefix(s: String, max_chars: Int) -> String {
     return str_slice(s, 0, max_chars);
 }
 
+fn json_escape(s: String) -> String {
+    let n: Int = chars_len(s);
+    let mut out: String = "";
+    let mut i: Int = 0;
+    while i < n {
+        let ch: String = char_at(s, i);
+        if ch == "\"" { out = out + "\\\""; }
+        else if ch == "\\" { out = out + "\\\\"; }
+        else if ch == "\n" { out = out + "\\n"; }
+        else if ch == "\r" { out = out + "\\r"; }
+        else if ch == "\t" { out = out + "\\t"; }
+        else { out = out + ch; }
+        i = i + 1;
+    }
+    return out;
+}
+
+fn safe_json(s: String, max_chars: Int) -> String {
+    return json_escape(safe_str_prefix(s, max_chars));
+}
+
 pub fn extract_json_str_field(json: String, key: String) -> String {
     let key_pat: String = "\"" + key + "\"";
     let idx: Int = str_index_of(json, key_pat);
@@ -45,71 +67,129 @@ pub fn extract_json_str_field(json: String, key: String) -> String {
     }
     if i >= n { return ""; }
     i = i + 1;
-    while i < n && (char_at(rest, i) == " " || char_at(rest, i) == "\t") {
+    while i < n && (char_at(rest, i) == " " || char_at(rest, i) == "\t" || char_at(rest, i) == "\n" || char_at(rest, i) == "\r") {
         i = i + 1;
     }
     if i >= n || char_at(rest, i) != "\"" { return ""; }
     i = i + 1;
     let start: Int = i;
-    while i < n && char_at(rest, i) != "\"" {
+    while i < n {
+        if char_at(rest, i) == "\"" && (i == start || char_at(rest, i - 1) != "\\") {
+            break;
+        }
         i = i + 1;
     }
     if i > n { return ""; }
     return str_slice(rest, start, i);
 }
 
+fn control1_idl() -> String {
+    return "interface org.openooda.oosh.Control1\\n\\ntype Posture (\\n  status: string,\\n  cwd: string,\\n  capabilities: []string,\\n  version: string,\\n  total_commands: int,\\n  failed_count: int,\\n  has_failed: bool\\n)\\n\\ntype FailureRecord (\\n  cmd: string,\\n  exit_code: int,\\n  output: string,\\n  cwd: string,\\n  duration_ms: int\\n)\\n\\ntype Remedy (\\n  category: string,\\n  summary: string,\\n  actionable_cmd: string,\\n  explanation: string\\n)\\n\\nmethod QueryPosture() -> (posture: Posture)\\nmethod ExecuteCommand(command: string) -> (exit_code: int, output: string, duration_ms: int)\\nmethod StreamTelemetry() -> (total_commands: int, failed_count: int, has_failed: bool, records: []object)\\nmethod GetLastFailure() -> (has_failed: bool, envelope: ?FailureRecord, remedy: ?Remedy, diagnostic: string)\\nmethod SynthesizeIntent(query: string) -> (synthesized: string, safety_tier: string, rationale: string)\\n";
+}
+
+fn varlink_service_idl() -> String {
+    return "interface org.varlink.service\\n\\nmethod GetInfo() -> (vendor: string, product: string, version: string, url: string, interfaces: []string)\\nmethod GetInterfaceDescription(interface: string) -> (description: string)\\n";
+}
+
 pub fn route_varlink_call(sys: &ProcessCap, cwd: String, rec: FlightRecord, raw_call: String) -> String {
     let call_str: String = str_trim(raw_call);
     let method: String = extract_json_str_field(call_str, "method");
 
-    if method == "org.openooda.oosh.Ping" || method == "Ping" {
-        return varlink_ok("{\"pong\":true,\"version\":\"0.4.0\"}");
+    // Ping
+    if method == "org.openooda.oosh.Control1.Ping" || method == "org.openooda.oosh.Ping" || method == "Ping" {
+        return varlink_ok("{\"pong\":true,\"version\":\"0.4.1\"}");
     }
 
-    if method == "org.openooda.oosh.GetStatus" || method == "GetStatus" {
-        let posture: String = if rec.has_failed { "fault" } else { "nominal" };
-        let payload: String = "{\"version\":\"0.4.0\",\"mode\":\"sovereign\",\"posture\":\"" + posture + "\",\"cwd\":\"" + cwd + "\"}";
-        return varlink_ok(payload);
-    }
-
-    if method == "org.openooda.oosh.GetTelemetry" || method == "GetTelemetry" {
-        let tot_str: String = rec.total_commands.to_string();
-        let fail_str: String = rec.failed_count.to_string();
-        let payload: String = "{\"total_commands\":" + tot_str + ",\"failed_count\":" + fail_str + "}";
-        return varlink_ok(payload);
-    }
-
-    if method == "org.openooda.oosh.Remedy" || method == "Remedy" {
-        let r_diag: String = flight_remedy(rec);
+    // 1. QueryPosture
+    if method == "org.openooda.oosh.Control1.QueryPosture" || method == "org.openooda.oosh.QueryPosture" || method == "QueryPosture" || method == "org.openooda.oosh.GetStatus" || method == "GetStatus" {
+        let posture_status: String = if rec.has_failed { "fault" } else { "ready" };
         let has_f: String = if rec.has_failed { "true" } else { "false" };
-        let payload: String = "{\"has_failed\":" + has_f + ",\"diagnostic\":\"" + safe_str_prefix(r_diag, 80) + "\"}";
+        let tot_s: String = rec.total_commands.to_string();
+        let fail_s: String = rec.failed_count.to_string();
+        let dur_s: String = rec.last_duration_ms.to_string();
+        let safe_cwd: String = safe_json(cwd, 200);
+        let posture_obj: String = "{\"status\":\"" + posture_status + "\",\"cwd\":\"" + safe_cwd + "\",\"user\":\"sovereign\",\"capabilities\":[\"bind\",\"time\",\"fs_w\",\"sys\",\"env\",\"fs_r\"],\"version\":\"0.4.1\",\"total_commands\":" + tot_s + ",\"failed_count\":" + fail_s + ",\"has_failed\":" + has_f + ",\"last_duration_ms\":" + dur_s + "}";
+        let payload: String = "{\"posture\":" + posture_obj + ",\"status\":\"" + posture_status + "\",\"cwd\":\"" + safe_cwd + "\",\"user\":\"sovereign\",\"capabilities\":[\"bind\",\"time\",\"fs_w\",\"sys\",\"env\",\"fs_r\"],\"version\":\"0.4.1\"}";
         return varlink_ok(payload);
     }
 
-    if method == "org.openooda.oosh.GetAutopsy" || method == "GetAutopsy" {
-        let a_diag: String = flight_autopsy(rec);
-        let has_f: String = if rec.has_failed { "true" } else { "false" };
-        let payload: String = "{\"has_failed\":" + has_f + ",\"autopsy\":\"" + safe_str_prefix(a_diag, 80) + "\"}";
-        return varlink_ok(payload);
-    }
-
-    if method == "org.openooda.oosh.Execute" || method == "Execute" {
+    // 2. ExecuteCommand
+    if method == "org.openooda.oosh.Control1.ExecuteCommand" || method == "org.openooda.oosh.ExecuteCommand" || method == "ExecuteCommand" || method == "org.openooda.oosh.Execute" || method == "Execute" {
         let cmd: String = extract_json_str_field(call_str, "command");
         if cmd == "" {
-            return varlink_err("org.openooda.oosh.InvalidParameter", "{\"message\":\"missing command string\"}");
+            return varlink_err("org.varlink.service.InvalidParameter", "{\"parameter\":\"command\"}");
         }
         let full_cmd: String = "cd \"" + cwd + "\" && " + cmd;
         let r: Result[String, String] = process_exec(sys, full_cmd);
         let out_str: String = match r { Ok(s) => str_trim(s), Err(e) => str_trim(e) };
         let rc: Int = if r.is_ok() { 0 } else { 1 };
-        let payload: String = "{\"exit_code\":" + rc.to_string() + ",\"output\":\"" + safe_str_prefix(out_str, 200) + "\"}";
+        let payload: String = "{\"exit_code\":" + rc.to_string() + ",\"output\":\"" + safe_json(out_str, 500) + "\",\"duration_ms\":0}";
         return varlink_ok(payload);
     }
 
+    // 3. StreamTelemetry
+    if method == "org.openooda.oosh.Control1.StreamTelemetry" || method == "org.openooda.oosh.StreamTelemetry" || method == "StreamTelemetry" || method == "org.openooda.oosh.GetTelemetry" || method == "GetTelemetry" {
+        let tot_s: String = rec.total_commands.to_string();
+        let fail_s: String = rec.failed_count.to_string();
+        let has_f: String = if rec.has_failed { "true" } else { "false" };
+        let n: Int = list_len(rec.entries);
+        let mut recs_json: String = "[";
+        let mut i: Int = 0;
+        while i < n {
+            let ent: FlightEntry = list_get(rec.entries, i);
+            let ent_json: String = "{\"seq\":" + ent.seq.to_string() + ",\"cmd\":\"" + safe_json(ent.cmd, 40) + "\",\"exit_code\":" + ent.exit_code.to_string() + ",\"duration_ms\":" + ent.duration_ms.to_string() + ",\"status\":\"" + ent.status + "\"}";
+            if i > 0 { recs_json = recs_json + ","; }
+            recs_json = recs_json + ent_json;
+            i = i + 1;
+        }
+        recs_json = recs_json + "]";
+        let payload: String = "{\"total_commands\":" + tot_s + ",\"failed_count\":" + fail_s + ",\"has_failed\":" + has_f + ",\"last_duration_ms\":" + rec.last_duration_ms.to_string() + ",\"records\":" + recs_json + "}";
+        return varlink_ok(payload);
+    }
+
+    // 4. GetLastFailure
+    if method == "org.openooda.oosh.Control1.GetLastFailure" || method == "org.openooda.oosh.GetLastFailure" || method == "GetLastFailure" || method == "org.openooda.oosh.Remedy" || method == "Remedy" || method == "org.openooda.oosh.GetAutopsy" || method == "GetAutopsy" {
+        if !rec.has_failed {
+            return varlink_ok("{\"has_failed\":false,\"envelope\":null,\"remedy\":null,\"diagnostic\":\"No failure recorded\"}");
+        }
+        let diag: DiagnosticResult = flight_rules_match(rec.last_failed_cmd, rec.last_exit_code, rec.last_stderr, cwd);
+        let env_json: String = "{\"cmd\":\"" + safe_json(rec.last_failed_cmd, 100) + "\",\"exit_code\":" + rec.last_exit_code.to_string() + ",\"output\":\"" + safe_json(rec.last_stderr, 200) + "\",\"cwd\":\"" + safe_json(cwd, 120) + "\",\"duration_ms\":" + rec.last_duration_ms.to_string() + "}";
+        let rem_json: String = "{\"category\":\"" + diag.category + "\",\"summary\":\"" + safe_json(diag.summary, 120) + "\",\"actionable_cmd\":\"" + safe_json(diag.actionable_cmd, 100) + "\",\"explanation\":\"" + safe_json(diag.explanation, 200) + "\"}";
+        let payload: String = "{\"has_failed\":true,\"envelope\":" + env_json + ",\"remedy\":" + rem_json + ",\"diagnostic\":\"" + safe_json(diag.summary, 120) + "\"}";
+        return varlink_ok(payload);
+    }
+
+    // 5. SynthesizeIntent
+    if method == "org.openooda.oosh.Control1.SynthesizeIntent" || method == "org.openooda.oosh.SynthesizeIntent" || method == "SynthesizeIntent" {
+        let q: String = extract_json_str_field(call_str, "query");
+        if q == "" {
+            return varlink_err("org.varlink.service.InvalidParameter", "{\"parameter\":\"query\"}");
+        }
+        let stripped: String = intent_strip_prefix(q);
+        let synth_cmd: String = intent_synthesize(stripped);
+        let safety: String = intent_safety_tier(synth_cmd);
+        let rat: String = intent_explain(synth_cmd);
+        let payload: String = "{\"synthesized\":\"" + safe_json(synth_cmd, 200) + "\",\"safety_tier\":\"" + safety + "\",\"rationale\":\"" + safe_json(rat, 250) + "\"}";
+        return varlink_ok(payload);
+    }
+
+    // Introspection: GetInfo
     if method == "org.varlink.service.GetInfo" {
-        let payload: String = "{\"vendor\":\"openOODA\",\"product\":\"oosh\",\"version\":\"0.4.0\",\"url\":\"https://openooda.org\",\"interfaces\":[\"org.openooda.oosh\",\"org.varlink.service\"]}";
+        let payload: String = "{\"vendor\":\"openOODA\",\"product\":\"oosh\",\"version\":\"0.4.1\",\"url\":\"https://openooda.org\",\"interfaces\":[\"org.openooda.oosh.Control1\",\"org.varlink.service\"]}";
         return varlink_ok(payload);
     }
 
-    return varlink_err("org.varlink.service.MethodNotFound", "{\"method\":\"" + method + "\"}");
+    // Introspection: GetInterfaceDescription
+    if method == "org.varlink.service.GetInterfaceDescription" {
+        let iface: String = extract_json_str_field(call_str, "interface");
+        if iface == "org.openooda.oosh.Control1" || iface == "org.openooda.oosh" {
+            return varlink_ok("{\"description\":\"" + control1_idl() + "\"}");
+        }
+        if iface == "org.varlink.service" {
+            return varlink_ok("{\"description\":\"" + varlink_service_idl() + "\"}");
+        }
+        return varlink_err("org.varlink.service.InterfaceNotFound", "{\"interface\":\"" + json_escape(iface) + "\"}");
+    }
+
+    return varlink_err("org.varlink.service.MethodNotFound", "{\"method\":\"" + json_escape(method) + "\"}");
 }

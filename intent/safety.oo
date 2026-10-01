@@ -2,26 +2,64 @@
 //
 // Logline: Evaluates synthesized commands to assign read-only, moderate, or high-risk safety badges.
 //
-// Setup: Pure string analysis. Imports ui/anchor.oo for TrueColor safety badges.
+// Setup: Pure string analysis. Emits byte-27 ANSI TrueColor cyber safety badges.
 //
 // Beats:
 //   1. Inspect command tokens for destructive or mutation operations.
-//   2. Assign safety tier (SAFE, MODERATE, or HIGH_RISK).
+//   2. Assign safety tier (SAFE, MODERATE, or HIGH_RISK / DANGEROUS).
 //   3. Render styled cyberpunk safety badge.
 
-import "ui/anchor.oo";
+pub fn ansi_esc() -> String {
+    return bytes_to_str(bytes_push(bytes_new(), 27));
+}
 
 pub fn is_destructive_token(cmd: String) -> Bool {
     return str_contains(cmd, "rm ") ||
+           str_contains(cmd, "rm\t") ||
+           str_contains(cmd, "rm\\t") ||
            str_contains(cmd, "rm -") ||
+           str_contains(cmd, "rmdir ") ||
+           str_contains(cmd, "rmdir\t") ||
+           str_contains(cmd, "rmdir\\t") ||
+           str_contains(cmd, "unlink ") ||
+           str_contains(cmd, "unlink\t") ||
+           str_contains(cmd, "unlink\\t") ||
+           str_contains(cmd, "remove ") ||
+           str_contains(cmd, "remove\t") ||
+           str_contains(cmd, "remove\\t") ||
+           str_contains(cmd, "delete ") ||
+           str_contains(cmd, "delete\t") ||
+           str_contains(cmd, "delete\\t") ||
            str_contains(cmd, "kill ") ||
+           str_contains(cmd, "kill\t") ||
+           str_contains(cmd, "kill\\t") ||
+           str_contains(cmd, "kill -") ||
            str_contains(cmd, "pkill ") ||
+           str_contains(cmd, "pkill\t") ||
+           str_contains(cmd, "pkill\\t") ||
            str_contains(cmd, "killall ") ||
+           str_contains(cmd, "killall\t") ||
+           str_contains(cmd, "killall\\t") ||
            str_contains(cmd, "reset --hard") ||
+           str_contains(cmd, "reset hard") ||
+           str_contains(cmd, "hard reset") ||
            str_contains(cmd, "clean -f") ||
+           str_contains(cmd, "clean -d -f") ||
+           str_contains(cmd, "clean -x -f") ||
+           str_contains(cmd, "push --force") ||
+           str_contains(cmd, "push -f") ||
+           str_contains(cmd, "branch -D") ||
+           str_contains(cmd, "branch -d") ||
            str_contains(cmd, "drop ") ||
            str_contains(cmd, "mkfs") ||
-           str_contains(cmd, "dd if=");
+           str_contains(cmd, "fdisk") ||
+           str_contains(cmd, "parted") ||
+           str_contains(cmd, "dd if=") ||
+           str_contains(cmd, "dd of=") ||
+           str_contains(cmd, "shutdown") ||
+           str_contains(cmd, "reboot") ||
+           str_contains(cmd, "poweroff") ||
+           str_contains(cmd, "chmod -R 777");
 }
 
 pub fn is_mutation_token(cmd: String) -> Bool {
@@ -31,31 +69,121 @@ pub fn is_mutation_token(cmd: String) -> Bool {
            str_contains(cmd, "cp ") ||
            str_contains(cmd, "chmod") ||
            str_contains(cmd, "chown") ||
-           str_contains(cmd, "tar -x") ||
+           str_contains(cmd, "chgrp") ||
+           str_contains(cmd, "tar -") ||
+           str_contains(cmd, "unzip") ||
            str_contains(cmd, "git checkout") ||
+           str_contains(cmd, "git switch") ||
            str_contains(cmd, "git restore") ||
            str_contains(cmd, "git reset") ||
+           str_contains(cmd, "git commit") ||
+           str_contains(cmd, "git merge") ||
+           str_contains(cmd, "git pull") ||
+           str_contains(cmd, "git push") ||
+           str_contains(cmd, "git stash") ||
+           str_contains(cmd, "git rebase") ||
            str_contains(cmd, "make") ||
-           str_contains(cmd, "cargo build");
+           str_contains(cmd, "cargo build") ||
+           str_contains(cmd, "cargo run") ||
+           str_contains(cmd, "cargo add") ||
+           str_contains(cmd, "npm install") ||
+           str_contains(cmd, "npm run build") ||
+           str_contains(cmd, "npm i ") ||
+           str_contains(cmd, "pnpm") ||
+           str_contains(cmd, "yarn") ||
+           str_contains(cmd, "pip install") ||
+           str_contains(cmd, "python3 -m build") ||
+           str_contains(cmd, "podman build") ||
+           str_contains(cmd, "docker build");
+}
+
+pub fn is_readonly_token(cmd: String) -> Bool {
+    return str_starts_with(cmd, "ls") ||
+           str_starts_with(cmd, "dir") ||
+           str_starts_with(cmd, "cat ") ||
+           str_starts_with(cmd, "head ") ||
+           str_starts_with(cmd, "tail ") ||
+           str_starts_with(cmd, "less ") ||
+           str_starts_with(cmd, "more ") ||
+           str_starts_with(cmd, "git status") ||
+           str_starts_with(cmd, "git diff") ||
+           str_starts_with(cmd, "git log") ||
+           str_starts_with(cmd, "git branch") ||
+           str_starts_with(cmd, "git show") ||
+           str_starts_with(cmd, "df ") ||
+           str_starts_with(cmd, "free ") ||
+           str_starts_with(cmd, "ps ") ||
+           str_starts_with(cmd, "top") ||
+           str_starts_with(cmd, "uptime") ||
+           str_starts_with(cmd, "uname") ||
+           str_starts_with(cmd, "whoami") ||
+           str_starts_with(cmd, "id ") ||
+           str_starts_with(cmd, "pwd") ||
+           str_starts_with(cmd, "ss ") ||
+           str_starts_with(cmd, "netstat ") ||
+           str_starts_with(cmd, "cargo check") ||
+           str_starts_with(cmd, "cargo clippy") ||
+           str_starts_with(cmd, "cargo test") ||
+           str_starts_with(cmd, "make test") ||
+           str_starts_with(cmd, "make check") ||
+           str_starts_with(cmd, "make verify") ||
+           str_starts_with(cmd, "pytest") ||
+           str_starts_with(cmd, "find ") ||
+           str_starts_with(cmd, "grep ") ||
+           str_starts_with(cmd, "echo ") ||
+           str_starts_with(cmd, "printf ");
+}
+
+pub fn has_redirection_or_chaining(cmd: String) -> Bool {
+    return str_contains(cmd, ">") ||
+           str_contains(cmd, ">>") ||
+           str_contains(cmd, "&&") ||
+           str_contains(cmd, ";") ||
+           str_contains(cmd, "|");
 }
 
 pub fn classify_safety_tier(cmd: String) -> String {
     if is_destructive_token(cmd) {
         return "HIGH_RISK";
     }
+    if has_redirection_or_chaining(cmd) {
+        return "MODERATE";
+    }
+    if is_readonly_token(cmd) {
+        return "SAFE";
+    }
     if is_mutation_token(cmd) {
         return "MODERATE";
     }
+    return "MODERATE";
+}
+
+pub fn safety_tier_label(tier: String) -> String {
+    if tier == "HIGH_RISK" || tier == "DANGEROUS" { return "DANGEROUS"; }
+    if tier == "MODERATE" || tier == "WARN" || tier == "CONFIRM" { return "WARN"; }
     return "SAFE";
 }
 
+pub fn is_tier_dangerous(tier: String) -> Bool {
+    return tier == "HIGH_RISK" || tier == "DANGEROUS";
+}
+
+pub fn is_tier_confirm(tier: String) -> Bool {
+    return tier == "MODERATE" || tier == "WARN" || tier == "CONFIRM";
+}
+
+pub fn is_tier_safe(tier: String) -> Bool {
+    return tier == "SAFE";
+}
+
 pub fn render_safety_badge(cmd: String) -> String {
+    let esc: String = ansi_esc();
     let tier: String = classify_safety_tier(cmd);
-    if tier == "HIGH_RISK" {
-        return ui_paint_red("[HIGH_RISK: REMOVES STATE]");
+    if tier == "HIGH_RISK" || tier == "DANGEROUS" {
+        return esc + "[38;2;255;51;102m[HIGH_RISK / DANGEROUS: REMOVES STATE]" + esc + "[0m";
     }
-    if tier == "MODERATE" {
-        return ui_paint_amber("[MODERATE: MODIFIES FS]");
+    if tier == "MODERATE" || tier == "WARN" || tier == "CONFIRM" {
+        return esc + "[38;2;255;184;0m[MODERATE / WARN: MUTATING OPERATION]" + esc + "[0m";
     }
-    return ui_paint_green("[SAFE: READ-ONLY]");
+    return esc + "[38;2;0;255;102m[SAFE: READ-ONLY QUERY]" + esc + "[0m";
 }

@@ -1,0 +1,190 @@
+// # Intent Query Scanner and Normalizer
+//
+// Logline: Intercepts natural language intent prefixes and normalizes query text.
+//
+// Setup: Case folding, whitespace trimming, and 8-prefix query classification.
+//
+// Beats:
+//   1. Classify input line against ?, ??, and keyword prefixes (ai, ask, do, how, why, please).
+//   2. Extract clean lowercase query and preserve raw casing for display.
+//   3. Disambiguate bare prefixes and provide interactive intent guidance.
+
+pub type IntentQuery = struct {
+    prefix: String,
+    clean_query: String,
+    raw_query: String,
+    is_deep: Bool,
+    is_bare: Bool
+};
+
+pub fn to_lower_char(c: String) -> String {
+    if c == "A" { return "a"; }
+    if c == "B" { return "b"; }
+    if c == "C" { return "c"; }
+    if c == "D" { return "d"; }
+    if c == "E" { return "e"; }
+    if c == "F" { return "f"; }
+    if c == "G" { return "g"; }
+    if c == "H" { return "h"; }
+    if c == "I" { return "i"; }
+    if c == "J" { return "j"; }
+    if c == "K" { return "k"; }
+    if c == "L" { return "l"; }
+    if c == "M" { return "m"; }
+    if c == "N" { return "n"; }
+    if c == "O" { return "o"; }
+    if c == "P" { return "p"; }
+    if c == "Q" { return "q"; }
+    if c == "R" { return "r"; }
+    if c == "S" { return "s"; }
+    if c == "T" { return "t"; }
+    if c == "U" { return "u"; }
+    if c == "V" { return "v"; }
+    if c == "W" { return "w"; }
+    if c == "X" { return "x"; }
+    if c == "Y" { return "y"; }
+    if c == "Z" { return "z"; }
+    return c;
+}
+
+pub fn to_lower_str(s: String) -> String {
+    let n: Int = chars_len(s);
+    let mut out: String = "";
+    let mut i: Int = 0;
+    while i < n {
+        let ch: String = char_at(s, i);
+        out = out + to_lower_char(ch);
+        i = i + 1;
+    }
+    return out;
+}
+
+fn check_keyword_prefix(t: String, kw: String) -> Bool {
+    let kw_len: Int = chars_len(kw);
+    let t_len: Int = chars_len(t);
+    if t_len < kw_len { return false; }
+    let lead: String = str_slice(t, 0, kw_len);
+    if to_lower_str(lead) != kw { return false; }
+    if t_len == kw_len { return true; }
+    let next_ch: String = char_at(t, kw_len);
+    return next_ch == " " || next_ch == "\t";
+}
+
+pub fn scanner_is_intent_query(cmd: String) -> Bool {
+    let t: String = str_trim(cmd);
+    if t == "" || t == "?" {
+        return false;
+    }
+    if str_starts_with(t, "??") || str_starts_with(t, "?") {
+        return true;
+    }
+    return check_keyword_prefix(t, "ai") ||
+           check_keyword_prefix(t, "ask") ||
+           check_keyword_prefix(t, "do") ||
+           check_keyword_prefix(t, "how") ||
+           check_keyword_prefix(t, "why") ||
+           check_keyword_prefix(t, "please");
+}
+
+pub fn is_intent_query(cmd: String) -> Bool {
+    return scanner_is_intent_query(cmd);
+}
+
+pub fn parse_intent_query(line: String) -> IntentQuery {
+    let t: String = str_trim(line);
+    if t == "" || t == "?" {
+        return IntentQuery {
+            prefix: if t == "?" { "?" } else { "" },
+            clean_query: "",
+            raw_query: "",
+            is_deep: false,
+            is_bare: (t == "?")
+        };
+    }
+
+    if str_starts_with(t, "??") {
+        let raw: String = str_trim(str_slice(t, 2, chars_len(t)));
+        return IntentQuery {
+            prefix: "??",
+            clean_query: to_lower_str(raw),
+            raw_query: raw,
+            is_deep: true,
+            is_bare: (raw == "")
+        };
+    }
+
+    if str_starts_with(t, "?") {
+        let raw: String = str_trim(str_slice(t, 1, chars_len(t)));
+        return IntentQuery {
+            prefix: "?",
+            clean_query: to_lower_str(raw),
+            raw_query: raw,
+            is_deep: false,
+            is_bare: (raw == "")
+        };
+    }
+
+    if check_keyword_prefix(t, "please") {
+        let raw: String = str_trim(str_slice(t, 6, chars_len(t)));
+        return IntentQuery { prefix: "please", clean_query: to_lower_str(raw), raw_query: raw, is_deep: false, is_bare: (raw == "") };
+    }
+    if check_keyword_prefix(t, "ask") {
+        let raw: String = str_trim(str_slice(t, 3, chars_len(t)));
+        return IntentQuery { prefix: "ask", clean_query: to_lower_str(raw), raw_query: raw, is_deep: false, is_bare: (raw == "") };
+    }
+    if check_keyword_prefix(t, "how") {
+        let raw: String = str_trim(str_slice(t, 3, chars_len(t)));
+        return IntentQuery { prefix: "how", clean_query: to_lower_str(raw), raw_query: raw, is_deep: false, is_bare: (raw == "") };
+    }
+    if check_keyword_prefix(t, "why") {
+        let raw: String = str_trim(str_slice(t, 3, chars_len(t)));
+        return IntentQuery { prefix: "why", clean_query: to_lower_str(raw), raw_query: raw, is_deep: false, is_bare: (raw == "") };
+    }
+    if check_keyword_prefix(t, "ai") {
+        let raw: String = str_trim(str_slice(t, 2, chars_len(t)));
+        return IntentQuery { prefix: "ai", clean_query: to_lower_str(raw), raw_query: raw, is_deep: false, is_bare: (raw == "") };
+    }
+    if check_keyword_prefix(t, "do") {
+        let raw: String = str_trim(str_slice(t, 2, chars_len(t)));
+        return IntentQuery { prefix: "do", clean_query: to_lower_str(raw), raw_query: raw, is_deep: false, is_bare: (raw == "") };
+    }
+
+    return IntentQuery {
+        prefix: "",
+        clean_query: to_lower_str(t),
+        raw_query: t,
+        is_deep: false,
+        is_bare: false
+    };
+}
+
+pub fn strip_intent_prefix(line: String) -> String {
+    let q: IntentQuery = parse_intent_query(line);
+    return q.raw_query;
+}
+
+pub fn normalize_query(query: String) -> String {
+    return to_lower_str(str_trim(query));
+}
+
+pub fn render_bare_keyword_guidance(kw: String) -> String {
+    let esc: String = bytes_to_str(bytes_push(bytes_new(), 27));
+    let mut out: String = "";
+    out = out + esc + "[1;33m⚡ oosh:" + esc + "[0m Intent keyword '" + esc + "[1;36m" + kw + esc + "[0m' requires query text.\n";
+    out = out + "   Usage: " + esc + "[1;35m" + kw + " <your natural language query>" + esc + "[0m\n";
+    out = out + "   Examples:\n";
+    if kw == "ask" || kw == "how" {
+        out = out + "     " + kw + " how to undo last commit\n";
+        out = out + "     " + kw + " to inspect memory usage";
+    } else if kw == "do" || kw == "please" {
+        out = out + "     " + kw + " clean git repo\n";
+        out = out + "     " + kw + " list large files";
+    } else if kw == "ai" {
+        out = out + "     ai check disk space\n";
+        out = out + "     ai search for rust files";
+    } else {
+        out = out + "     " + kw + " why did build fail\n";
+        out = out + "     " + kw + " check port 8080";
+    }
+    return out;
+}

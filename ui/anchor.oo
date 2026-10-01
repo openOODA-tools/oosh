@@ -15,12 +15,25 @@ import "dock.oo";
 import "accent.oo";
 import "std/fs/process/process.oo";
 
+pub fn ui_is_interactive(sys: &ProcessCap) -> Bool {
+    let r: Result[String, String] = process_exec(sys, "test -t 0");
+    return r.is_ok();
+}
+
 pub fn ui_render_dock(sys: &ProcessCap, env: &EnvCap, cwd: String, has_failure: Bool, last_rc: Int) -> String {
     return render_ambient_dock(sys, env, cwd, has_failure, last_rc);
 }
 
 pub fn ui_render_accent(cmd: String) -> String {
     return render_syntax_accent(cmd);
+}
+
+pub fn ui_accent_tokens(cmd: String) -> String {
+    return accent_command_tokens(cmd);
+}
+
+pub fn ui_ansi_esc() -> String {
+    return ansi_esc();
 }
 
 pub fn ui_card_top(rune: String, title: String) -> String {
@@ -68,7 +81,7 @@ pub fn is_clear_cmd(cmd: String) -> Bool {
 }
 
 pub fn dispatch_ui(sys: &ProcessCap, cwd: String, cmd: String) -> Bool {
-    let esc: String = bytes_to_str(bytes_push(bytes_new(), 27));
+    let esc: String = ansi_esc();
     if is_clear_cmd(cmd) {
         print(esc + "[2J" + esc + "[H");
         return true;

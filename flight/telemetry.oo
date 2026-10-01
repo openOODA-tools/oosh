@@ -9,7 +9,6 @@
 //   2. Format execution latency in milliseconds.
 //   3. Render high-contrast cyberpunk post-execution badge.
 
-import "std/fs/file/fs_ops.oo";
 import "ui/palette.oo";
 
 pub fn parse_digits(s: String) -> Int {

@@ -16,12 +16,57 @@ import "flight/anchor.oo";
 import "varlink.oo";
 
 pub fn resolve_socket_path(env: &EnvCap) -> String {
+    let r_override: Result[String, String] = env_get(env, "OOSH_SOCKET");
+    let ov: String = match r_override { Ok(s) => s, Err(_) => "" };
+    if ov != "" {
+        return ov;
+    }
+    let r_user: Result[String, String] = env_get(env, "USER");
+    let user: String = match r_user { Ok(s) => s, Err(_) => "" };
+    if user == "root" {
+        return "/run/oosh/control.sock";
+    }
     let r_dir: Result[String, String] = env_get(env, "XDG_RUNTIME_DIR");
     let xdg: String = match r_dir { Ok(s) => s, Err(_) => "" };
     if xdg != "" {
-        return xdg + "/oosh-control.sock";
+        return xdg + "/oosh/control.sock";
+    }
+    let r_home: Result[String, String] = env_get(env, "HOME");
+    let home: String = match r_home { Ok(s) => s, Err(_) => "" };
+    if home != "" {
+        return home + "/.cache/oosh/control.sock";
     }
     return "/tmp/oosh-control.sock";
+}
+
+pub fn prepare_socket_path(sys: &ProcessCap, env: &EnvCap) -> String {
+    let r_override: Result[String, String] = env_get(env, "OOSH_SOCKET");
+    let ov: String = match r_override { Ok(s) => s, Err(_) => "" };
+    if ov != "" {
+        return ov;
+    }
+    let r_primary: Result[String, String] = process_exec(sys, "mkdir -p /run/oosh 2>/dev/null && test -w /run/oosh");
+    if r_primary.is_ok() {
+        return "/run/oosh/control.sock";
+    }
+    let r_dir: Result[String, String] = env_get(env, "XDG_RUNTIME_DIR");
+    let xdg: String = match r_dir { Ok(s) => s, Err(_) => "" };
+    if xdg != "" {
+        let _ = process_exec(sys, "mkdir -p \"" + xdg + "/oosh\" 2>/dev/null");
+        return xdg + "/oosh/control.sock";
+    }
+    let r_home: Result[String, String] = env_get(env, "HOME");
+    let home: String = match r_home { Ok(s) => s, Err(_) => "" };
+    if home != "" {
+        let _ = process_exec(sys, "mkdir -p \"" + home + "/.cache/oosh\" 2>/dev/null");
+        return home + "/.cache/oosh/control.sock";
+    }
+    return "/tmp/oosh-control.sock";
+}
+
+pub fn unlink_stale_socket(sys: &ProcessCap, sock_path: String) -> Bool {
+    let r: Result[String, String] = process_exec(sys, "rm -f \"" + sock_path + "\" 2>/dev/null");
+    return r.is_ok();
 }
 
 pub fn execute_varlink_single(sys: &ProcessCap, cwd: String, rec: FlightRecord, payload: String) -> String {
@@ -33,14 +78,15 @@ pub fn render_daemon_banner(sock_path: String) -> String {
     let r1: String = ui_card_row("Daemon State", "Headless IPC Active");
     let r2: String = ui_card_row("Control Socket", sock_path);
     let r3: String = ui_card_row("Wire Framing", "NUL-delimited (\\0) JSON");
-    let r4: String = ui_card_row("Interface", "org.openooda.oosh (v0.4.0)");
-    let r5: String = ui_card_row("Supported RPC", "Ping, GetStatus, Execute, Remedy, GetAutopsy, GetTelemetry");
+    let r4: String = ui_card_row("Interface", "org.openooda.oosh.Control1 (v0.4.1)");
+    let r5: String = ui_card_row("Supported RPC", "QueryPosture, ExecuteCommand, StreamTelemetry, GetLastFailure, SynthesizeIntent");
     let bot: String = ui_card_bottom("VARLINK READY");
     return top + "\n" + r1 + "\n" + r2 + "\n" + r3 + "\n" + r4 + "\n" + r5 + "\n" + bot;
 }
 
 pub fn run_daemon_loop(sys: &ProcessCap, env: &EnvCap, cwd: String, rec: FlightRecord) -> Int {
-    let sock: String = resolve_socket_path(env);
+    let sock: String = prepare_socket_path(sys, env);
+    let _ = unlink_stale_socket(sys, sock);
     println(render_daemon_banner(sock));
 
     // Self-test ping payload to verify internal IPC route
@@ -48,5 +94,85 @@ pub fn run_daemon_loop(sys: &ProcessCap, env: &EnvCap, cwd: String, rec: FlightR
     let ping_res: String = route_varlink_call(sys, cwd, rec, ping_req);
     println(ui_card_row("Self-Test Ping", str_trim(ping_res)));
 
+    // Resolve binary path for child process IPC dispatch
+    let bin_lookup: Result[String, String] = process_exec(sys, "[ -x ./dist/oosh ] && echo ./dist/oosh || command -v oosh || echo dist/oosh");
+    let bin_path: String = match bin_lookup { Ok(s) => str_trim(s), Err(_) => "./dist/oosh" };
+
+    // Launch AF_UNIX stream socket server loop
+    let py_inline: String = "import socket, os, sys, subprocess, signal, threading, atexit\n" +
+        "sock_path = sys.argv[1]\n" +
+        "bin_path = os.path.abspath(sys.argv[2])\n" +
+        "cwd = sys.argv[3]\n" +
+        "if os.path.exists(sock_path):\n" +
+        "    try: os.unlink(sock_path)\n" +
+        "    except OSError: pass\n" +
+        "d = os.path.dirname(sock_path)\n" +
+        "if d and not os.path.exists(d):\n" +
+        "    try: os.makedirs(d, mode=0o700, exist_ok=True)\n" +
+        "    except OSError: pass\n" +
+        "srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)\n" +
+        "srv.bind(sock_path)\n" +
+        "try: os.chmod(sock_path, 0o600)\n" +
+        "except OSError: pass\n" +
+        "srv.listen(16)\n" +
+        "srv.settimeout(0.5)\n" +
+        "running = True\n" +
+        "def cleanup_socket():\n" +
+        "    if os.path.exists(sock_path):\n" +
+        "        try: os.unlink(sock_path)\n" +
+        "        except OSError: pass\n" +
+        "atexit.register(cleanup_socket)\n" +
+        "def sig_handler(sig, frame):\n" +
+        "    global running\n" +
+        "    running = False\n" +
+        "    try: srv.close()\n" +
+        "    except Exception: pass\n" +
+        "    cleanup_socket()\n" +
+        "    sys.exit(0)\n" +
+        "signal.signal(signal.SIGINT, sig_handler)\n" +
+        "signal.signal(signal.SIGTERM, sig_handler)\n" +
+        "try:\n" +
+        "    import ctypes\n" +
+        "    ctypes.CDLL(None).prctl(1, signal.SIGTERM)\n" +
+        "except Exception: pass\n" +
+        "NUL = bytes([0])\n" +
+        "def handle_client(conn):\n" +
+        "    try:\n" +
+        "        conn.settimeout(2.0)\n" +
+        "        while running:\n" +
+        "            buf = bytearray()\n" +
+        "            while True:\n" +
+        "                try: chunk = conn.recv(4096)\n" +
+        "                except socket.timeout:\n" +
+        "                    if not running: break\n" +
+        "                    continue\n" +
+        "                if not chunk: break\n" +
+        "                buf.extend(chunk)\n" +
+        "                if 0 in chunk: break\n" +
+        "            if not buf: break\n" +
+        "            idx = buf.find(0)\n" +
+        "            payload = buf[:idx].decode('utf-8', errors='replace') if idx >= 0 else buf.decode('utf-8', errors='replace')\n" +
+        "            res = subprocess.run([bin_path, '--varlink-call', payload], capture_output=True, cwd=cwd)\n" +
+        "            out = res.stdout\n" +
+        "            if not out.endswith(NUL): out = out + NUL\n" +
+        "            conn.sendall(out)\n" +
+        "    except Exception: pass\n" +
+        "    finally:\n" +
+        "        try: conn.close()\n" +
+        "        except OSError: pass\n" +
+        "while running:\n" +
+        "    try: conn, _ = srv.accept()\n" +
+        "    except socket.timeout: continue\n" +
+        "    except Exception: break\n" +
+        "    threading.Thread(target=handle_client, args=(conn,), daemon=True).start()\n" +
+        "try: srv.close()\n" +
+        "except Exception: pass\n" +
+        "cleanup_socket()\n";
+
+    let daemon_sh: String = "python3 -c \"" + py_inline + "\" \"" + sock + "\" \"" + bin_path + "\" \"" + cwd + "\"";
+    let _loop_res: Result[String, String] = process_exec(sys, daemon_sh);
+
+    // Final cleanup guarantee
+    let _ = unlink_stale_socket(sys, sock);
     return 0;
 }

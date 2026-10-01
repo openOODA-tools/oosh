@@ -9,55 +9,59 @@
 //   2. Provide terminal styling primitives for bold, dim, and reset controls.
 //   3. Wrap text segments with high-contrast color tokens and automatic reset.
 
-pub fn cyber_esc() -> String {
+pub fn ansi_esc() -> String {
     return bytes_to_str(bytes_push(bytes_new(), 27));
 }
 
+pub fn cyber_esc() -> String {
+    return ansi_esc();
+}
+
 pub fn cyber_reset() -> String {
-    return cyber_esc() + "[0m";
+    return ansi_esc() + "[0m";
 }
 
 pub fn cyber_bold() -> String {
-    return cyber_esc() + "[1m";
+    return ansi_esc() + "[1m";
 }
 
 pub fn cyber_dim() -> String {
-    return cyber_esc() + "[2m";
+    return ansi_esc() + "[2m";
 }
 
 // Neon Cyan (Primary accent)
 pub fn cyber_cyan() -> String {
-    return cyber_esc() + "[38;2;0;240;255m";
+    return ansi_esc() + "[38;2;0;240;255m";
 }
 
 // Electric Amber (Builtin & warning accent)
 pub fn cyber_amber() -> String {
-    return cyber_esc() + "[38;2;255;184;0m";
+    return ansi_esc() + "[38;2;255;184;0m";
 }
 
 // Ultraviolet (Intent & magic plane)
 pub fn cyber_purple() -> String {
-    return cyber_esc() + "[38;2;189;0;255m";
+    return ansi_esc() + "[38;2;189;0;255m";
 }
 
 // Toxic Green (Success & process execution)
 pub fn cyber_green() -> String {
-    return cyber_esc() + "[38;2;0;255;102m";
+    return ansi_esc() + "[38;2;0;255;102m";
 }
 
 // Neon Crimson (Error & destructive action)
 pub fn cyber_red() -> String {
-    return cyber_esc() + "[38;2;255;51;102m";
+    return ansi_esc() + "[38;2;255;51;102m";
 }
 
 // Electric Blue (Network & link channel)
 pub fn cyber_blue() -> String {
-    return cyber_esc() + "[38;2;0;170;255m";
+    return ansi_esc() + "[38;2;0;170;255m";
 }
 
 // Muted Cyber Gray (Shadows & secondary metadata)
 pub fn cyber_gray() -> String {
-    return cyber_esc() + "[38;2;110;120;140m";
+    return ansi_esc() + "[38;2;110;120;140m";
 }
 
 pub fn paint_cyan(s: String) -> String {

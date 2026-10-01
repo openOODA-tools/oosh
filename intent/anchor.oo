@@ -2,22 +2,46 @@
 //
 // Logline: Unified entry point for the intent synthesis engine and command safety evaluation.
 //
-// Setup: Re-exports intent query parsing, command synthesis, and safety tier classification.
+// Setup: Re-exports intent query parsing, command synthesis, safety tier, and execution prompts.
 //
 // Beats:
 //   1. Expose intent channel prefix extraction and command synthesis.
 //   2. Bind safety tier categorization and visual badge rendering.
-//   3. Wire full intent presentation card generation.
+//   3. Wire full intent presentation card generation and [Y/n/e/?] prompt dispatch.
 
 import "safety.oo";
+import "scanner.oo";
+import "context.oo";
 import "synthesize.oo";
+import "preview.oo";
+import "std/fs/process/process.oo";
 
 pub fn intent_strip_prefix(line: String) -> String {
     return strip_intent_prefix(line);
 }
 
+pub fn intent_parse_query(line: String) -> IntentQuery {
+    return parse_intent_query(line);
+}
+
+pub fn intent_normalize(query: String) -> String {
+    return normalize_query(query);
+}
+
+pub fn intent_bare_guidance(kw: String) -> String {
+    return render_bare_keyword_guidance(kw);
+}
+
 pub fn intent_synthesize(query: String) -> String {
     return synthesize_command(query);
+}
+
+pub fn intent_synthesize_ctx(query: String, ctx: WorkspaceContext) -> String {
+    return synthesize_with_context(query, ctx);
+}
+
+pub fn intent_probe_context(sys: &ProcessCap, cwd: String) -> WorkspaceContext {
+    return probe_workspace(sys, cwd);
 }
 
 pub fn intent_explain(cmd: String) -> String {
@@ -26,6 +50,18 @@ pub fn intent_explain(cmd: String) -> String {
 
 pub fn intent_card(raw_line: String, cwd: String) -> String {
     return render_intent_card(raw_line, cwd);
+}
+
+pub fn intent_card_sys(sys: &ProcessCap, raw_line: String, cwd: String) -> String {
+    return render_intent_card_sys(sys, raw_line, cwd);
+}
+
+pub fn intent_reasoning(raw_line: String, cwd: String) -> String {
+    return render_intent_reasoning(raw_line, cwd, workspace_context_empty());
+}
+
+pub fn intent_prompt(fs_r: &FsReadCap, sys: &ProcessCap, raw_line: String, cwd: String) -> IntentPromptAction {
+    return prompt_intent_execution(fs_r, sys, raw_line, cwd);
 }
 
 pub fn intent_safety_tier(cmd: String) -> String {
@@ -40,10 +76,10 @@ pub fn intent_anchor_probe() -> String {
     return "intent-active";
 }
 
-pub fn is_intent_query(cmd: String) -> Bool {
-    return str_starts_with(cmd, "?") || str_starts_with(cmd, "ai ") || str_starts_with(cmd, "ask ") || str_starts_with(cmd, "do ") || str_starts_with(cmd, "how ") || str_starts_with(cmd, "why ") || str_starts_with(cmd, "please ");
+pub fn intent_is_query(cmd: String) -> Bool {
+    return scanner_is_intent_query(cmd);
 }
 
 pub fn is_intent_cmd(cmd: String) -> Bool {
-    return is_intent_query(cmd);
+    return scanner_is_intent_query(cmd);
 }

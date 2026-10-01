@@ -7,11 +7,12 @@
 // Beats:
 //   1. Expose flight record lifecycle and event mutation functions.
 //   2. Wire post-execution telemetry badge formatting.
-//   3. Bind failure remedy and blackbox autopsy diagnostics.
+//   3. Bind failure remedy, diagnostic rules, and blackbox autopsy diagnostics.
 
 import "envelope.oo";
 import "telemetry.oo";
 import "remedy.oo";
+import "rules.oo";
 import "std/fs/process/process.oo";
 
 pub fn flight_init() -> FlightRecord {
@@ -24,6 +25,10 @@ pub fn flight_success(rec: FlightRecord, cmd: String, dur: Int) -> FlightRecord 
 
 pub fn flight_failure(rec: FlightRecord, cmd: String, code: Int, err: String, dur: Int) -> FlightRecord {
     return record_flight_failure(rec, cmd, code, err, dur);
+}
+
+pub fn flight_update_duration(rec: FlightRecord, dur: Int) -> FlightRecord {
+    return update_flight_duration(rec, dur);
 }
 
 pub fn flight_autopsy(rec: FlightRecord) -> String {
@@ -42,20 +47,35 @@ pub fn flight_remedy(rec: FlightRecord) -> String {
     return diagnose_failure(rec);
 }
 
+pub fn flight_remedy_cwd(rec: FlightRecord, cwd: String) -> String {
+    return diagnose_failure_cwd(rec, cwd);
+}
+
+pub fn flight_remedy_envelope(env: FailureEnvelope) -> String {
+    return diagnose_envelope(env);
+}
+
+pub fn flight_rules_match(cmd: String, code: Int, err: String, cwd: String) -> DiagnosticResult {
+    return match_failure_rules(cmd, code, err, cwd);
+}
+
 pub fn flight_anchor_probe() -> String {
     return "flight-active";
 }
 
 pub fn is_autopsy_cmd(cmd: String) -> Bool {
-    return cmd == "autopsy" || cmd == "bb" || cmd == "blackbox" || cmd == "flight" || cmd == "crash" || cmd == "postmortem" || cmd == "triage" || cmd == "coroner";
+    let t: String = str_trim(cmd);
+    return t == "autopsy" || t == "bb" || t == "blackbox" || t == "flight" || t == "crash" || t == "postmortem" || t == "triage" || t == "coroner" || str_starts_with(t, "autopsy ") || str_starts_with(t, "bb ") || str_starts_with(t, "blackbox ");
 }
 
 pub fn is_remedy_cmd(cmd: String) -> Bool {
-    return cmd == "remedy" || cmd == "fix" || cmd == "repair" || cmd == "heal" || cmd == "patch" || cmd == "resolve" || cmd == "cure" || cmd == "undo";
+    let t: String = str_trim(cmd);
+    return t == "remedy" || t == "fix" || t == "repair" || t == "heal" || t == "patch" || t == "resolve" || t == "cure" || t == "undo" || str_starts_with(t, "remedy ") || str_starts_with(t, "fix ");
 }
 
 pub fn is_scry_cmd(cmd: String) -> Bool {
-    return cmd == "scry" || str_starts_with(cmd, "scry ") || cmd == "inspect" || str_starts_with(cmd, "inspect ") || cmd == "probe";
+    let t: String = str_trim(cmd);
+    return t == "scry" || str_starts_with(t, "scry ") || t == "inspect" || str_starts_with(t, "inspect ") || t == "probe";
 }
 
 pub fn dispatch_diagnostics(sys: &ProcessCap, cwd: String, rec: FlightRecord, cmd: String) -> Bool {
@@ -64,7 +84,7 @@ pub fn dispatch_diagnostics(sys: &ProcessCap, cwd: String, rec: FlightRecord, cm
         return true;
     }
     if is_remedy_cmd(cmd) {
-        println(flight_remedy(rec));
+        println(flight_remedy_cwd(rec, cwd));
         return true;
     }
     if str_starts_with(cmd, "time ") || str_starts_with(cmd, "bench ") || str_starts_with(cmd, "clock ") {

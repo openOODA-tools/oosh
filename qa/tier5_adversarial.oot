@@ -1,0 +1,30 @@
+# oosh E2E Specification: Tier 5 Adversarial Coverage Hardening
+# Author: challenger_m6_1
+# Standard: openOODA House Laws (Page Rule: 16-256 lines)
+
+[T5-ADV: Adversarial Coverage Hardening Specifications]
+- T5-ADV-01: Pipe Stream Isolation - Non-interactive pipe execution produces clean stdout without prompt, dock, or badge escape sequences.
+- T5-ADV-02: Interactive PTY Prompt Dock - Interactive terminal sessions render ambient status dock with node identity and capability tokens.
+- T5-ADV-03: Stdin EOF Termination - Stdin closed pipe or EOF without explicit exit executes final buffered command and terminates with status 0.
+- T5-ADV-04: Multi-Command Stdin Stream - Sequential newline-separated piped commands execute in exact FIFO order without stream corruption.
+- T5-ADV-05: Carriage Return Sanitization - Windows CRLF line endings (\r\n) are stripped to prevent redundant prompt re-renders.
+- T5-ADV-06: Flight Recorder 20-Command Wrap - Executing 20 sequential commands maintains fixed 16-entry circular window (#05 through #20).
+- T5-ADV-07: Ring Buffer Oldest FIFO Eviction - Oldest executions (#01 through #04) are cleanly evicted from in-memory trace without memory leaks.
+- T5-ADV-08: Mixed Success/Failure Telemetry Trace - Ring buffer accurately records exit codes, durations, and glyphs across mixed commands.
+- T5-ADV-09: Autopsy Chronological Timeline - Autopsy card visualizes exact sequence numbers, status glyphs, and durations within 68-col frame.
+- T5-ADV-10: Autopsy Failure Causal Analysis - Non-zero fault triggers postmortem envelope highlighting faulted command, exit code, and root cause.
+- T5-ADV-11: Multi-Hop Navigation Traversal - Bare .. navigates up 1 parent, ... navigates up 2 parents, and .... navigates up 3 parents.
+- T5-ADV-12: Bare cd Navigation - cd command with zero arguments defaults to expanding user $HOME directory.
+- T5-ADV-13: Nonexistent Target cd Error - Attempting cd into nonexistent directory emits formatted error and preserves existing working directory.
+- T5-ADV-14: Take Atomic Creation & Navigation - take command creates deep directory hierarchy (-p) and transitions active cwd into target.
+- T5-ADV-15: Take Permission Denied Resilience - take into read-only system paths reports failure and preserves working directory without crash.
+- T5-ADV-16: Duration Millisecond Telemetry - Post-execution badge formats execution latency in milliseconds with stopwatch glyph (⏱ <ms>).
+- T5-ADV-17: Exit Code Success Status Glyph - Post-execution badge formats exit code 0 with toxic green checkmark (✔ 0).
+- T5-ADV-18: Exit Code Failure Status Glyph - Post-execution badge formats non-zero exit code with neon crimson cross (✘ <rc>).
+- T5-ADV-19: Peak Resident Memory Telemetry - Post-execution badge samples VmHWM from /proc/self/status and formats megabyte memory badge.
+- T5-ADV-20: Dynamic Posture Dock Synchronization - Status dock updates live session posture badge to ERR(<rc>) immediately following command fault.
+- T5-ADV-21: Builtin Syntax Classification - Internal sovereign builtins (status, caps, scry, remedy, autopsy, help, exit) receive amber accent.
+- T5-ADV-22: Navigation Syntax Classification - Directory navigation commands (cd, .., ..., take, pwd) receive toxic green accent.
+- T5-ADV-23: Host Binary Syntax Classification - External host system binaries (echo, ls, grep, git) receive neon cyan accent.
+- T5-ADV-24: Intent Channel Syntax Classification - Natural language queries (?, ai, ask, do, how, why) receive ultraviolet accent.
+- T5-ADV-25: High-Risk Confirmation Gate - Destructive intent commands require explicit uppercase 'YES' confirmation before execution.

@@ -5,14 +5,13 @@
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/openOODA-tools/oosh/main/install.sh | bash
-#   curl -fsSL https://raw.githubusercontent.com/openOODA-tools/oosh/main/install.sh -o install.sh && chmod +x install.sh && ./install.sh
 #
-# Flags:
+# Options:
 #   --prefix <dir>   Installation directory (default: /usr/local/bin or ~/.local/bin)
-#   --dry-run        Preview installation actions without modifying the system
-#   --verify         Verify SHA-256 checksums before installation
-#   --uninstall      Remove oosh binary from the system
-#   -h, --help       Display this help message
+#   --dry-run        Simulate installation without touching the filesystem
+#   --verify         Perform strict cryptographic SHA-256 integrity verification
+#   --uninstall      Remove oosh binary from standard system paths
+#   -h, --help       Show this help message
 # ==============================================================================
 
 set -eu
@@ -20,38 +19,124 @@ set -eu
 REPO="openOODA-tools/oosh"
 GITHUB_URL="https://github.com/${REPO}"
 RAW_URL="https://raw.githubusercontent.com/${REPO}/main"
+VERSION_PIN="v0.2.1"
 
-# --- Styling & Terminal Detection ---------------------------------------------
+# --- Styling & Human Interface Standard ---------------------------------------
 if [ -t 1 ] && [ "${NO_COLOR:-}" = "" ] && [ "${TERM:-dumb}" != "dumb" ]; then
-    ORANGE="\033[38;5;208m"
+    AMBER="\033[38;5;214m"
     CYAN="\033[38;5;51m"
     GREEN="\033[38;5;82m"
     YELLOW="\033[38;5;220m"
+    MAGENTA="\033[38;5;213m"
     DIM="\033[38;5;242m"
     BOLD="\033[1m"
     RESET="\033[0m"
     IS_TTY=1
 else
-    ORANGE="" CYAN="" GREEN="" YELLOW="" MAGENTA="" DIM="" BOLD="" RESET=""
+    AMBER="" CYAN="" GREEN="" YELLOW="" MAGENTA="" DIM="" BOLD="" RESET=""
     IS_TTY=0
 fi
 
 say()  { printf '%b\n' "$*"; }
-dim()  { say " ${DIM}$*${RESET}"; }
-ok()   { say " ${GREEN}✔${RESET} $*"; }
-warn() { say " ${YELLOW}!${RESET} $*"; }
-err()  { say " ${YELLOW}ERROR:${RESET} $*" >&2; }
+dim()  { say "  ${DIM}$*${RESET}"; }
+ok()   { say "  ${GREEN}✔${RESET} $*"; }
+warn() { say "  ${YELLOW}!${RESET} $*"; }
+err()  { say "  ${YELLOW}ERROR:${RESET} $*" >&2; }
 step() { say ""; say " ${CYAN}${BOLD}$*${RESET}"; }
 
+pause() {
+    _s="${1:-0.25}"
+    if [ "$IS_TTY" -eq 1 ]; then
+        sleep "$_s" 2>/dev/null || true
+    fi
+}
+
+story_line() {
+    say "  ${MAGENTA}›${RESET} ${DIM}$*${RESET}"
+    pause 0.2
+}
+
+spin_while() {
+    _pid="$1"
+    _label="$2"
+    _i=0
+    if [ "$IS_TTY" -eq 0 ]; then
+        wait "$_pid"
+        return $?
+    fi
+    while kill -0 "$_pid" 2>/dev/null; do
+        case $((_i % 4)) in
+            0) _ch='⠋' ;;
+            1) _ch='⠙' ;;
+            2) _ch='⠹' ;;
+            3) _ch='⠸' ;;
+        esac
+        printf "\r  ${CYAN}%s${RESET} %s…  " "$_ch" "$_label"
+        _i=$((_i + 1))
+        sleep 0.08 2>/dev/null || true
+    done
+    wait "$_pid"
+    _rc=$?
+    printf '\r\033[K'
+    return $_rc
+}
+
+countdown() {
+    _n="${1:-3}"
+    _msg="${2:-Launching}"
+    if [ "$IS_TTY" -eq 0 ]; then
+        return 0
+    fi
+    while [ "$_n" -gt 0 ]; do
+        printf "\r  ${AMBER}${BOLD}%s${RESET} in ${BOLD}%s${RESET}…   " "$_msg" "$_n"
+        sleep 0.8
+        _n=$((_n - 1))
+    done
+    printf '\r\033[K'
+}
+
+clear_soft() {
+    if [ "$IS_TTY" -eq 1 ] && command -v clear >/dev/null 2>&1; then
+        clear 2>/dev/null || true
+    fi
+}
+
 banner() {
+    clear_soft
     say ""
-    say "${ORANGE}${BOLD}    ____  ____  _____ __  __${RESET}"
-    say "${ORANGE}${BOLD}   / __ \/ __ \/ ___// / / /${RESET}"
-    say "${ORANGE}${BOLD}  / / / / / / /\__ \/ /_/ / ${RESET}"
-    say "${ORANGE}${BOLD} / /_/ / /_/ /___/ / __  /  ${RESET}"
-    say "${ORANGE}${BOLD} \____/\____//____/_/ /_/   ${RESET}"
-    say " ${BOLD}oosh — openOODA Sovereign Shell${RESET}"
-    say " ${DIM}Zero external dependencies • Pure standalone Linux executable${RESET}"
+    say "${AMBER}${BOLD}"
+    cat <<'BANNER'
+        ╔══════════════════════════════════════════════════════════╗
+        ║                                                          ║
+        ║      ██████╗  ██████╗ ███████╗██╗  ██╗                   ║
+        ║     ██╔═══██╗██╔═══██╗██╔════╝██║  ██║                   ║
+        ║     ██║   ██║██║   ██║███████╗███████║                   ║
+        ║     ██║   ██║██║   ██║╚════██║██╔══██║                   ║
+        ║     ╚██████╔╝╚██████╔╝███████║██║  ██║                   ║
+        ║      ╚═════╝  ╚═════╝ ╚══════╝╚═╝  ╚═╝                   ║
+        ║                                                          ║
+        ║               openOODA Sovereign Shell                   ║
+        ║       Intent-Driven • Ambient • Capability-Bounded       ║
+        ║                                                          ║
+        ╚══════════════════════════════════════════════════════════╝
+BANNER
+    say "${RESET}"
+    say "  ${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+    say ""
+}
+
+victory_banner() {
+    say ""
+    say "${GREEN}${BOLD}"
+    cat <<'VICTORY'
+        ╔══════════════════════════════════════════════════════════╗
+        ║                                                          ║
+        ║               ⚡ SOVEREIGNTY AWAKENED ⚡                  ║
+        ║                                                          ║
+        ╚══════════════════════════════════════════════════════════╝
+VICTORY
+    say "${RESET}"
+    say "  ${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
     say ""
 }
 
@@ -69,13 +154,15 @@ while [ $# -gt 0 ]; do
         --prefix) CUSTOM_PREFIX="$2"; shift 2 ;;
         -h|--help)
             banner
-            say "Usage: install.sh [options]"
-            say "Options:"
-            say "  --prefix <dir>   Install destination (default: /usr/local/bin or ~/.local/bin)"
-            say "  --dry-run        Simulate without modifying the host"
-            say "  --verify         Perform strict cryptographic SHA-256 verification"
-            say "  --uninstall      Remove oosh from the system"
-            say "  -h, --help       Show this help"
+            say "  ${BOLD}Usage:${RESET} curl -fsSL .../install.sh | bash [options]"
+            say ""
+            say "  ${BOLD}Options:${RESET}"
+            say "    ${CYAN}--prefix <dir>${RESET}   Target binary directory (default: /usr/local/bin or ~/.local/bin)"
+            say "    ${CYAN}--dry-run${RESET}        Simulate deployment without modifying host"
+            say "    ${CYAN}--verify${RESET}         Verify cryptographic SHA-256 seal and exit"
+            say "    ${CYAN}--uninstall${RESET}      Cleanly remove oosh binary from system"
+            say "    ${CYAN}-h, --help${RESET}       Display this manual"
+            say ""
             exit 0
             ;;
         *) err "Unknown flag: $1"; exit 1 ;;
@@ -83,10 +170,12 @@ while [ $# -gt 0 ]; do
 done
 
 banner
+story_line "Attuning your environment to the openOODA sovereign shell…"
+pause 0.3
 
 # --- Uninstall Path -----------------------------------------------------------
 if [ "$DO_UNINSTALL" -eq 1 ]; then
-    step "Uninstalling oosh"
+    step "Relinquishing Sovereign Shell"
     FOUND=0
     for p in /usr/local/bin/oosh "${HOME}/.local/bin/oosh" "${HOME}/.openooda/bin/oosh"; do
         if [ -f "$p" ]; then
@@ -94,48 +183,53 @@ if [ "$DO_UNINSTALL" -eq 1 ]; then
                 dim "Would remove $p"
             else
                 rm -f "$p" 2>/dev/null || sudo rm -f "$p"
-                ok "Removed $p"
+                ok "Banished ${BOLD}$p${RESET}"
             fi
             FOUND=1
         fi
     done
     if [ "$FOUND" -eq 0 ]; then
-        warn "No oosh binary found in standard install locations."
+        warn "No existing oosh binary detected in standard search paths."
     fi
+    say ""
     exit 0
 fi
 
-# --- Step 1: Pre-flight & Architecture ----------------------------------------
-step "[1/4] Pre-flight & Platform Detection"
+# --- Phase 1: Identity & Attunement -------------------------------------------
+step "[1/4]  Attuning host & kernel substrate"
 
 OS="$(uname -s)"
 if [ "$OS" != "Linux" ]; then
-    warn "Detected non-Linux OS: $OS"
-    say " oosh is built for native Linux kernels. Continuing with best effort..."
+    warn "Non-Linux kernel detected: ${BOLD}${OS}${RESET}"
+    story_line "oosh is architected for native Linux. Continuing best-effort…"
 fi
 
 ARCH="$(uname -m)"
 case "$ARCH" in
-    x86_64|amd64)
-        TARGET_ARCH="x86_64"
-        ;;
-    aarch64|arm64)
-        TARGET_ARCH="aarch64"
-        ;;
+    x86_64|amd64) TARGET_ARCH="x86_64" ;;
+    aarch64|arm64) TARGET_ARCH="aarch64" ;;
     *)
-        err "Unsupported architecture: $ARCH (oosh supports x86_64 and aarch64)"
+        err "Unsupported hardware architecture: $ARCH (oosh requires x86_64 or aarch64)"
         exit 1
         ;;
 esac
-ok "Platform: ${BOLD}${OS} ${TARGET_ARCH}${RESET}"
 
-# Verify curl exists
+OS_PRETTY="Linux"
+if [ -f /etc/os-release ]; then
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    OS_PRETTY="${PRETTY_NAME:-Linux}"
+fi
+
+say "  ${DIM}os${RESET}       ${GREEN}${OS_PRETTY}${RESET}"
+say "  ${DIM}arch${RESET}     ${GREEN}${TARGET_ARCH}${RESET} ${DIM}(${ARCH})${RESET}"
+say "  ${DIM}kernel${RESET}   ${GREEN}$(uname -r)${RESET}"
+
 if ! command -v curl >/dev/null 2>&1; then
-    err "curl is required to download oosh release assets"
+    err "curl is required to retrieve sovereign release assets"
     exit 1
 fi
 
-# Verify sha256 tools exist
 HASH_CMD=""
 if command -v sha256sum >/dev/null 2>&1; then
     HASH_CMD="sha256sum"
@@ -144,12 +238,12 @@ elif command -v shasum >/dev/null 2>&1; then
 fi
 
 if [ -z "$HASH_CMD" ]; then
-    warn "Neither sha256sum nor shasum found; cryptographic verification disabled."
+    warn "No sha256 utility on PATH; cryptographic verification disabled."
 else
-    ok "Hash utility: ${BOLD}${HASH_CMD}${RESET}"
+    say "  ${DIM}crypto${RESET}   ${GREEN}${HASH_CMD}${RESET}"
 fi
 
-# Determine destination directory
+# Resolve destination directory
 if [ -n "$CUSTOM_PREFIX" ]; then
     INSTALL_DIR="$CUSTOM_PREFIX"
 elif [ "$(id -u)" -eq 0 ]; then
@@ -159,109 +253,110 @@ elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
 else
     INSTALL_DIR="${HOME}/.local/bin"
 fi
-dim "Target binary path: ${INSTALL_DIR}/oosh"
+say "  ${DIM}target${RESET}   ${CYAN}${INSTALL_DIR}/oosh${RESET}"
+pause 0.3
 
-# --- Step 2: Fetch Release Metadata -------------------------------------------
-step "[2/4] Resolving Latest Release"
+# --- Phase 2: Resolving Release & Provenance ----------------------------------
+step "[2/4]  Scrying release channels & provenance"
 
-# Fetch latest release tag via GitHub API or redirect
+story_line "Contacting sovereign registry at ${GITHUB_URL}…"
 LATEST_TAG=$(curl -sSL -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null | grep '"tag_name":' | head -1 | cut -d '"' -f 4 || echo "")
 if [ -z "$LATEST_TAG" ]; then
-    # Fallback to current certified release
-    LATEST_TAG="v0.2.0"
+    LATEST_TAG="$VERSION_PIN"
 fi
-ok "Release version: ${BOLD}${LATEST_TAG}${RESET}"
 
 ASSET_NAME="oosh-linux-${TARGET_ARCH}"
 ASSET_URL="${GITHUB_URL}/releases/download/${LATEST_TAG}/${ASSET_NAME}"
 SHA_URL="${GITHUB_URL}/releases/download/${LATEST_TAG}/${ASSET_NAME}.sha256"
 
-# --- Step 3: Download & Integrity Verification --------------------------------
-step "[3/4] Downloading & Cryptographic Verification"
+ok "Channel:  ${BOLD}${LATEST_TAG}${RESET} ${DIM}(canonical release)${RESET}"
+ok "Artifact: ${BOLD}${ASSET_NAME}${RESET}"
+pause 0.2
 
 if [ "$DRY_RUN" -eq 1 ]; then
-    dim "[dry-run] Would download: $ASSET_URL"
-    dim "[dry-run] Would download: $SHA_URL"
-    dim "[dry-run] Would verify SHA-256 and install to: $INSTALL_DIR/oosh"
-    ok "Dry run plan complete."
+    step "[DRY RUN] Verification Plan"
+    say "  ${DIM}fetch${RESET}   ${CYAN}${ASSET_URL}${RESET}"
+    say "  ${DIM}verify${RESET}  ${CYAN}${SHA_URL}${RESET}"
+    say "  ${DIM}deploy${RESET}  ${CYAN}${INSTALL_DIR}/oosh${RESET}"
+    say ""
+    ok "Simulation complete. No host modifications made."
+    say ""
     exit 0
 fi
 
-TMP_DIR="$(mktemp -d /tmp/oosh-install.XXXXXX)"
+# --- Phase 3: Transmission & Cryptographic Seal -------------------------------
+step "[3/4]  Transmuting & verifying cryptographic seal"
+
+TMP_DIR="$(mktemp -d /tmp/oosh-bootstrap.XXXXXX)"
 trap 'rm -rf "$TMP_DIR"' EXIT INT TERM
 
-dim "Fetching binary asset from ${ASSET_URL}..."
-curl -fsSL "$ASSET_URL" -o "${TMP_DIR}/${ASSET_NAME}" || {
-    err "Failed to download oosh release asset from ${ASSET_URL}"
-    exit 1
-}
-ok "Downloaded ${ASSET_NAME}"
+story_line "Streaming standalone binary artifact from release channel…"
+curl -fsSL "$ASSET_URL" -o "${TMP_DIR}/${ASSET_NAME}" &
+spin_while $! "Streaming ${ASSET_NAME}"
+ok "Transmitted ${ASSET_NAME}"
 
-dim "Fetching checksum from ${SHA_URL}..."
+story_line "Acquiring publisher's cryptographic SHA-256 seal…"
 curl -fsSL "$SHA_URL" -o "${TMP_DIR}/${ASSET_NAME}.sha256" 2>/dev/null || true
 
 if [ -f "${TMP_DIR}/${ASSET_NAME}.sha256" ] && [ -n "$HASH_CMD" ]; then
     EXPECTED_SHA=$(awk '{print $1}' "${TMP_DIR}/${ASSET_NAME}.sha256" | head -1)
     ACTUAL_SHA=$($HASH_CMD "${TMP_DIR}/${ASSET_NAME}" | awk '{print $1}')
     if [ "$EXPECTED_SHA" != "$ACTUAL_SHA" ]; then
-        err "SHA-256 checksum mismatch!"
-        err "  Expected: $EXPECTED_SHA"
-        err "  Actual:   $ACTUAL_SHA"
+        err "Cryptographic seal violation! Download corrupted or tampered."
+        say "  ${DIM}Expected:${RESET} ${YELLOW}${EXPECTED_SHA}${RESET}"
+        say "  ${DIM}Actual:  ${RESET} ${YELLOW}${ACTUAL_SHA}${RESET}"
         exit 1
     fi
-    ok "SHA-256 verified: ${DIM}${ACTUAL_SHA}${RESET}"
+    ok "Cryptographic seal verified: ${DIM}${ACTUAL_SHA}${RESET}"
 else
-    warn "Checksum asset not present; skipped hash check."
+    warn "Checksum manifest unavailable; skipped seal verification."
 fi
+pause 0.3
 
-# --- Step 4: Installation & Verification --------------------------------------
-step "[4/4] Deploying Sovereign Shell"
+# --- Phase 4: Awakening the Sovereign Shell -----------------------------------
+step "[4/4]  Awakening sovereign shell"
 
-# Ensure directory exists
 if [ ! -d "$INSTALL_DIR" ]; then
     mkdir -p "$INSTALL_DIR" 2>/dev/null || sudo mkdir -p "$INSTALL_DIR"
 fi
 
 chmod +x "${TMP_DIR}/${ASSET_NAME}"
 
-# Move to destination
+story_line "Placing binary into ${INSTALL_DIR}…"
 if [ -w "$INSTALL_DIR" ]; then
     mv "${TMP_DIR}/${ASSET_NAME}" "${INSTALL_DIR}/oosh"
 else
     sudo mv "${TMP_DIR}/${ASSET_NAME}" "${INSTALL_DIR}/oosh"
 fi
-ok "Installed executable to ${BOLD}${INSTALL_DIR}/oosh${RESET}"
+ok "Binary situated at ${BOLD}${INSTALL_DIR}/oosh${RESET}"
 
-# Verify installed binary
 if "${INSTALL_DIR}/oosh" --version >/dev/null 2>&1; then
-    INST_VER=$("${INSTALL_DIR}/oosh" --version)
-    ok "Binary verified: ${GREEN}${BOLD}${INST_VER}${RESET}"
+    VER_PROVE=$("${INSTALL_DIR}/oosh" --version)
+    ok "Living proof: ${GREEN}${BOLD}${VER_PROVE}${RESET}"
 else
-    warn "Installed binary could not execute directly."
+    warn "Verification probe non-responsive."
 fi
 
-# Check PATH
+# PATH Inspection
 PATH_OK=0
 case ":$PATH:" in
     *:"$INSTALL_DIR":*) PATH_OK=1 ;;
 esac
 
-say ""
-say " ${GREEN}${BOLD}✔ oosh successfully installed!${RESET}"
-say ""
+victory_banner
 
 if [ "$PATH_OK" -eq 0 ]; then
-    warn "${INSTALL_DIR} is not currently in your \$PATH."
-    say "   Add the following line to your ${BOLD}~/.bashrc${RESET} or ${BOLD}~/.zshrc${RESET}:"
+    warn "The directory ${BOLD}${INSTALL_DIR}${RESET} is not in your current \$PATH."
     say ""
-    say "     ${CYAN}export PATH=\"${INSTALL_DIR}:\$PATH\"${RESET}"
+    say "  To enable ${BOLD}oosh${RESET} across your environment, add to ${BOLD}~/.bashrc${RESET} or ${BOLD}~/.zshrc${RESET}:"
+    say "    ${CYAN}export PATH=\"${INSTALL_DIR}:\$PATH\"${RESET}"
     say ""
 fi
 
-say " To launch your sovereign shell right now:"
-say "   ${BOLD}${INSTALL_DIR}/oosh${RESET}"
+say "  ${BOLD}Enter your sovereign shell right now:${RESET}"
+say "    ${AMBER}${BOLD}${INSTALL_DIR}/oosh${RESET}"
 say ""
-say " To set oosh as your default login shell:"
-say "   ${DIM}echo \"${INSTALL_DIR}/oosh\" | sudo tee -a /etc/shells${RESET}"
-say "   ${BOLD}chsh -s \"${INSTALL_DIR}/oosh\"${RESET}"
+say "  ${BOLD}Make oosh your default login shell:${RESET}"
+say "    ${DIM}echo \"${INSTALL_DIR}/oosh\" | sudo tee -a /etc/shells${RESET}"
+say "    ${BOLD}chsh -s \"${INSTALL_DIR}/oosh\"${RESET}"
 say ""

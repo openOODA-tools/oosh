@@ -1,0 +1,19 @@
+// # oosh - Root System Anchor
+//
+// Logline: Structural entry anchor for the openOODA-tools/oosh sovereign shell repository.
+//
+// Setup: Root entry point importing core shell subsystems and version stamp.
+//
+// Beats:
+//   1. Expose root entry version and system anchor verification.
+//   2. Wire top-level exports for toolchain analysis.
+
+import "version.oo";
+
+pub fn oosh_anchor_version() -> String {
+    return oosh_version();
+}
+
+pub fn oosh_anchor_banner() -> String {
+    return oosh_banner();
+}

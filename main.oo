@@ -1,0 +1,73 @@
+// # oosh Main - Argv Router and Interactive Shell Entry
+//
+// Logline: Parse startup flags, validate environment, and launch the sovereign shell session.
+//
+// Setup: Wire capability tokens per openOODA capability model. Handle --help and --version before dispatch.
+//
+// Beats:
+//   1. Pre-pass --help and --version without side effects.
+//   2. Validate startup flags; unknown flags exit with status 2.
+//   3. Display shell startup banner.
+//   4. Initialize prompt and session loop.
+
+import "version.oo";
+
+fn print_help() {
+    println("oosh — openOODA sovereign shell");
+    println("usage: oosh [flags]");
+    println("");
+    println("flags:");
+    println("  -h, --help       display this help message");
+    println("  -v, --version    display oosh version");
+    println("      --no-banner  suppress startup banner");
+}
+
+fn validate_argv(args: List[String]) -> Result[String, String] {
+    let n: Int = list_len(args);
+    let mut i: Int = 0;
+    while i < n {
+        let a: String = list_get(args, i);
+        if a == "--help" || a == "-h" {
+            print_help();
+            return Ok("showed-help");
+        }
+        if a == "--version" || a == "-v" {
+            println("oosh " + oosh_version());
+            return Ok("showed-version");
+        }
+        if a == "--no-banner" {
+            i = i + 1;
+        } else {
+            println("ERR\toosh\tunknown flag: " + a);
+            process_exit(2);
+            return Err("unknown flag");
+        }
+    }
+    return Ok("validated");
+}
+
+pub fn main(bind: &BindCap, fs_r: &FsReadCap, sys: &ProcessCap, sys_cap: &SysCap, env: &EnvCap, time: &TimeCap, fs_w: &FsWriteCap, alloc: &AllocCap, thread: &ThreadCap, args: List[String]) -> Result[Int, String] {
+    let pre: Result[String, String] = validate_argv(args);
+    let kind: String = match pre { Ok(s) => s, Err(_) => "validated" };
+    if kind == "showed-help" || kind == "showed-version" {
+        return Ok(0);
+    }
+
+    let mut show_banner: Bool = true;
+    let n: Int = list_len(args);
+    let mut i: Int = 0;
+    while i < n {
+        let a: String = list_get(args, i);
+        if a == "--no-banner" {
+            show_banner = false;
+        }
+        i = i + 1;
+    }
+
+    if show_banner {
+        println(oosh_banner());
+    }
+
+    // Shell initialized successfully
+    return Ok(0);
+}

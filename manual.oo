@@ -12,33 +12,39 @@
 import "std/fs/process/process.oo";
 import "ui/anchor.oo";
 
+pub fn get_help_guide() -> String {
+    let top: String = ui_card_top("ᚱ", "sovereign builtins & registry") + "\n";
+    let s1: String = ui_card_section("Navigation") + "\n" +
+        "    cd [dir], goto, jump, walk   change directory (~, .., relative, absolute)\n" +
+        "    ..                           navigate to parent directory\n" +
+        "    ...                          navigate up two directory levels\n" +
+        "    pwd, cwd, whereami           display active directory and git branch\n" +
+        "    take [dir], mkcd             create directory recursively and enter it\n";
+    let s2: String = ui_card_section("Session & Viewport") + "\n" +
+        "    exit, quit, q, :q, bye       terminate shell session cleanly\n" +
+        "    clear, cls, clean, reset     clear terminal screen\n";
+    let s3: String = ui_card_section("System & Capability Audit") + "\n" +
+        "    status, stat, health, info   node posture and runtime telemetry\n" +
+        "    caps, perms, whoami          audit active openOODA capability tokens\n" +
+        "    version, ver, about          display shell banner and version\n" +
+        "    rune, token, talisman        query hardware ambient token enclave\n" +
+        "    autopsy, bb, blackbox        examine flight recorder / crash telemetry\n" +
+        "    link [sock], connect         connect or probe syntropd IPC daemon\n" +
+        "    scry [target], inspect       deep-scan process or system diagnostics\n" +
+        "    remedy, fix, repair          diagnose last failure and suggest recovery\n";
+    let s4: String = ui_card_section("Intent & Host Execution") + "\n" +
+        "    open [target], view, show    open file or URL with default desktop app\n" +
+        "    time [cmd], bench            measure execution duration and memory\n" +
+        "    env, vars, printenv          display active environment variables\n" +
+        "    alias [name=val], unalias    manage command aliases and shortcuts\n" +
+        "    ? <query>, ask, how, why     channel intent to openOODA reasoning substrate\n" +
+        "    <binary> [args]              execute any host binary (ls, git, cargo, ps)\n";
+    let bot: String = ui_card_bottom("TYPE 'help <command>' FOR CONTEXTUAL TOPIC GUIDE") + "\n";
+    return top + s1 + s2 + s3 + s4 + bot;
+}
+
 pub fn print_help_guide() {
-    println(ui_card_top("ᚱ", "sovereign builtins & registry"));
-    println(ui_card_section("Navigation"));
-    println("    cd [dir], goto, jump, walk   change directory (~, .., relative, absolute)");
-    println("    ..                           navigate to parent directory");
-    println("    ...                          navigate up two directory levels");
-    println("    pwd, cwd, whereami           display active directory and git branch");
-    println("    take [dir], mkcd             create directory recursively and enter it");
-    println(ui_card_section("Session & Viewport"));
-    println("    exit, quit, q, :q, bye       terminate shell session cleanly");
-    println("    clear, cls, clean, reset     clear terminal screen");
-    println(ui_card_section("System & Capability Audit"));
-    println("    status, stat, health, info   node posture and runtime telemetry");
-    println("    caps, perms, whoami          audit active openOODA capability tokens");
-    println("    version, ver, about          display shell banner and version");
-    println("    rune, token, talisman        query hardware ambient token enclave");
-    println("    autopsy, bb, blackbox        examine flight recorder / crash telemetry");
-    println("    link [sock], connect         connect or probe syntropd IPC daemon");
-    println("    scry [target], inspect       deep-scan process or system diagnostics");
-    println("    remedy, fix, repair          diagnose last failure and suggest recovery");
-    println(ui_card_section("Intent & Host Execution"));
-    println("    open [target], view, show    open file or URL with default desktop app");
-    println("    time [cmd], bench            measure execution duration and memory");
-    println("    env, vars, printenv          display active environment variables");
-    println("    ? <query>, ask, how, why     channel intent to openOODA reasoning substrate");
-    println("    <binary> [args]              execute any host binary (ls, git, cargo, ps)");
-    println(ui_card_bottom("TYPE 'help <command>' FOR CONTEXTUAL TOPIC GUIDE"));
+    print(get_help_guide());
 }
 
 pub fn print_context_help(raw_topic: String) {
@@ -96,34 +102,44 @@ pub fn print_context_help(raw_topic: String) {
     print_help_guide();
 }
 
-pub fn print_status(sys: &ProcessCap, cwd: String) {
-    println(ui_card_top("ᛟ", "oosh node telemetry & posture"));
-    println(ui_card_row("Mode", "Standalone Sovereign Shell"));
-    println(ui_card_row("CWD", cwd));
-    println(ui_card_row("Substrate", "openOODA native runtime (glibc x86_64)"));
+pub fn get_status_string(sys: &ProcessCap, cwd: String) -> String {
+    let top: String = ui_card_top("ᛟ", "oosh node telemetry & posture") + "\n";
+    let r1: String = ui_card_row("Mode", "Standalone Sovereign Shell") + "\n";
+    let r2: String = ui_card_row("CWD", cwd) + "\n";
+    let r3: String = ui_card_row("Substrate", "openOODA native runtime (glibc x86_64)") + "\n";
     let pr: Result[String, String] = process_exec(sys, "test -d /run/syntrop && echo 1 || echo 0");
     let has_syntrop: Bool = match pr { Ok(s) => str_trim(s) == "1", Err(_) => false };
-    if has_syntrop {
-        println(ui_card_row("Syntropd", "Mesh Linked (/run/syntrop: contextd, toold, sentry, runtimed)"));
+    let r4: String = if has_syntrop {
+        ui_card_row("Syntropd", "Mesh Linked (/run/syntrop: contextd, toold, sentry, runtimed)") + "\n"
     } else {
-        println(ui_card_row("Syntropd", "Headless Varlink IPC Control Plane Ready"));
-    }
-    println(ui_card_row("Latency", "< 1ms interactive dispatch"));
-    println(ui_card_bottom("POSTURE NOMINAL"));
+        ui_card_row("Syntropd", "Headless Varlink IPC Control Plane Ready") + "\n"
+    };
+    let r5: String = ui_card_row("Latency", "< 1ms interactive dispatch") + "\n";
+    let bot: String = ui_card_bottom("POSTURE NOMINAL") + "\n";
+    return top + r1 + r2 + r3 + r4 + r5 + bot;
+}
+
+pub fn print_status(sys: &ProcessCap, cwd: String) {
+    print(get_status_string(sys, cwd));
+}
+
+pub fn get_caps_string(sys: &ProcessCap) -> String {
+    let user_res: Result[String, String] = process_exec(sys, "id -un 2>/dev/null || whoami");
+    let user_str: String = match user_res { Ok(u) => str_trim(u), Err(_) => "sovereign" };
+    let top: String = ui_card_top("ᛏ", "sovereign capability audit") + "\n";
+    let r1: String = ui_card_row("Identity", user_str) + "\n";
+    let r2: String = ui_card_row("Tokens Held", "&ProcessCap (PROC: host process execution)") + "\n";
+    let r3: String = ui_card_row("            ", "&EnvCap     (environment isolation)") + "\n";
+    let r4: String = ui_card_row("            ", "&FsReadCap  (filesystem inspection)") + "\n";
+    let r5: String = ui_card_row("            ", "&TimeCap    (monotonic latency clock)") + "\n";
+    let r6: String = ui_card_row("Enclave", "Software Sandbox (glibc standalone)") + "\n";
+    let r7: String = ui_card_row("Rune Token", "Unbound (local terminal session)") + "\n";
+    let bot: String = ui_card_bottom("CAPABILITY VERIFIED") + "\n";
+    return top + r1 + r2 + r3 + r4 + r5 + r6 + r7 + bot;
 }
 
 pub fn print_caps(sys: &ProcessCap) {
-    let user_res: Result[String, String] = process_exec(sys, "id -un 2>/dev/null || whoami");
-    let user_str: String = match user_res { Ok(u) => str_trim(u), Err(_) => "sovereign" };
-    println(ui_card_top("ᛏ", "sovereign capability audit"));
-    println(ui_card_row("Identity", user_str));
-    println(ui_card_row("Tokens Held", "&ProcessCap (host process execution)"));
-    println(ui_card_row("            ", "&EnvCap     (environment isolation)"));
-    println(ui_card_row("            ", "&FsReadCap  (filesystem inspection)"));
-    println(ui_card_row("            ", "&TimeCap    (monotonic latency clock)"));
-    println(ui_card_row("Enclave", "Software Sandbox (glibc standalone)"));
-    println(ui_card_row("Rune Token", "Unbound (local terminal session)"));
-    println(ui_card_bottom("CAPABILITY VERIFIED"));
+    print(get_caps_string(sys));
 }
 
 pub fn print_autopsy() {

@@ -6,11 +6,12 @@
 //
 // Beats:
 //   1. Pre-pass --help, --version, and flags without side effects.
-//   2. Support positional .oosh script execution and shebang #!/usr/bin/env oosh.
-//   3. Source ~/.ooshrc configuration on interactive startup.
+//   2. Support positional .oosh script execution and shebang #!/usr/bin/env oosh with args.
+//   3. Source ~/.ooshrc configuration into session environment and alias table.
 //   4. Initialize prompt and dispatch to the OODA REPL engine with FfiCap.
 
 import "std/fs/process/env.oo";
+import "alias.oo";
 import "version.oo";
 import "engine.oo";
 import "dispatch.oo";
@@ -20,7 +21,7 @@ import "ui/anchor.oo";
 
 fn print_help() {
     println("oosh — openOODA sovereign shell");
-    println("usage: oosh [flags] [script.oosh] [-c <command>]");
+    println("usage: oosh [flags] [script.oosh] [args...] [-c <command>]");
     println("");
     println("flags:");
     println("  -c <command>           execute specified command and exit");
@@ -63,7 +64,7 @@ fn validate_argv(args: List[String]) -> Result[String, String] {
             }
             i = i + 2;
         } else if !str_starts_with(a, "-") {
-            // Positional script file argument
+            // Positional script file or argument
             i = i + 1;
         } else {
             println("ERR\toosh\tunknown flag: " + a);
@@ -74,7 +75,7 @@ fn validate_argv(args: List[String]) -> Result[String, String] {
     return Ok("validated");
 }
 
-fn run_script_file(fs_r: &FsReadCap, fs_w: &FsWriteCap, sys: &ProcessCap, env: &EnvCap, ffi: &FfiCap, cwd: String, script_path: String, rec: FlightRecord) -> Int {
+fn run_script_file(fs_r: &FsReadCap, fs_w: &FsWriteCap, sys: &ProcessCap, env: &EnvCap, ffi: &FfiCap, cwd: String, script_path: String, rec: FlightRecord, aliases: AliasMap) -> Int {
     let sr: Result[String, String] = read_file(fs_r, script_path);
     if sr.is_err() {
         println("ERR\toosh\tcannot read script: " + script_path);
@@ -86,6 +87,7 @@ fn run_script_file(fs_r: &FsReadCap, fs_w: &FsWriteCap, sys: &ProcessCap, env: &
     let mut i: Int = 0;
     let mut cur_cwd: String = cwd;
     let mut cur_rec: FlightRecord = rec;
+    let mut cur_aliases: AliasMap = aliases;
 
     while i < n {
         let ch: String = char_at(content, i);
@@ -93,9 +95,10 @@ fn run_script_file(fs_r: &FsReadCap, fs_w: &FsWriteCap, sys: &ProcessCap, env: &
             let line: String = str_trim(cur);
             cur = "";
             if line != "" && !str_starts_with(line, "#") {
-                let res: DispatchResult = dispatch_line(fs_r, fs_w, sys, env, ffi, cur_cwd, line, cur_rec);
+                let res: DispatchResult = dispatch_line(fs_r, fs_w, sys, env, ffi, cur_cwd, line, cur_rec, cur_aliases);
                 cur_cwd = res.next_cwd;
                 cur_rec = res.flight_rec;
+                cur_aliases = res.aliases;
                 if res.should_exit || res.exit_code != 0 { return res.exit_code; }
             }
         } else if ch != "\r" {
@@ -105,7 +108,7 @@ fn run_script_file(fs_r: &FsReadCap, fs_w: &FsWriteCap, sys: &ProcessCap, env: &
     }
     let last_line: String = str_trim(cur);
     if last_line != "" && !str_starts_with(last_line, "#") {
-        let res: DispatchResult = dispatch_line(fs_r, fs_w, sys, env, ffi, cur_cwd, last_line, cur_rec);
+        let res: DispatchResult = dispatch_line(fs_r, fs_w, sys, env, ffi, cur_cwd, last_line, cur_rec, cur_aliases);
         return res.exit_code;
     }
     return 0;
@@ -126,6 +129,8 @@ pub fn main(bind: &BindCap, fs_r: &FsReadCap, sys: &ProcessCap, sys_cap: &SysCap
     let mut is_daemon: Bool = false;
     let mut varlink_payload: String = "";
     let mut script_file: String = "";
+    let mut script_args: List[String] = list_new();
+    let mut aliases: AliasMap = alias_map_new();
 
     let mut i: Int = 0;
     while i < n {
@@ -146,9 +151,13 @@ pub fn main(bind: &BindCap, fs_r: &FsReadCap, sys: &ProcessCap, sys_cap: &SysCap
             show_banner = false;
             varlink_payload = list_get(args, i + 1);
             i = i + 2;
-        } else if !str_starts_with(a, "-") && script_file == "" {
+        } else if !str_starts_with(a, "-") {
             show_banner = false;
-            script_file = a;
+            if script_file == "" {
+                script_file = a;
+            } else {
+                script_args = list_push(script_args, a);
+            }
             i = i + 1;
         } else {
             i = i + 1;
@@ -172,30 +181,53 @@ pub fn main(bind: &BindCap, fs_r: &FsReadCap, sys: &ProcessCap, sys_cap: &SysCap
 
     if has_c_flag {
         if str_trim(one_shot_cmd) == "" { return Ok(0); }
-        let res: DispatchResult = dispatch_line(fs_r, fs_w, sys, env, ffi, cwd, one_shot_cmd, rec);
+        let res: DispatchResult = dispatch_line(fs_r, fs_w, sys, env, ffi, cwd, one_shot_cmd, rec, aliases);
         if res.exit_code != 0 { process_exit(res.exit_code); }
         return Ok(res.exit_code);
     }
 
-    if script_file != "" {
-        let s_rc: Int = run_script_file(fs_r, fs_w, sys, env, ffi, cwd, script_file, rec);
-        if s_rc != 0 { process_exit(s_rc); }
-        return Ok(s_rc);
-    }
-
-    // Source ~/.ooshrc on interactive startup if present
+    // Source ~/.ooshrc configuration into session environment and alias table
     let hr: Result[String, String] = env_get(env, "HOME");
     let home: String = match hr { Ok(h) => h, Err(_) => "" };
     if home != "" {
         let ooshrc_path: String = home + "/.ooshrc";
-        let _ = run_script_file(fs_r, fs_w, sys, env, ffi, cwd, ooshrc_path, rec);
+        let ooshrc_read: Result[String, String] = read_file(fs_r, ooshrc_path);
+        if ooshrc_read.is_ok() {
+            let rc_content: String = match ooshrc_read { Ok(s) => s, Err(_) => "" };
+            let rn: Int = chars_len(rc_content);
+            let mut rcur: String = "";
+            let mut ri: Int = 0;
+            while ri < rn {
+                let rch: String = char_at(rc_content, ri);
+                if rch == "\n" {
+                    let rline: String = str_trim(rcur);
+                    rcur = "";
+                    if rline != "" && !str_starts_with(rline, "#") {
+                        let res: DispatchResult = dispatch_line(fs_r, fs_w, sys, env, ffi, cwd, rline, rec, aliases);
+                        aliases = res.aliases;
+                    }
+                } else if rch != "\r" { rcur = rcur + rch; }
+                ri = ri + 1;
+            }
+            let rlast: String = str_trim(rcur);
+            if rlast != "" && !str_starts_with(rlast, "#") {
+                let res: DispatchResult = dispatch_line(fs_r, fs_w, sys, env, ffi, cwd, rlast, rec, aliases);
+                aliases = res.aliases;
+            }
+        }
+    }
+
+    if script_file != "" {
+        let s_rc: Int = run_script_file(fs_r, fs_w, sys, env, ffi, cwd, script_file, rec, aliases);
+        if s_rc != 0 { process_exit(s_rc); }
+        return Ok(s_rc);
     }
 
     if show_banner && ui_is_interactive(sys) {
         println(oosh_banner());
     }
 
-    let rc: Int = run_engine(fs_r, sys, env, time, bind, fs_w, ffi);
+    let rc: Int = run_engine(fs_r, sys, env, time, bind, fs_w, ffi, aliases);
     if rc != 0 { process_exit(rc); }
     return Ok(rc);
 }

@@ -2,15 +2,16 @@
 //
 // Logline: Implements the interactive prompt loop: observes input, orients command intent, and executes actions.
 //
-// Setup: Takes FsReadCap, ProcessCap, EnvCap, TimeCap, BindCap, FsWriteCap, and FfiCap.
+// Setup: Takes FsReadCap, ProcessCap, EnvCap, TimeCap, BindCap, FsWriteCap, FfiCap, and AliasMap.
 //
 // Beats:
-//   1. Initialize active working directory, session flight record, and persistent history.
+//   1. Initialize active working directory, session flight record, persistent history, and aliases.
 //   2. Manage raw mode terminal line editor with ANSI escape sequence decoding.
-//   3. Render real-time TrueColor syntax accenting and ghost auto-remedy suggestions.
-//   4. Measure execution latency and render post-execution telemetry badges.
+//   3. Tab completion for builtins/$PATH executables on token 0, and relative paths on subsequent tokens.
+//   4. Measure execution latency and render post-execution telemetry badges with memory and PID.
 
 import "std/fs/process/env.oo";
+import "alias.oo";
 import "prompt.oo";
 import "dispatch.oo";
 import "flight/anchor.oo";
@@ -27,38 +28,83 @@ fn parse_line_entries(s: String) -> List[String] {
             let t: String = str_trim(cur);
             if t != "" { entries = list_push(entries, t); }
             cur = "";
-        } else if ch != "\r" {
-            cur = cur + ch;
-        }
+        } else if ch != "\r" { cur = cur + ch; }
         i = i + 1;
     }
     if str_trim(cur) != "" { entries = list_push(entries, str_trim(cur)); }
     return entries;
 }
 
-fn builtin_completion(prefix: String) -> String {
-    let builtins: String = "help:version:status:caps:whereami:history:clear:remedy:autopsy:export:unset:alias:take:pwd:exit";
-    let n: Int = chars_len(builtins);
-    let mut cur: String = "";
+fn complete_token(fs_r: &FsReadCap, cur_line: String, aliases: AliasMap) -> String {
+    let n: Int = chars_len(cur_line);
+    let mut last_sp: Int = -1;
     let mut i: Int = 0;
     while i < n {
-        let ch: String = char_at(builtins, i);
-        if ch == ":" {
-            if str_starts_with(cur, prefix) { return cur; }
-            cur = "";
-        } else {
-            cur = cur + ch;
-        }
+        let ch: String = char_at(cur_line, i);
+        if ch == " " || ch == "\t" { last_sp = i; }
         i = i + 1;
     }
-    if cur != "" && str_starts_with(cur, prefix) { return cur; }
-    return prefix;
+    if last_sp < 0 {
+        let builtins: String = "help:version:status:caps:whereami:history:clear:remedy:autopsy:export:unset:alias:unalias:take:pwd:cd:exit:echo:scry";
+        let bn: Int = chars_len(builtins);
+        let mut cur: String = "";
+        let mut bi: Int = 0;
+        while bi < bn {
+            let ch: String = char_at(builtins, bi);
+            if ch == ":" {
+                if str_starts_with(cur, cur_line) { return cur; }
+                cur = "";
+            } else { cur = cur + ch; }
+            bi = bi + 1;
+        }
+        if cur != "" && str_starts_with(cur, cur_line) { return cur; }
+        let an: Int = list_len(aliases.names);
+        let mut ai: Int = 0;
+        while ai < an {
+            let aname: String = list_get(aliases.names, ai);
+            if str_starts_with(aname, cur_line) { return aname; }
+            ai = ai + 1;
+        }
+        let bin_entries: List[String] = oo_fs_read_dir(fs_r, "/usr/bin");
+        let ben: Int = list_len(bin_entries);
+        let mut bei: Int = 0;
+        while bei < ben {
+            let bname: String = list_get(bin_entries, bei);
+            if str_starts_with(bname, cur_line) { return bname; }
+            bei = bei + 1;
+        }
+        return cur_line;
+    }
+    let prefix_tok: String = str_slice(cur_line, last_sp + 1, n);
+    let prefix_head: String = str_slice(cur_line, 0, last_sp + 1);
+    let mut sl_idx: Int = -1;
+    let mut si: Int = 0;
+    let plen: Int = chars_len(prefix_tok);
+    while si < plen {
+        if char_at(prefix_tok, si) == "/" { sl_idx = si; }
+        si = si + 1;
+    }
+    let dir_path: String = if sl_idx >= 0 { str_slice(prefix_tok, 0, sl_idx) } else { "." };
+    let file_prefix: String = if sl_idx >= 0 { str_slice(prefix_tok, sl_idx + 1, plen) } else { prefix_tok };
+    let entries: List[String] = oo_fs_read_dir(fs_r, dir_path);
+    let elen: Int = list_len(entries);
+    let mut ei: Int = 0;
+    while ei < elen {
+        let ent: String = list_get(entries, ei);
+        if str_starts_with(ent, file_prefix) {
+            let match_path: String = if sl_idx >= 0 { dir_path + "/" + ent } else { ent };
+            return prefix_head + match_path;
+        }
+        ei = ei + 1;
+    }
+    return cur_line;
 }
 
-pub fn run_engine(fs_r: &FsReadCap, sys: &ProcessCap, env: &EnvCap, time: &TimeCap, bind: &BindCap, fs_w: &FsWriteCap, ffi: &FfiCap) -> Int {
+pub fn run_engine(fs_r: &FsReadCap, sys: &ProcessCap, env: &EnvCap, time: &TimeCap, bind: &BindCap, fs_w: &FsWriteCap, ffi: &FfiCap, init_aliases: AliasMap) -> Int {
     let pr: Result[String, String] = env_get(env, "PWD");
     let mut cwd: String = match pr { Ok(s) => s, Err(_) => "." };
     let mut rec: FlightRecord = flight_init();
+    let mut aliases: AliasMap = init_aliases;
     let is_interactive: Bool = ui_is_interactive(sys);
     let esc: String = ansi_esc();
 
@@ -76,13 +122,11 @@ pub fn run_engine(fs_r: &FsReadCap, sys: &ProcessCap, env: &EnvCap, time: &TimeC
     let mut cursor_pos: Int = 0;
     let mut hist_idx: Int = list_len(history);
 
-    if is_interactive {
-        let _ = oo_tui_enable_raw(ffi, "");
-    }
+    if is_interactive { let _ = oo_tui_enable_raw(ffi, ""); }
 
     while running {
         let mut remedy_hint: String = "";
-        let base_prompt: String = render_prompt(env, cwd);
+        let base_prompt: String = render_prompt_state(env, cwd, rec.has_failed);
         if is_interactive {
             let dock_prompt: String = render_prompt_with_dock(fs_r, env, cwd, rec.has_failed, rec.last_exit_code);
             print(dock_prompt);
@@ -100,101 +144,82 @@ pub fn run_engine(fs_r: &FsReadCap, sys: &ProcessCap, env: &EnvCap, time: &TimeC
         let mut line_done: Bool = false;
         while !line_done && running {
             let b_res: Result[String, String] = oo_tui_read_byte(ffi, "");
-            if b_res.is_err() {
-                running = false;
-                line_done = true;
-                break;
-            }
+            if b_res.is_err() { running = false; line_done = true; break; }
             let byte_val: String = match b_res { Ok(s) => s, Err(_) => "" };
             let b: Int = if chars_len(byte_val) > 0 { byte_at(byte_val, 0) } else { 0 };
 
-            if is_interactive && b == 27 { // ANSI escape sequence
+            if is_interactive && b == 27 {
                 let seq1 = match oo_tui_read_byte(ffi, "") { Ok(s) => s, Err(_) => "" };
                 if seq1 == "[" {
                     let seq2 = match oo_tui_read_byte(ffi, "") { Ok(s) => s, Err(_) => "" };
-                    if seq2 == "A" { // Up arrow
+                    if seq2 == "A" {
                         if hist_idx > 0 && list_len(history) > 0 {
                             hist_idx = hist_idx - 1;
                             cur_line = list_get(history, hist_idx);
                             cursor_pos = chars_len(cur_line);
                         }
-                    } else if seq2 == "B" { // Down arrow
+                    } else if seq2 == "B" {
                         if hist_idx + 1 < list_len(history) {
                             hist_idx = hist_idx + 1;
                             cur_line = list_get(history, hist_idx);
                             cursor_pos = chars_len(cur_line);
                         } else {
-                            hist_idx = list_len(history);
-                            cur_line = "";
-                            cursor_pos = 0;
+                            hist_idx = list_len(history); cur_line = ""; cursor_pos = 0;
                         }
-                    } else if seq2 == "C" { // Right arrow
+                    } else if seq2 == "C" {
                         if cursor_pos < chars_len(cur_line) { cursor_pos = cursor_pos + 1; }
-                    } else if seq2 == "D" { // Left arrow
+                    } else if seq2 == "D" {
                         if cursor_pos > 0 { cursor_pos = cursor_pos - 1; }
-                    } else if seq2 == "3" { // Delete
+                    } else if seq2 == "3" {
                         let _ = oo_tui_read_byte(ffi, "");
                         let clen: Int = chars_len(cur_line);
-                        if cursor_pos < clen {
-                            cur_line = str_slice(cur_line, 0, cursor_pos) + str_slice(cur_line, cursor_pos + 1, clen);
-                        }
+                        if cursor_pos < clen { cur_line = str_slice(cur_line, 0, cursor_pos) + str_slice(cur_line, cursor_pos + 1, clen); }
                     } else if seq2 == "H" { cursor_pos = 0; }
                     else if seq2 == "F" { cursor_pos = chars_len(cur_line); }
                 }
-            } else if b == 13 || b == 10 { // Enter
+            } else if b == 13 || b == 10 {
                 if is_interactive { print("\r\n"); }
                 line_done = true;
-            } else if is_interactive && (b == 127 || b == 8) { // Backspace
+            } else if is_interactive && (b == 127 || b == 8) {
                 if cursor_pos > 0 {
                     let clen: Int = chars_len(cur_line);
                     cur_line = str_slice(cur_line, 0, cursor_pos - 1) + str_slice(cur_line, cursor_pos, clen);
                     cursor_pos = cursor_pos - 1;
                 }
-            } else if is_interactive && b == 9 { // Tab
+            } else if is_interactive && b == 9 {
                 if cur_line == "" && remedy_hint != "" {
-                    cur_line = remedy_hint;
-                    cursor_pos = chars_len(cur_line);
+                    cur_line = remedy_hint; cursor_pos = chars_len(cur_line);
                 } else if cur_line != "" {
-                    cur_line = builtin_completion(cur_line);
+                    cur_line = complete_token(fs_r, cur_line, aliases);
                     cursor_pos = chars_len(cur_line);
                 }
-            } else if is_interactive && b == 3 { // Ctrl+C
-                print("^C\r\n");
-                cur_line = "";
-                cursor_pos = 0;
-                line_done = true;
-            } else if is_interactive && b == 4 { // Ctrl+D
+            } else if is_interactive && b == 3 {
+                print("^C\r\n"); cur_line = ""; cursor_pos = 0; line_done = true;
+            } else if is_interactive && b == 4 {
                 if cur_line == "" { running = false; break; }
-            } else if is_interactive && b == 1 { cursor_pos = 0; } // Ctrl+A
-            else if is_interactive && b == 5 { cursor_pos = chars_len(cur_line); } // Ctrl+E
-            else if is_interactive && b == 21 { cur_line = ""; cursor_pos = 0; } // Ctrl+U
-            else if b >= 32 || (!is_interactive && b == 9) { // Printable character or Tab in non-interactive
+            } else if is_interactive && b == 1 { cursor_pos = 0; }
+            else if is_interactive && b == 5 { cursor_pos = chars_len(cur_line); }
+            else if is_interactive && b == 21 { cur_line = ""; cursor_pos = 0; }
+            else if b >= 32 || (!is_interactive && b == 9) {
                 if is_interactive {
                     let clen: Int = chars_len(cur_line);
                     cur_line = str_slice(cur_line, 0, cursor_pos) + byte_val + str_slice(cur_line, cursor_pos, clen);
                     cursor_pos = cursor_pos + 1;
-                } else {
-                    cur_line = cur_line + byte_val;
-                }
+                } else { cur_line = cur_line + byte_val; }
             }
 
-            // Real-time TrueColor syntax accent redrawing
             if is_interactive && !line_done && running {
                 let clen: Int = chars_len(cur_line);
                 let highlighted: String = accent_command_tokens(cur_line);
                 print("\r" + base_prompt + highlighted + esc + "[K");
-                if cursor_pos < clen {
-                    print(esc + "[" + (clen - cursor_pos).to_string() + "D");
-                }
+                if cursor_pos < clen { print(esc + "[" + (clen - cursor_pos).to_string() + "D"); }
             }
         }
 
         if !running && cur_line == "" { break; }
 
         let line_to_run: String = str_trim(cur_line);
-        cur_line = "";
-        cursor_pos = 0;
-        hist_idx = list_len(history);
+        cur_line = ""; cursor_pos = 0; hist_idx = list_len(history);
 
         if line_to_run != "" {
             if is_interactive {
@@ -203,23 +228,21 @@ pub fn run_engine(fs_r: &FsReadCap, sys: &ProcessCap, env: &EnvCap, time: &TimeC
                 let _ = oo_tui_disable_raw(ffi, "");
             }
             let t0: Int = now_ms(time);
-            let res: DispatchResult = dispatch_line(fs_r, fs_w, sys, env, ffi, cwd, line_to_run, rec);
+            let res: DispatchResult = dispatch_line(fs_r, fs_w, sys, env, ffi, cwd, line_to_run, rec, aliases);
+            aliases = res.aliases;
             let dur: Int = now_ms(time) - t0;
             let mem: String = flight_memory(fs_r);
+            let pid: Int = flight_pid(fs_r);
             if is_interactive && !res.should_exit {
                 println(flight_telemetry(dur, res.exit_code, mem));
             }
             cwd = res.next_cwd;
-            rec = flight_update_duration(res.flight_rec, dur);
-            if is_interactive && !res.should_exit {
-                let _ = oo_tui_enable_raw(ffi, "");
-            }
+            rec = flight_update_telemetry(res.flight_rec, dur, mem, pid);
+            if is_interactive && !res.should_exit { let _ = oo_tui_enable_raw(ffi, ""); }
             if res.should_exit { running = false; break; }
         }
     }
 
-    if is_interactive {
-        let _ = oo_tui_disable_raw(ffi, "");
-    }
+    if is_interactive { let _ = oo_tui_disable_raw(ffi, ""); }
     return rec.last_exit_code;
 }

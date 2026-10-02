@@ -1,0 +1,98 @@
+// # oosh Session Command Alias Table
+//
+// Logline: Manages in-memory command aliases, shortcut definitions, and line expansion.
+//
+// Setup: Pure string associative map. Stores alias definitions across prompt iterations.
+//
+// Beats:
+//   1. Initialize empty alias map table.
+//   2. Store, lookup, and remove alias key-value definitions.
+//   3. Format active aliases for display.
+//   4. Expand first-token aliases in command lines.
+
+pub type AliasMap = struct {
+    names: List[String],
+    targets: List[String]
+};
+
+pub fn alias_map_new() -> AliasMap {
+    let empty_n: List[String] = list_new();
+    let empty_t: List[String] = list_new();
+    return AliasMap { names: empty_n, targets: empty_t };
+}
+
+pub fn alias_map_get(m: AliasMap, name: String) -> Result[String, String] {
+    let n: Int = list_len(m.names);
+    let mut i: Int = 0;
+    while i < n {
+        if list_get(m.names, i) == name { return Ok(list_get(m.targets, i)); }
+        i = i + 1;
+    }
+    return Err("not_found");
+}
+
+pub fn alias_map_set(m: AliasMap, name: String, target: String) -> AliasMap {
+    let mut new_n: List[String] = list_new();
+    let mut new_t: List[String] = list_new();
+    let n: Int = list_len(m.names);
+    let mut replaced: Bool = false;
+    let mut i: Int = 0;
+    while i < n {
+        let cur_name: String = list_get(m.names, i);
+        if cur_name == name {
+            new_n = list_push(new_n, name); new_t = list_push(new_t, target);
+            replaced = true;
+        } else {
+            new_n = list_push(new_n, cur_name); new_t = list_push(new_t, list_get(m.targets, i));
+        }
+        i = i + 1;
+    }
+    if !replaced { new_n = list_push(new_n, name); new_t = list_push(new_t, target); }
+    return AliasMap { names: new_n, targets: new_t };
+}
+
+pub fn alias_map_remove(m: AliasMap, name: String) -> AliasMap {
+    let mut new_n: List[String] = list_new();
+    let mut new_t: List[String] = list_new();
+    let n: Int = list_len(m.names);
+    let mut i: Int = 0;
+    while i < n {
+        let cur_name: String = list_get(m.names, i);
+        if cur_name != name {
+            new_n = list_push(new_n, cur_name); new_t = list_push(new_t, list_get(m.targets, i));
+        }
+        i = i + 1;
+    }
+    return AliasMap { names: new_n, targets: new_t };
+}
+
+pub fn format_aliases(m: AliasMap) -> String {
+    let n: Int = list_len(m.names);
+    if n == 0 { return "No aliases defined\n"; }
+    let mut out: String = "";
+    let mut i: Int = 0;
+    while i < n {
+        out = out + "alias " + list_get(m.names, i) + "='" + list_get(m.targets, i) + "'\n";
+        i = i + 1;
+    }
+    return out;
+}
+
+pub fn alias_expand(m: AliasMap, line: String) -> String {
+    let trimmed: String = str_trim(line);
+    let n: Int = chars_len(trimmed);
+    let mut sp_idx: Int = n;
+    let mut i: Int = 0;
+    while i < n {
+        let ch: String = char_at(trimmed, i);
+        if ch == " " || ch == "\t" { sp_idx = i; i = n; } else { i = i + 1; }
+    }
+    let first_tok: String = str_slice(trimmed, 0, sp_idx);
+    let r: Result[String, String] = alias_map_get(m, first_tok);
+    if r.is_ok() {
+        let target: String = match r { Ok(t) => t, Err(_) => "" };
+        let rest: String = if sp_idx < n { str_slice(trimmed, sp_idx, n) } else { "" };
+        return target + rest;
+    }
+    return line;
+}

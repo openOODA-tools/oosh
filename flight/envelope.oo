@@ -136,7 +136,7 @@ pub fn record_flight_failure_full(rec: FlightRecord, cmd: String, exit_code: Int
     };
 }
 
-pub fn update_flight_duration(rec: FlightRecord, duration_ms: Int) -> FlightRecord {
+pub fn update_flight_telemetry(rec: FlightRecord, duration_ms: Int, mem: String, pid: Int) -> FlightRecord {
     let n: Int = list_len(rec.entries);
     if n == 0 { return rec; }
     let last_idx: Int = n - 1;
@@ -144,7 +144,7 @@ pub fn update_flight_duration(rec: FlightRecord, duration_ms: Int) -> FlightReco
     let updated: FlightEntry = FlightEntry {
         seq: last.seq, cmd: last.cmd, exit_code: last.exit_code,
         duration_ms: duration_ms, status: last.status, stderr_snippet: last.stderr_snippet,
-        peak_mem: last.peak_mem, pid: last.pid, causal_link: last.causal_link
+        peak_mem: mem, pid: pid, causal_link: last.causal_link
     };
     let mut new_entries: List[FlightEntry] = list_new();
     let mut i: Int = 0;
@@ -159,8 +159,12 @@ pub fn update_flight_duration(rec: FlightRecord, duration_ms: Int) -> FlightReco
         last_duration_ms: duration_ms, total_commands: rec.total_commands,
         failed_count: rec.failed_count, last_success_cmd: rec.last_success_cmd,
         entries: new_entries, capacity: rec.capacity,
-        last_peak_mem: rec.last_peak_mem, last_pid: rec.last_pid, last_causal_link: rec.last_causal_link
+        last_peak_mem: mem, last_pid: pid, last_causal_link: rec.last_causal_link
     };
+}
+
+pub fn update_flight_duration(rec: FlightRecord, duration_ms: Int) -> FlightRecord {
+    return update_flight_telemetry(rec, duration_ms, rec.last_peak_mem, rec.last_pid);
 }
 
 fn format_trace_entry(entry: FlightEntry) -> String {

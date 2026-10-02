@@ -103,8 +103,6 @@ pub fn run_daemon_loop(sys: &ProcessCap, env: &EnvCap, ffi: &FfiCap, cwd: String
     let bin_path: String = match bin_lookup { Ok(s) => str_trim(s), Err(_) => "./dist/oosh" };
 
     // Launch native compiled C AF_UNIX epoll daemon loop via APC channel.
-    // Legacy threading.Thread(target=handle_client) superseded by native epoll server.
-    // Handles cleanup_socket on signal.SIGINT and daemon shutdown.
     let esc: String = ansi_esc();
     let apc_cmd: String = esc + "_daemon:sock=" + sock + ";bin=" + bin_path + ";cwd=" + cwd;
     let _r = oo_tui_write(ffi, apc_cmd);

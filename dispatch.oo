@@ -2,16 +2,17 @@
 //
 // Logline: Dispatches shell input lines to internal builtins, intent queries, or host system processes.
 //
-// Setup: Receives ProcessCap, EnvCap, FfiCap, FsWriteCap, FsReadCap, and FlightRecord.
+// Setup: Receives ProcessCap, EnvCap, FfiCap, FsWriteCap, FsReadCap, FlightRecord, and AliasMap.
 //
 // Beats:
-//   1. Check for shell built-in commands (exit, cd, help, version, clear, status, caps, take, etc.).
-//   2. Intercept conversational greetings and intent queries (? prefix, ask, how, why).
-//   3. Mutate active directory state for cd and take requests natively without subshells.
-//   4. Dispatch host system commands directly via sys_exec_wait, tracking failure envelopes.
+//   1. Expand command aliases and handle builtin session state (alias, unalias, export, unset).
+//   2. Wire builtin output streams directly to pipes and files (caps | grep, autopsy > file).
+//   3. Mutate active directory state for cd and take requests natively via syscalls without subshells.
+//   4. Dispatch host system commands directly via sys_exec_wait with terminal control.
 
 import "std/fs/process/process.oo";
 import "std/fs/process/env.oo";
+import "alias.oo";
 import "prompt.oo";
 import "version.oo";
 import "manual.oo";
@@ -25,7 +26,8 @@ pub type DispatchResult = struct {
     next_cwd: String,
     should_exit: Bool,
     exit_code: Int,
-    flight_rec: FlightRecord
+    flight_rec: FlightRecord,
+    aliases: AliasMap
 };
 
 fn is_exit(cmd: String) -> Bool {
@@ -42,135 +44,179 @@ fn split_cmd_tokens(cmd: String) -> List[String] {
     while i < n {
         let ch: String = char_at(cmd, i);
         if in_q {
-            if ch == q_ch { in_q = false; q_ch = ""; }
-            else { cur = cur + ch; }
+            if ch == q_ch { in_q = false; q_ch = ""; } else { cur = cur + ch; }
         } else if ch == "\"" || ch == "'" {
             in_q = true; q_ch = ch;
         } else if ch == " " || ch == "\t" {
             if cur != "" { tokens = list_push(tokens, cur); cur = ""; }
-        } else {
-            cur = cur + ch;
-        }
+        } else { cur = cur + ch; }
         i = i + 1;
     }
     if cur != "" { tokens = list_push(tokens, cur); }
     return tokens;
 }
 
-pub fn dispatch_line(fs_r: &FsReadCap, fs_w: &FsWriteCap, sys: &ProcessCap, env: &EnvCap, ffi: &FfiCap, cwd: String, raw_line: String, rec: FlightRecord) -> DispatchResult {
-    let line: String = str_trim(raw_line);
-    let esc: String = ansi_esc();
+fn get_builtin_output(sys: &ProcessCap, env: &EnvCap, fs_r: &FsReadCap, cwd: String, rec: FlightRecord, raw_cmd: String, aliases: AliasMap) -> Result[String, String] {
+    let cmd: String = str_trim(raw_cmd);
+    if cmd == "pwd" || cmd == "cwd" || cmd == "where" || cmd == "here" { return Ok(cwd + "\n"); }
+    if is_version_cmd(cmd) { return Ok(oosh_banner() + "\n"); }
+    if is_caps_cmd(cmd) { return Ok(get_caps_string(sys)); }
+    if is_autopsy_cmd(cmd) { return Ok(flight_autopsy(rec) + "\n"); }
+    if is_remedy_cmd(cmd) { return Ok(flight_remedy_cwd(rec, cwd) + "\n"); }
+    if is_status_cmd(cmd) { return Ok(get_status_string(sys, cwd)); }
+    if is_help_cmd(cmd) { return Ok(get_help_guide()); }
+    if cmd == "history" || cmd == "hist" {
+        let hr: Result[String, String] = env_get(env, "HOME");
+        let home: String = match hr { Ok(h) => h, Err(_) => "" };
+        let h_res: Result[String, String] = read_file(fs_r, home + "/.oosh_history");
+        return match h_res { Ok(s) => Ok(s), Err(_) => Ok("No history available\n") };
+    }
+    if cmd == "alias" { return Ok(format_aliases(aliases)); }
+    if str_starts_with(cmd, "echo ") { return Ok(str_slice(cmd, 5, chars_len(cmd)) + "\n"); }
+    return Err("not_builtin");
+}
 
-    if line == "" { return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0, flight_rec: rec }; }
-    if is_exit(line) { return DispatchResult { next_cwd: cwd, should_exit: true, exit_code: 0, flight_rec: rec }; }
-    if is_version_cmd(line) {
-        println(oosh_banner());
-        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0, flight_rec: rec };
+pub fn dispatch_line(fs_r: &FsReadCap, fs_w: &FsWriteCap, sys: &ProcessCap, env: &EnvCap, ffi: &FfiCap, cwd: String, raw_line: String, rec: FlightRecord, aliases: AliasMap) -> DispatchResult {
+    let raw_trimmed: String = str_trim(raw_line);
+    let esc: String = ansi_esc();
+    if raw_trimmed == "" { return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0, flight_rec: rec, aliases: aliases }; }
+    let line: String = alias_expand(aliases, raw_trimmed);
+
+    // Redirection and Pipeline Plumbing for Builtins
+    if str_contains(line, ">") && !str_contains(line, "|") {
+        let is_append: Bool = str_contains(line, ">>");
+        let delim: String = if is_append { ">>" } else { ">" };
+        let pos: Int = str_index_of(line, delim);
+        let lhs: String = str_trim(str_slice(line, 0, pos));
+        let rhs: String = str_trim(str_slice(line, pos + chars_len(delim), chars_len(line)));
+        let b_res: Result[String, String] = get_builtin_output(sys, env, fs_r, cwd, rec, lhs, aliases);
+        if b_res.is_ok() {
+            let out_str: String = match b_res { Ok(s) => s, Err(_) => "" };
+            let target_file: String = if str_starts_with(rhs, "/") { rhs } else { cwd + "/" + rhs };
+            if is_append { let _ = file_append_sync(fs_w, target_file, out_str); }
+            else { let _ = write_file(fs_w, target_file, out_str); }
+            return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0, flight_rec: flight_success(rec, line, 0), aliases: aliases };
+        }
     }
-    if dispatch_manual(sys, cwd, line) {
-        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0, flight_rec: rec };
+    if str_contains(line, "|") {
+        let pos: Int = str_index_of(line, "|");
+        let lhs: String = str_trim(str_slice(line, 0, pos));
+        let rhs: String = str_trim(str_slice(line, pos + 1, chars_len(line)));
+        let b_res: Result[String, String] = get_builtin_output(sys, env, fs_r, cwd, rec, lhs, aliases);
+        if b_res.is_ok() {
+            let out_str: String = match b_res { Ok(s) => s, Err(_) => "" };
+            let tmp_path: String = "/tmp/.oosh_pipe_" + (rec.total_commands + 1).to_string();
+            let _ = write_file(fs_w, tmp_path, out_str);
+            let pr: Result[String, String] = process_exec(sys, "cat \"" + tmp_path + "\" | " + rhs);
+            let _ = oo_fs_remove_file(fs_w, tmp_path);
+            let pout: String = match pr { Ok(s) => s, Err(e) => e };
+            if pout != "" { print(pout); if !str_ends_with(pout, "\n") { println(""); } }
+            let prc: Int = if pr.is_ok() { 0 } else { 1 };
+            let next_rec: FlightRecord = if prc == 0 { flight_success(rec, line, 0) } else { flight_failure(rec, line, prc, pout, 0) };
+            return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: prc, flight_rec: next_rec, aliases: aliases };
+        }
     }
-    if dispatch_ui(sys, cwd, line) {
-        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0, flight_rec: rec };
-    }
-    if dispatch_diagnostics(sys, cwd, rec, line) {
-        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0, flight_rec: rec };
-    }
-    if is_link_cmd(line) {
-        ipc_dispatch_link(sys, env, cwd, rec, line);
-        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0, flight_rec: rec };
-    }
+
+    if is_exit(line) { return DispatchResult { next_cwd: cwd, should_exit: true, exit_code: 0, flight_rec: rec, aliases: aliases }; }
+    if is_version_cmd(line) { println(oosh_banner()); return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0, flight_rec: rec, aliases: aliases }; }
+    if dispatch_manual(sys, cwd, line) { return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0, flight_rec: rec, aliases: aliases }; }
+    if dispatch_ui(sys, cwd, line) { return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0, flight_rec: rec, aliases: aliases }; }
+    if dispatch_diagnostics(sys, cwd, rec, line) { return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0, flight_rec: rec, aliases: aliases }; }
+    if is_link_cmd(line) { ipc_dispatch_link(sys, env, cwd, rec, line); return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0, flight_rec: rec, aliases: aliases }; }
     if intent_is_query(line) || str_starts_with(line, "ai ") {
         let q: IntentQuery = parse_intent_query(line);
-        if q.is_bare {
-            println(intent_bare_guidance(q.prefix));
-            return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0, flight_rec: rec };
-        }
+        if q.is_bare { println(intent_bare_guidance(q.prefix)); return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0, flight_rec: rec, aliases: aliases }; }
         let action: IntentPromptAction = intent_prompt(fs_r, sys, line, cwd);
-        if action.should_execute && action.command_to_run != "" {
-            return dispatch_line(fs_r, fs_w, sys, env, ffi, cwd, action.command_to_run, rec);
-        }
-        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0, flight_rec: rec };
+        if action.should_execute && action.command_to_run != "" { return dispatch_line(fs_r, fs_w, sys, env, ffi, cwd, action.command_to_run, rec, aliases); }
+        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0, flight_rec: rec, aliases: aliases };
     }
 
-    if line == "pwd" || line == "cwd" || line == "where" || line == "here" {
-        println(cwd);
-        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0, flight_rec: rec };
-    }
+    if line == "pwd" || line == "cwd" || line == "where" || line == "here" { println(cwd); return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0, flight_rec: rec, aliases: aliases }; }
     if line == "history" || line == "hist" || line == "past" || line == "recall" {
         let hr: Result[String, String] = env_get(env, "HOME");
         let home: String = match hr { Ok(h) => h, Err(_) => "" };
-        let hist_path: String = home + "/.oosh_history";
-        let h_res: Result[String, String] = read_file(fs_r, hist_path);
+        let h_res: Result[String, String] = read_file(fs_r, home + "/.oosh_history");
         let h_str: String = match h_res { Ok(s) => s, Err(_) => "No history available\n" };
-        print(h_str);
-        if !str_ends_with(h_str, "\n") { println(""); }
-        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0, flight_rec: rec };
+        print(h_str); if !str_ends_with(h_str, "\n") { println(""); }
+        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0, flight_rec: rec, aliases: aliases };
     }
-    if line == "env" || line == "vars" || line == "printenv" {
-        let er: Result[String, String] = process_exec(sys, "env");
-        let e_str: String = match er { Ok(s) => s, Err(_) => "" };
-        if e_str != "" { print(e_str); if !str_ends_with(e_str, "\n") { println(""); } }
-        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0, flight_rec: rec };
+    if line == "alias" { print(format_aliases(aliases)); return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0, flight_rec: rec, aliases: aliases }; }
+    if str_starts_with(line, "alias ") {
+        let rest: String = str_trim(str_slice(line, 6, chars_len(line)));
+        let eq_pos: Int = str_index_of(rest, "=");
+        if eq_pos > 0 {
+            let aname: String = str_trim(str_slice(rest, 0, eq_pos));
+            let raw_val: String = str_trim(str_slice(rest, eq_pos + 1, chars_len(rest)));
+            let rlen: Int = chars_len(raw_val);
+            let aval: String = if rlen >= 2 && ((str_starts_with(raw_val, "\"") && str_ends_with(raw_val, "\"")) || (str_starts_with(raw_val, "'") && str_ends_with(raw_val, "'"))) { str_slice(raw_val, 1, rlen - 1) } else { raw_val };
+            return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0, flight_rec: rec, aliases: alias_map_set(aliases, aname, aval) };
+        }
+    }
+    if str_starts_with(line, "unalias ") {
+        let aname: String = str_trim(str_slice(line, 8, chars_len(line)));
+        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0, flight_rec: rec, aliases: alias_map_remove(aliases, aname) };
+    }
+    if line == "export" {
+        let _ = sys_exec_wait(sys, "env", list_new());
+        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0, flight_rec: rec, aliases: aliases };
     }
     if str_starts_with(line, "export ") {
         let rest: String = str_trim(str_slice(line, 7, chars_len(line)));
         let _ = oo_tui_write(ffi, esc + "_set:" + rest);
-        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0, flight_rec: rec };
+        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0, flight_rec: rec, aliases: aliases };
     }
     if str_starts_with(line, "unset ") {
         let var_name: String = str_trim(str_slice(line, 6, chars_len(line)));
         let _ = oo_tui_write(ffi, esc + "_uns:" + var_name);
-        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0, flight_rec: rec };
+        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 0, flight_rec: rec, aliases: aliases };
     }
 
     // Native Navigation: cd, chdir, goto, jump, walk, .., ..., ....
     if line == ".." || line == "..." || line == "...." || line == "-" || line == "cd" || line == "chdir" || line == "goto" || line == "jump" || line == "walk" || str_starts_with(line, "cd ") || str_starts_with(line, "chdir ") || str_starts_with(line, "goto ") || str_starts_with(line, "jump ") || str_starts_with(line, "walk ") {
         let raw_t: String = if line == ".." { ".." } else if line == "..." { "../.." } else if line == "...." { "../../.." } else if line == "-" { "-" } else if line == "cd" || line == "chdir" || line == "goto" || line == "jump" || line == "walk" { "~" } else if str_starts_with(line, "cd ") { str_slice(line, 3, chars_len(line)) } else if str_starts_with(line, "chdir ") { str_slice(line, 6, chars_len(line)) } else { str_slice(line, 5, chars_len(line)) };
         let clean_t: String = str_trim(raw_t);
-        let check_cmd: String = "cd \"" + cwd + "\" && cd " + clean_t + " 2>/dev/null && pwd";
-        let cr: Result[String, String] = process_exec(sys, check_cmd);
-        if cr.is_err() {
+        let hr: Result[String, String] = env_get(env, "HOME");
+        let home: String = match hr { Ok(h) => h, Err(_) => "" };
+        let oldpwd_r: Result[String, String] = env_get(env, "OLDPWD");
+        let oldpwd: String = match oldpwd_r { Ok(o) => o, Err(_) => cwd };
+        let target_dir: String = if clean_t == "~" || clean_t == "" { home } else if clean_t == "-" { oldpwd } else if str_starts_with(clean_t, "~/") { home + str_slice(clean_t, 1, chars_len(clean_t)) } else { clean_t };
+        let cd_res = oo_tui_write(ffi, esc + "_cd:" + target_dir);
+        if cd_res.is_err() {
             println(esc + "[1;31m! oosh:" + esc + "[0m directory not found: '" + clean_t + "'");
-            let next_rec: FlightRecord = flight_failure(rec, line, 1, "directory not found", 0);
-            return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 1, flight_rec: next_rec };
+            return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 1, flight_rec: flight_failure(rec, line, 1, "directory not found", 0), aliases: aliases };
         }
-        let resolved: String = match cr { Ok(d) => str_trim(d), Err(_) => cwd };
-        let _ = oo_tui_write(ffi, esc + "_cd:" + resolved);
-        let _ = oo_tui_write(ffi, esc + "_set:PWD=" + resolved);
+        let resolved: String = match cd_res { Ok(d) => str_trim(d), Err(_) => cwd };
         let _ = oo_tui_write(ffi, esc + "_set:OLDPWD=" + cwd);
-        let next_rec: FlightRecord = flight_success(rec, line, 0);
-        return DispatchResult { next_cwd: resolved, should_exit: false, exit_code: 0, flight_rec: next_rec };
+        return DispatchResult { next_cwd: resolved, should_exit: false, exit_code: 0, flight_rec: flight_success(rec, line, 0), aliases: aliases };
     }
 
     // Modern ergonomics: take <dir>, mkcd <dir>
     if str_starts_with(line, "take ") || str_starts_with(line, "mkcd ") || str_starts_with(line, "mcd ") || str_starts_with(line, "mdcd ") {
         let raw_t: String = if str_starts_with(line, "take ") { str_slice(line, 5, chars_len(line)) } else if str_starts_with(line, "mkcd ") { str_slice(line, 5, chars_len(line)) } else if str_starts_with(line, "mcd ") { str_slice(line, 4, chars_len(line)) } else { str_slice(line, 5, chars_len(line)) };
         let clean_t: String = str_trim(raw_t);
-        let mk_cmd: String = "cd \"" + cwd + "\" && mkdir -p \"" + clean_t + "\" && cd \"" + clean_t + "\" && pwd";
-        let mr: Result[String, String] = process_exec(sys, mk_cmd);
-        if mr.is_err() {
+        let hr: Result[String, String] = env_get(env, "HOME");
+        let home: String = match hr { Ok(h) => h, Err(_) => "" };
+        let target_dir: String = if str_starts_with(clean_t, "~/") { home + str_slice(clean_t, 1, chars_len(clean_t)) } else { clean_t };
+        let mk_res = oo_tui_write(ffi, esc + "_mkdir:" + target_dir);
+        if mk_res.is_err() {
             println(esc + "[1;31m! oosh:" + esc + "[0m failed to create directory: '" + clean_t + "'");
-            let next_rec: FlightRecord = flight_failure(rec, line, 1, "failed to create directory", 0);
-            return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 1, flight_rec: next_rec };
+            return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 1, flight_rec: flight_failure(rec, line, 1, "failed to create directory", 0), aliases: aliases };
         }
-        let resolved: String = match mr { Ok(d) => str_trim(d), Err(_) => cwd };
-        let _ = oo_tui_write(ffi, esc + "_cd:" + resolved);
-        let _ = oo_tui_write(ffi, esc + "_set:PWD=" + resolved);
+        let cd_res = oo_tui_write(ffi, esc + "_cd:" + target_dir);
+        let resolved: String = match cd_res { Ok(d) => str_trim(d), Err(_) => cwd };
         let _ = oo_tui_write(ffi, esc + "_set:OLDPWD=" + cwd);
         println(esc + "[1;32m✓" + esc + "[0m created & entered: " + resolved);
-        let next_rec: FlightRecord = flight_success(rec, line, 0);
-        return DispatchResult { next_cwd: resolved, should_exit: false, exit_code: 0, flight_rec: next_rec };
+        return DispatchResult { next_cwd: resolved, should_exit: false, exit_code: 0, flight_rec: flight_success(rec, line, 0), aliases: aliases };
     }
 
-    // Check for compound shell operators (pipelines, redirections, sequences)
+    // Compound shell operators (external pipelines, redirections, sequences)
     if str_contains(line, ";") || str_contains(line, "|") || str_contains(line, ">") || str_contains(line, "<") || str_contains(line, "&&") || str_contains(line, "||") {
         let r: Result[String, String] = process_exec(sys, line);
         let out: String = match r { Ok(s) => s, Err(m) => m };
         if out != "" { print(out); if !str_ends_with(out, "\n") { println(""); } }
         let rc: Int = if r.is_ok() { 0 } else { 1 };
         let next_rec: FlightRecord = if rc == 0 { flight_success(rec, line, 0) } else { flight_failure(rec, line, rc, out, 0) };
-        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: rc, flight_rec: next_rec };
+        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: rc, flight_rec: next_rec, aliases: aliases };
     }
 
     // Direct host process execution via sys_exec_wait
@@ -188,18 +234,16 @@ pub fn dispatch_line(fs_r: &FsReadCap, fs_w: &FsWriteCap, sys: &ProcessCap, env:
     if exec_res.is_ok() {
         let rc: Int = match exec_res { Ok(c) => c, Err(_) => 0 };
         let next_rec: FlightRecord = if rc == 0 { flight_success(rec, line, 0) } else { flight_failure(rec, line, rc, "", 0) };
-        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: rc, flight_rec: next_rec };
+        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: rc, flight_rec: next_rec, aliases: aliases };
     }
 
     let err_msg: String = match exec_res { Ok(_) => "", Err(m) => m };
     if err_msg == "command not found" {
         println(esc + "[1;31m! oosh:" + esc + "[0m command not found: '" + cmd + "'");
         println("  Type " + esc + "[1;36mhelp" + esc + "[0m for builtins or prefix with " + esc + "[1;35m?" + esc + "[0m for intent channel.");
-        let next_rec: FlightRecord = flight_failure(rec, line, 127, err_msg, 0);
-        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 127, flight_rec: next_rec };
+        return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 127, flight_rec: flight_failure(rec, line, 127, err_msg, 0), aliases: aliases };
     }
 
     println(esc + "[1;31m! oosh:" + esc + "[0m execution error: " + err_msg);
-    let next_rec: FlightRecord = flight_failure(rec, line, 1, err_msg, 0);
-    return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 1, flight_rec: next_rec };
+    return DispatchResult { next_cwd: cwd, should_exit: false, exit_code: 1, flight_rec: flight_failure(rec, line, 1, err_msg, 0), aliases: aliases };
 }

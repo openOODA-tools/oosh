@@ -56,6 +56,31 @@ pub fn parse_mem_hwm(content: String) -> String {
     return "3.2MB";
 }
 
+pub fn parse_pid(content: String) -> Int {
+    let idx: Int = str_index_of(content, "Pid:");
+    if idx < 0 { return 0; }
+    let rest: String = str_slice(content, idx + 4, chars_len(content));
+    let trimmed: String = str_trim(rest);
+    let n: Int = chars_len(trimmed);
+    let mut i: Int = 0;
+    while i < n {
+        let ch: String = char_at(trimmed, i);
+        if ch == " " || ch == "\t" || ch == "\n" {
+            return parse_digits(str_slice(trimmed, 0, i));
+        }
+        i = i + 1;
+    }
+    return parse_digits(trimmed);
+}
+
+pub fn read_self_pid(fs_r: &FsReadCap) -> Int {
+    let r: Result[String, String] = read_file(fs_r, "/proc/self/status");
+    return match r {
+        Ok(c) => parse_pid(c),
+        Err(_) => 0
+    };
+}
+
 pub fn read_peak_memory(fs_r: &FsReadCap) -> String {
     let r: Result[String, String] = read_file(fs_r, "/proc/self/status");
     return match r {

@@ -89,7 +89,7 @@ pub fn read_peak_memory(fs_r: &FsReadCap) -> String {
     };
 }
 
-pub fn render_telemetry_badge(duration_ms: Int, exit_code: Int, mem_str: String) -> String {
+pub fn render_telemetry_badge_full(duration_ms: Int, exit_code: Int, mem_str: String, pid: Int) -> String {
     let cyan: String = cyber_cyan();
     let green: String = cyber_green();
     let red: String = cyber_red();
@@ -102,9 +102,14 @@ pub fn render_telemetry_badge(duration_ms: Int, exit_code: Int, mem_str: String)
     } else {
         red + "✘ " + exit_code.to_string() + rst
     };
+    let pid_part: String = if pid > 0 { gray + " │ " + cyan + "pid:" + pid.to_string() } else { "" };
 
     let badge: String = gray + "[ " + cyan + "⏱ " + dur_str + gray + " │ " +
                         status_part + gray + " │ " +
-                        cyan + mem_str + gray + " ]" + rst;
+                        cyan + mem_str + pid_part + gray + " ]" + rst;
     return badge;
+}
+
+pub fn render_telemetry_badge(duration_ms: Int, exit_code: Int, mem_str: String) -> String {
+    return render_telemetry_badge_full(duration_ms, exit_code, mem_str, 0);
 }

@@ -71,21 +71,15 @@ curl -fsSL https://openooda-tools.github.io/oosh/install.sh | bash -s -- --unins
 
 ---
 
-## 4. Pure POSIX Bash Ergonomics & Full Control Flow (v0.8.0)
+## 4. Sovereign Superpowers & Terminal Magic (v0.9.0)
 
-`oosh v0.8.0` elevates the sovereign shell to full interactive ergonomics matching standard Bash while preserving openOODA capability security:
-- **Standard Bash PS1 Prompt**: Formats standard `user@hostname:dir$ ` (or `# ` for root) with clean tilde contraction (`~`) and support for custom `$PS1` environment overrides.
-- **Full POSIX Control Flow & Scripting**: Native `for` loops, `while` loops, `if`/`then`/`else` conditionals, `case ... in ... esac` branching, subshells `(...)`, and shell function definitions with positional arguments (`$1..$N`, `$@`, `$#`, `$0`).
-- **Quote-Aware Lexing & Expansion**: Robust quote-safe tokenization, wildcard glob expansion (`*`), subshell command substitution (`$(cmd)`), and parameter expansion.
-- **Secure Anonymous Pipelines**: Direct kernel stream piping and redirection without world-readable `/tmp` FIFOs, ensuring clean routing for both internal builtins and external binaries.
-- **Silent Normal Startup**: Clean, unobtrusive shell launch without promotional banners (banner displayed only on `-v`/`--version` or `version`).
-- **Unintercepted Host Binaries**: Direct execution of standard system tools (`whoami`, `stat`, `ping`, `ls`, `grep`) without conversational interception.
-- **Modular VT100 Line Editor (`term/`)**: Clean modular terminal handling with raw mode, arrow key cursor navigation, history browsing (`~/.oosh_history`), multi-match tab completion with Longest Common Prefix (LCP), and standard shortcuts (Ctrl+A, Ctrl+E, Ctrl+U, Ctrl+D, Ctrl+C).
-- **Direct Process Spawning & Job Control**: Direct process invocation via `sys_exec_wait` with stdio inheritance, running interactive TUIs (`vim`, `nano`, `htop`, `ssh`) alongside asynchronous background execution (`&`) and job table inspection (`jobs`).
-- **Signal Handling & Process Groups**: Raw mode disabling before child execution and prompt reprint on Ctrl+C without killing the shell.
-- **Session State Persistence**: Full support for `export`, `unset`, bare variable assignments (`VAR=val`), `alias`, `unalias`, and automatic sourcing of `~/.ooshrc`.
-- **Clean Columnar Autopsy & Non-Intrusive Typo Remedy**: Diagnostic flight recording with clean columnar postmortem (`last`/`dmesg` style) and helpful command suggestions on exit code 127.
-- **Headless Varlink IPC Control Plane**: NUL-delimited JSON RPC interface on `/run/oosh/control.sock` for autonomous AI agents and sidecars (`syntropd`).
+`oosh v0.9.0` introduces Phase 3 "Sovereign Superpowers" and advanced terminal ergonomics while preserving openOODA capability security:
+- **Two-Line Sovereign Cockpit & Grounded Prompt (`❯`)**: Row 1 presents a subtle ambient statusline with tilde-abbreviated cwd, git branch (direct `.git/HEAD` reader), host identity, and capability tokens (`CAPS: PROC+FS+NET`). Row 2 anchors typing with the grounded prompt symbol `❯ ` (or honors custom `$PS1` overrides).
+- **Real-Time TrueColor Syntax Accenting**: Live syntax colorization in raw mode without cursor drift: cyan for builtins (`caps`, `whereami`, `remedy`, `autopsy`, `alias`, `export`, `jobs`, `help`), toxic green for system binaries (`ls`, `git`, `vim`, `cargo`), electric amber for flags and string literals, and ultraviolet for intent queries (`? <query>`, `ai <query>`).
+- **Inline Dimmed Ghost Suggestions & Auto-Remedy Previews**: Dimmed ghost completions ahead of cursor accepted via `Tab` or `Right Arrow`. Non-zero command failures display actionable remedies (`[Auto-Remedy: <cmd> | Tab to accept]`) populated into buffer on `Tab`.
+- **Native Compiled C epoll Varlink Daemon**: High-concurrency non-blocking Unix domain socket RPC server in `ipc/daemon.oo` over `/run/oosh/control.sock` with multithreaded worker dispatch.
+- **Expanded Autopsy Flight Telemetry**: Memory metrics, PID, and causal execution links recorded in `envelope.oo` and rendered in clean columnar postmortem history.
+- **Pure POSIX Bash Ergonomics & Full Control Flow**: Native loops, conditionals, quote-safe lexing, parameter expansion, secure pipes, job control, and signal handling.
 
 ---
 

@@ -40,3 +40,11 @@ pub fn term_history_load(fs_r: &FsReadCap, env: &EnvCap) -> HistoryState {
 pub fn term_complete(fs_r: &FsReadCap, cur_line: String, alias_names: List[String]) -> String {
     return complete_token(fs_r, cur_line, alias_names);
 }
+
+pub fn term_complete_ghost(fs_r: &FsReadCap, cur_line: String, alias_names: List[String]) -> String {
+    return complete_ghost(fs_r, cur_line, alias_names);
+}
+
+pub fn term_line_redraw_full(prompt: String, ed: LineEditor, ghost: String) {
+    line_editor_redraw_full(prompt, ed, ghost);
+}

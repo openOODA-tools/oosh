@@ -170,8 +170,10 @@ fn format_trace_entry(entry: FlightEntry) -> String {
     let status_str: String = if entry.exit_code == 0 { "OK  0" } else { "ERR " + entry.exit_code.to_string() };
     let dur_str: String = pad_left_str(entry.duration_ms.to_string() + "ms", 7);
     let pid_str: String = pad_left_str(if entry.pid > 0 { entry.pid.to_string() } else { "-" }, 7);
+    let mem_str: String = pad_left_str(if entry.peak_mem != "" { entry.peak_mem } else { "-" }, 8);
+    let link_str: String = pad_right_str(if entry.causal_link != "" { entry.causal_link } else { "-" }, 8);
     let cmd_str: String = safe_str_prefix(entry.cmd, 32);
-    return pad_right_str(seq_str, 6) + " " + pad_right_str(status_str, 8) + " " + dur_str + " " + pid_str + "  " + cmd_str;
+    return pad_right_str(seq_str, 6) + " " + pad_right_str(status_str, 8) + " " + dur_str + " " + pid_str + " " + mem_str + " " + link_str + "  " + cmd_str;
 }
 
 pub fn render_autopsy_card(rec: FlightRecord) -> String {
@@ -181,7 +183,7 @@ pub fn render_autopsy_card(rec: FlightRecord) -> String {
     let cap_str: String = rec.capacity.to_string();
     let header_info: String = "Buffer: " + total_str + " traced (capacity " + cap_str + ") | Failures: " + failed_str;
 
-    let sec_trace: String = "\nCHRONOLOGICAL EXECUTION TIMELINE:\nSEQ    STATUS     TIME     PID  COMMAND";
+    let sec_trace: String = "\nCHRONOLOGICAL EXECUTION TIMELINE:\nSEQ    STATUS     TIME     PID   MEMORY LINK      COMMAND";
     let num_entries: Int = list_len(rec.entries);
     let mut trace_body: String = "";
     if num_entries == 0 {
@@ -212,7 +214,9 @@ pub fn render_autopsy_card(rec: FlightRecord) -> String {
         "Faulted Command : " + rec.last_failed_cmd + "\n" +
         "Exit Code       : " + code_str + "\n" +
         "Latency         : " + dur_str + "\n" +
+        "Process ID      : " + (if rec.last_pid > 0 { rec.last_pid.to_string() } else { "-" }) + "\n" +
         "Peak Memory     : " + rec.last_peak_mem + "\n" +
+        "Execution Link  : " + rec.last_causal_link + "\n" +
         "Root Cause      : " + root_cause + "\n" +
         "Captured Stderr : " + safe_str_prefix(rec.last_stderr, 100)
     } else {

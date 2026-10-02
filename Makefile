@@ -1,4 +1,4 @@
-# oosh v0.8.0 Makefile
+# oosh v0.9.0 Makefile
 #
 # Build, verify, and test the openOODA sovereign shell.
 #
@@ -132,7 +132,7 @@ test-tier1: $(BIN)
 	@test -f ui/anchor.oo && echo "PASS: [T1-F02-02] Submodule Anchor Shims"
 	@test $$(find . -maxdepth 1 -name "*.oo" | wc -l) -le 8 && echo "PASS: [T1-F02-03] Root Directory Density <= 8"
 	@test $$(find ui -maxdepth 1 -name "*.oo" | wc -l) -le 8 && echo "PASS: [T1-F02-04] UI Submodule Density <= 8"
-	@for f in $$(find . -name "*.oo" -o -name "*.oot"); do n=$$(wc -l < "$$f"); test $$n -le 256 || exit 1; test $$n -ge 16 || exit 1; done && echo "PASS: [T1-F02-05] Page Rule Sizing (16-256 lines)"
+	@for f in $$(find . \( -name "*.oo" -o -name "*.oot" \) -not -path "./.git/*" -not -path "./.agents/*"); do n=$$(wc -l < "$$f"); test $$n -le 256 || exit 1; test $$n -ge 16 || exit 1; done && echo "PASS: [T1-F02-05] Page Rule Sizing (16-256 lines)"
 	@n=$$(wc -l < dispatch.oo); test $$n -le 256 && echo "PASS: [T1-F03-01] Dispatch Line Ceiling <= 256"
 	@echo "help" | ./$(BIN) --no-banner | grep -q "sovereign builtins" && echo "PASS: [T1-F03-02] Builtin Help Delegation"
 	@echo "caps" | ./$(BIN) --no-banner | grep -q "sovereign capability audit" && echo "PASS: [T1-F03-03] Builtin Caps Delegation"
@@ -326,7 +326,7 @@ parity: build
 
 line-cap:
 	@violations=0; \
-	for f in $$(find . -name "*.oo" -o -name "*.oot"); do \
+	for f in $$(find . \( -name "*.oo" -o -name "*.oot" \) -not -path "./.git/*" -not -path "./.agents/*"); do \
 		n=$$(wc -l < "$$f"); \
 		if [ $$n -gt 256 ]; then \
 			echo "VIOLATION: $$f = $$n lines (exceeds 256)"; \
@@ -344,19 +344,19 @@ file-law:
 	@forbidden="py js ts rb pl json yaml toml"; \
 	violations=0; \
 	for ext in $$forbidden; do \
-		found=$$(find . -name "*.$$ext" -not -path "./.git/*" 2>/dev/null | head -3); \
+		found=$$(find . -name "*.$$ext" -not -path "./.git/*" -not -path "./.agents/*" 2>/dev/null | head -3); \
 		if [ -n "$$found" ]; then \
 			echo "VIOLATION: .$$ext forbidden:"; echo "$$found"; \
 			violations=$$((violations+1)); \
 		fi; \
 	done; \
-	for f in $$(find . -name "*.sh" -not -path "./.git/*" 2>/dev/null); do \
+	for f in $$(find . -name "*.sh" -not -path "./.git/*" -not -path "./.agents/*" 2>/dev/null); do \
 		if [ "$$f" != "./install.sh" ]; then \
 			echo "VIOLATION: .sh forbidden outside install.sh: $$f"; \
 			violations=$$((violations+1)); \
 		fi; \
 	done; \
-	for f in $$(find . -name "*.md" -not -path "./.git/*" 2>/dev/null); do \
+	for f in $$(find . -name "*.md" -not -path "./.git/*" -not -path "./.agents/*" 2>/dev/null); do \
 		if [ "$$f" != "./README.md" ] && [ "$$f" != "./AGENTS.md" ]; then \
 			echo "VIOLATION: .md forbidden outside README.md and AGENTS.md: $$f"; \
 			violations=$$((violations+1)); \
@@ -367,7 +367,7 @@ file-law:
 
 academy:
 	@failures=0; \
-	for f in $$(find . -name "*.oo"); do \
+	for f in $$(find . -name "*.oo" -not -path "./.git/*" -not -path "./.agents/*"); do \
 		header=$$(head -7 "$$f"); \
 		if ! echo "$$header" | grep -q "^// # "; then \
 			echo "FAIL: $$f missing '// # <Title>' in first 7 lines"; \
@@ -394,7 +394,7 @@ academy:
 	echo "PASS: academy headers hold (all 4 elements present in first 7 lines)"
 
 check:
-	@for f in $$(find . -name "*.oo"); do \
+	@for f in $$(find . -name "*.oo" -not -path "./.git/*" -not -path "./.agents/*"); do \
 		$(OODA_COMPILER) check "$$f" > /dev/null || exit 1; \
 	done; \
 	echo "PASS: oodac check holds on all .oo files"

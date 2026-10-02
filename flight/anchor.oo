@@ -43,6 +43,10 @@ pub fn flight_telemetry(dur: Int, code: Int, mem: String) -> String {
     return render_telemetry_badge(dur, code, mem);
 }
 
+pub fn flight_telemetry_full(dur: Int, code: Int, mem: String, pid: Int) -> String {
+    return render_telemetry_badge_full(dur, code, mem, pid);
+}
+
 pub fn flight_memory(fs_r: &FsReadCap) -> String {
     return read_peak_memory(fs_r);
 }

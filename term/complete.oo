@@ -137,3 +137,76 @@ pub fn complete_token(fs_r: &FsReadCap, cur_line: String, alias_names: List[Stri
     print("\r\n");
     return cur_line;
 }
+
+pub fn complete_ghost(fs_r: &FsReadCap, cur_line: String, alias_names: List[String]) -> String {
+    let n: Int = chars_len(cur_line);
+    if n == 0 { return ""; }
+    let mut last_sp: Int = -1;
+    let mut i: Int = 0;
+    while i < n {
+        let ch: String = char_at(cur_line, i);
+        if ch == " " || ch == "\t" { last_sp = i; }
+        i = i + 1;
+    }
+    if last_sp < 0 && !str_contains(cur_line, "/") {
+        let builtins: String = "help:version:status:caps:whereami:history:clear:remedy:autopsy:export:unset:alias:unalias:take:pwd:cd:exit:echo:scry:jobs:printenv";
+        let bn: Int = chars_len(builtins);
+        let mut cur: String = "";
+        let mut bi: Int = 0;
+        let mut cmd_matches: List[String] = list_new();
+        while bi < bn {
+            let ch: String = char_at(builtins, bi);
+            if ch == ":" {
+                if str_starts_with(cur, cur_line) { cmd_matches = list_push(cmd_matches, cur); }
+                cur = "";
+            } else { cur = cur + ch; }
+            bi = bi + 1;
+        }
+        if cur != "" && str_starts_with(cur, cur_line) { cmd_matches = list_push(cmd_matches, cur); }
+        let an: Int = list_len(alias_names);
+        let mut ai: Int = 0;
+        while ai < an {
+            let aname: String = list_get(alias_names, ai);
+            if str_starts_with(aname, cur_line) { cmd_matches = list_push(cmd_matches, aname); }
+            ai = ai + 1;
+        }
+        let cmlen: Int = list_len(cmd_matches);
+        if cmlen == 1 {
+            let cand: String = list_get(cmd_matches, 0);
+            if chars_len(cand) > n {
+                return str_slice(cand, n, chars_len(cand));
+            }
+        }
+        return "";
+    }
+    let prefix_tok: String = if last_sp >= 0 { str_slice(cur_line, last_sp + 1, n) } else { cur_line };
+    if prefix_tok == "" { return ""; }
+    let mut sl_idx: Int = -1;
+    let mut si: Int = 0;
+    let plen: Int = chars_len(prefix_tok);
+    while si < plen {
+        if char_at(prefix_tok, si) == "/" { sl_idx = si; }
+        si = si + 1;
+    }
+    let dir_path: String = if sl_idx >= 0 { str_slice(prefix_tok, 0, sl_idx) } else { "." };
+    let file_prefix: String = if sl_idx >= 0 { str_slice(prefix_tok, sl_idx + 1, plen) } else { prefix_tok };
+    let entries: List[String] = oo_fs_read_dir(fs_r, dir_path);
+    let elen: Int = list_len(entries);
+    let mut matches: List[String] = list_new();
+    let mut ei: Int = 0;
+    while ei < elen {
+        let ent: String = list_get(entries, ei);
+        if str_starts_with(ent, file_prefix) && (!str_starts_with(ent, ".") || str_starts_with(file_prefix, ".")) {
+            matches = list_push(matches, ent);
+        }
+        ei = ei + 1;
+    }
+    if list_len(matches) == 1 {
+        let ent: String = list_get(matches, 0);
+        let flen: Int = chars_len(file_prefix);
+        if chars_len(ent) > flen {
+            return str_slice(ent, flen, chars_len(ent));
+        }
+    }
+    return "";
+}

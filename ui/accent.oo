@@ -33,7 +33,8 @@ pub fn is_builtin_verb(verb: String) -> Bool {
            verb == "version" || verb == "ver" || verb == "about" ||
            verb == "history" || verb == "hist" || verb == "past" || verb == "recall" ||
            verb == "env" || verb == "vars" || verb == "printenv" ||
-           verb == "export" || verb == "unset" || verb == "alias" || verb == "unalias";
+           verb == "export" || verb == "unset" || verb == "alias" || verb == "unalias" ||
+           verb == "jobs";
 }
 
 pub fn is_intent_query(cmd: String) -> Bool {
@@ -90,25 +91,24 @@ fn color_token(tok: String, is_first: Bool) -> String {
     let rst: String = cyber_reset();
     if is_first {
         if is_intent_query(tok) { return cyber_purple() + tok + rst; }
-        if is_navigation_verb(tok) { return cyber_green() + tok + rst; }
-        if is_builtin_verb(tok) { return cyber_amber() + tok + rst; }
-        return cyber_cyan() + tok + rst;
+        if is_builtin_verb(tok) { return cyber_cyan() + tok + rst; }
+        return cyber_green() + tok + rst;
     }
     // Pipeline and redirection operators
     if tok == "|" || tok == ">" || tok == ">>" || tok == "<" || tok == "&&" || tok == "||" {
-        return "\x1b[38;2;255;121;198m" + tok + rst;
+        return cyber_purple() + tok + rst;
     }
     // String literals (quoted)
     if str_starts_with(tok, "\"") || str_starts_with(tok, "'") {
-        return "\x1b[38;2;255;215;0m" + tok + rst;
+        return cyber_amber() + tok + rst;
     }
     // Paths (contain slash or start with tilde)
     if str_contains(tok, "/") || str_starts_with(tok, "~") {
-        return "\x1b[38;2;80;250;123m" + tok + rst;
+        return cyber_green() + tok + rst;
     }
     // Command flags
     if str_starts_with(tok, "-") {
-        return "\x1b[38;2;139;233;253m" + tok + rst;
+        return cyber_amber() + tok + rst;
     }
     return tok;
 }

@@ -62,5 +62,30 @@ pub fn resolve_git_branch(fs_r: &FsReadCap, cwd: String) -> String {
 }
 
 pub fn render_ambient_dock(fs_r: &FsReadCap, env: &EnvCap, cwd: String, has_failure: Bool, last_rc: Int) -> String {
-    return "";
+    let hr: Result[String, String] = env_get(env, "HOME");
+    let home: String = match hr { Ok(h) => h, Err(_) => "" };
+    let mut disp_cwd: String = cwd + "";
+    if home != "" {
+        if cwd == home {
+            disp_cwd = "~";
+        } else if str_starts_with(cwd, home + "/") {
+            disp_cwd = "~" + str_slice(cwd, chars_len(home), chars_len(cwd));
+        }
+    }
+    let branch: String = resolve_git_branch(fs_r, cwd);
+    let node: String = resolve_node_id(env);
+    let esc: String = bytes_to_str(bytes_push(bytes_new(), 27));
+    let dim: String = esc + "[2m";
+    let cyan: String = esc + "[38;2;0;240;255m";
+    let purple: String = esc + "[38;2;189;0;255m";
+    let amber: String = esc + "[38;2;255;184;0m";
+    let gray: String = esc + "[38;2;110;120;140m";
+    let rst: String = esc + "[0m";
+
+    let branch_part: String = if branch != "" { " " + purple + "git:" + branch + rst } else { "" };
+    let host_part: String = " " + gray + "[" + node + "]" + rst;
+    let cap_part: String = " " + amber + "CAPS: PROC+FS+NET" + rst;
+    let path_part: String = cyan + disp_cwd + rst;
+
+    return dim + "┌ " + rst + path_part + branch_part + host_part + cap_part + "\r\n";
 }

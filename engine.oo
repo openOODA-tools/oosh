@@ -29,12 +29,34 @@ pub fn run_engine(fs_r: &FsReadCap, sys: &ProcessCap, env: &EnvCap, time: &TimeC
 
     while running {
         let ps1_res: Result[String, String] = env_map_get(session.env_map, "PS1");
-        let base_prompt: String = if ps1_res.is_ok() {
+        let has_ps1: Bool = ps1_res.is_ok() && match ps1_res { Ok(s) => s != "", Err(_) => false };
+        let base_prompt: String = if has_ps1 {
             match ps1_res { Ok(s) => s, Err(_) => "" }
         } else {
             render_prompt_state(env, session.cwd, rec.has_failed)
         };
-        if is_interactive { print(base_prompt); }
+        if is_interactive {
+            if !has_ps1 {
+                let dock: String = render_ambient_dock(fs_r, env, session.cwd, rec.has_failed, rec.last_exit_code);
+                print(dock);
+            }
+            print(base_prompt);
+        }
+
+        let remedy_cand: String = if rec.has_failed && rec.last_exit_code != 0 {
+            let diag: DiagnosticResult = flight_rules_match(rec.last_failed_cmd, rec.last_exit_code, rec.last_stderr, session.cwd);
+            diag.actionable_cmd
+        } else {
+            ""
+        };
+        let mut cur_ghost: String = if remedy_cand != "" {
+            "[Auto-Remedy: " + remedy_cand + " | Tab to accept]"
+        } else {
+            ""
+        };
+        if is_interactive && cur_ghost != "" {
+            line_editor_redraw_full(base_prompt, ed, cur_ghost);
+        }
 
         let mut line_done: Bool = false;
         while !line_done && running {
@@ -49,38 +71,70 @@ pub fn run_engine(fs_r: &FsReadCap, sys: &ProcessCap, env: &EnvCap, time: &TimeC
             } else if is_interactive && action == "ctrl_c" {
                 print("^C\r\n");
                 ed = line_editor_reset();
+                cur_ghost = "";
                 hist = history_reset_cursor(hist);
                 line_done = true;
             } else if is_interactive && action == "ctrl_d" {
                 if ed.buf == "" { running = false; break; }
             } else if is_interactive && action == "backspace" {
                 ed = line_editor_backspace(ed);
-                line_editor_redraw(base_prompt, ed);
+                cur_ghost = if ed.buf == "" && remedy_cand != "" {
+                    "[Auto-Remedy: " + remedy_cand + " | Tab to accept]"
+                } else if ed.cursor == chars_len(ed.buf) {
+                    term_complete_ghost(fs_r, ed.buf, session.alias_map.names)
+                } else {
+                    ""
+                };
+                line_editor_redraw_full(base_prompt, ed, cur_ghost);
             } else if is_interactive && action == "delete" {
                 ed = line_editor_delete(ed);
-                line_editor_redraw(base_prompt, ed);
+                cur_ghost = if ed.cursor == chars_len(ed.buf) {
+                    term_complete_ghost(fs_r, ed.buf, session.alias_map.names)
+                } else {
+                    ""
+                };
+                line_editor_redraw_full(base_prompt, ed, cur_ghost);
             } else if is_interactive && action == "left" {
                 ed = line_editor_move_left(ed);
-                line_editor_redraw(base_prompt, ed);
+                cur_ghost = "";
+                line_editor_redraw_full(base_prompt, ed, cur_ghost);
             } else if is_interactive && action == "right" {
-                ed = line_editor_move_right(ed);
-                line_editor_redraw(base_prompt, ed);
+                if ed.cursor == chars_len(ed.buf) && cur_ghost != "" && ed.buf != "" {
+                    ed = line_editor_set(ed, ed.buf + cur_ghost);
+                    cur_ghost = "";
+                } else {
+                    ed = line_editor_move_right(ed);
+                    cur_ghost = if ed.cursor == chars_len(ed.buf) {
+                        term_complete_ghost(fs_r, ed.buf, session.alias_map.names)
+                    } else {
+                        ""
+                    };
+                }
+                line_editor_redraw_full(base_prompt, ed, cur_ghost);
             } else if is_interactive && action == "home" {
                 ed = line_editor_home(ed);
-                line_editor_redraw(base_prompt, ed);
+                cur_ghost = "";
+                line_editor_redraw_full(base_prompt, ed, cur_ghost);
             } else if is_interactive && action == "end" {
                 ed = line_editor_end(ed);
-                line_editor_redraw(base_prompt, ed);
+                cur_ghost = term_complete_ghost(fs_r, ed.buf, session.alias_map.names);
+                line_editor_redraw_full(base_prompt, ed, cur_ghost);
             } else if is_interactive && action == "ctrl_u" {
                 ed = line_editor_reset();
-                line_editor_redraw(base_prompt, ed);
+                cur_ghost = if remedy_cand != "" {
+                    "[Auto-Remedy: " + remedy_cand + " | Tab to accept]"
+                } else {
+                    ""
+                };
+                line_editor_redraw_full(base_prompt, ed, cur_ghost);
             } else if is_interactive && action == "up" {
                 let prev_r: Result[String, String] = history_prev(hist);
                 if prev_r.is_ok() {
                     let prev_cmd: String = match prev_r { Ok(s) => s, Err(_) => "" };
                     hist = history_set_cursor(hist, hist.cursor_idx - 1);
                     ed = line_editor_set(ed, prev_cmd);
-                    line_editor_redraw(base_prompt, ed);
+                    cur_ghost = "";
+                    line_editor_redraw_full(base_prompt, ed, cur_ghost);
                 }
             } else if is_interactive && action == "down" {
                 let next_r: Result[String, String] = history_next(hist);
@@ -92,12 +146,22 @@ pub fn run_engine(fs_r: &FsReadCap, sys: &ProcessCap, env: &EnvCap, time: &TimeC
                     hist = history_reset_cursor(hist);
                     ed = line_editor_reset();
                 }
-                line_editor_redraw(base_prompt, ed);
+                cur_ghost = "";
+                line_editor_redraw_full(base_prompt, ed, cur_ghost);
             } else if is_interactive && action == "tab" {
-                if ed.buf != "" {
+                if ed.buf == "" && remedy_cand != "" {
+                    ed = line_editor_set(ed, remedy_cand);
+                    cur_ghost = "";
+                    line_editor_redraw_full(base_prompt, ed, cur_ghost);
+                } else if cur_ghost != "" {
+                    ed = line_editor_set(ed, ed.buf + cur_ghost);
+                    cur_ghost = "";
+                    line_editor_redraw_full(base_prompt, ed, cur_ghost);
+                } else if ed.buf != "" {
                     let comp: String = term_complete(fs_r, ed.buf, session.alias_map.names);
                     ed = line_editor_set(ed, comp);
-                    line_editor_redraw(base_prompt, ed);
+                    cur_ghost = "";
+                    line_editor_redraw_full(base_prompt, ed, cur_ghost);
                 }
             } else if is_interactive && action == "ctrl_r" {
                 let mut search_q: String = "";
@@ -131,11 +195,17 @@ pub fn run_engine(fs_r: &FsReadCap, sys: &ProcessCap, env: &EnvCap, time: &TimeC
                         searching = false;
                     }
                 }
-                line_editor_redraw(base_prompt, ed);
+                cur_ghost = "";
+                line_editor_redraw_full(base_prompt, ed, cur_ghost);
             } else if action == "char" {
                 if is_interactive {
                     ed = line_editor_insert(ed, key.text);
-                    line_editor_redraw(base_prompt, ed);
+                    cur_ghost = if ed.cursor == chars_len(ed.buf) {
+                        term_complete_ghost(fs_r, ed.buf, session.alias_map.names)
+                    } else {
+                        ""
+                    };
+                    line_editor_redraw_full(base_prompt, ed, cur_ghost);
                 } else {
                     ed = LineEditor { buf: ed.buf + key.text, cursor: ed.cursor + chars_len(key.text) };
                 }
@@ -160,6 +230,7 @@ pub fn run_engine(fs_r: &FsReadCap, sys: &ProcessCap, env: &EnvCap, time: &TimeC
             let mem: String = flight_memory(fs_r);
             let pid: Int = flight_pid(fs_r);
             rec = flight_update_telemetry(res.flight_rec, dur, mem, pid);
+            if is_interactive { println(flight_telemetry_full(dur, res.flight_rec.last_exit_code, mem, pid)); }
             if is_interactive && !res.should_exit { let _ = term_enable(ffi); }
             if res.should_exit { running = false; break; }
         }

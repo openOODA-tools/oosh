@@ -82,7 +82,7 @@ pub fn render_daemon_banner(sock_path: String) -> String {
     let r1: String = ui_card_row("Daemon State", "Headless IPC Active");
     let r2: String = ui_card_row("Control Socket", sock_path);
     let r3: String = ui_card_row("Wire Framing", "NUL-delimited (\\0) JSON");
-    let r4: String = ui_card_row("Interface", "org.openooda.oosh.Control1 (v0.8.0)");
+    let r4: String = ui_card_row("Interface", "org.openooda.oosh.Control1 (v0.9.0)");
     let r5: String = ui_card_row("Supported RPC", "QueryPosture, ExecuteCommand, StreamTelemetry, GetLastFailure, SynthesizeIntent");
     let bot: String = ui_card_bottom("VARLINK READY");
     return top + "\n" + r1 + "\n" + r2 + "\n" + r3 + "\n" + r4 + "\n" + r5 + "\n" + bot;

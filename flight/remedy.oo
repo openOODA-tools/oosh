@@ -7,7 +7,7 @@
 // Beats:
 //   1. Inspect failure envelope from active flight recorder.
 //   2. Route failure parameters through diagnostic rules engine (command not found, permission, git, build).
-//   3. Synthesize actionable remediation commands and 68-col Algiz (ᛉ) guidance card.
+//   3. Synthesize actionable remediation commands and guidance card.
 
 import "ui/palette.oo";
 import "ui/card.oo";
@@ -20,7 +20,7 @@ fn safe_prefix(s: String, max_chars: Int) -> String {
 }
 
 pub fn render_remedy_card(has_failed: Bool, cmd: String, exit_code: Int, err_str: String, cwd: String) -> String {
-    let top: String = card_top("ᛉ", "OOSH REMEDY FAILURE DIAGNOSTICS");
+    let top: String = card_top("", "OOSH REMEDY FAILURE DIAGNOSTICS");
 
     if !has_failed {
         let r1: String = card_row("Diagnostic", "No active failure trace detected in current scope.");

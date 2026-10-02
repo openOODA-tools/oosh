@@ -1,16 +1,15 @@
 // # Live Ambient Status Dock
 //
-// Logline: Renders real-time ambient status dock with node identity, git context, and posture.
+// Logline: Resolves host node identity and git context without runes or box frames.
 //
-// Setup: Formats ANSI cyberpunk status bar querying environment and capability indicators.
+// Setup: Formats standard status query environment and capability indicators.
 //
 // Beats:
 //   1. Resolve active user identity and host node name.
 //   2. Read .git/HEAD directly without subshells for instant context.
-//   3. Render ambient capability tokens and session posture badge.
+//   3. Render clean ambient dock status without runes or frames.
 
 import "std/fs/process/env.oo";
-import "palette.oo";
 
 pub fn resolve_node_id(env: &EnvCap) -> String {
     let ur: Result[String, String] = env_get(env, "USER");
@@ -63,32 +62,5 @@ pub fn resolve_git_branch(fs_r: &FsReadCap, cwd: String) -> String {
 }
 
 pub fn render_ambient_dock(fs_r: &FsReadCap, env: &EnvCap, cwd: String, has_failure: Bool, last_rc: Int) -> String {
-    let cyan: String = cyber_cyan();
-    let amber: String = cyber_amber();
-    let purp: String = cyber_purple();
-    let green: String = cyber_green();
-    let red: String = cyber_red();
-    let gray: String = cyber_gray();
-    let rst: String = cyber_reset();
-
-    let node: String = resolve_node_id(env);
-    let branch: String = resolve_git_branch(fs_r, cwd);
-
-    let mut dock: String = cyan + "╭─[ " + amber + "ᚱ " + node + cyan + " ]";
-
-    if branch != "" {
-        dock = dock + cyan + "─[ " + purp + " " + branch + cyan + " ]";
-    }
-
-    dock = dock + cyan + "─[ " + green + "ᛏ CAPS:PROC|ENV|FS|TIME" + cyan + " ]";
-
-    if has_failure {
-        let rc_str: String = last_rc.to_string();
-        dock = dock + cyan + "─[ " + red + "✘ POSTURE:ERR(" + rc_str + ")" + cyan + " ]";
-    } else {
-        dock = dock + cyan + "─[ " + green + "✔ POSTURE:NOMINAL" + cyan + " ]";
-    }
-
-    dock = dock + " " + gray + "░▒▓" + rst + "\n";
-    return dock;
+    return "";
 }

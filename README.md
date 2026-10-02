@@ -71,17 +71,19 @@ curl -fsSL https://openooda-tools.github.io/oosh/install.sh | bash -s -- --unins
 
 ---
 
-## 4. Core Shell & Bash Parity (v0.5.0)
+## 4. Pure POSIX Bash Ergonomics (v0.6.0)
 
-`oosh v0.5.0` elevates the sovereign shell to full interactive parity with standard POSIX shells while introducing cyberpunk ambient superpowers:
-- **Raw Mode VT100 Line Editor**: Built directly on C termios primitives (`oo_tui_enable_raw`), supporting full arrow key navigation, Backspace, Delete, Home, End, Ctrl+U, Ctrl+D, and non-terminating Ctrl+C line abort.
-- **Iconic Cyberpunk Prompt**: Grounded by a glowing Amber rune `ᚱ`, Cyan working directory path, and high-visibility status arrow delimiter `❯` (electric green on nominal state, neon red on failure).
-- **Direct Terminal TUI Execution**: Seamlessly passes standard I/O handles via `sys_exec_wait` without memory buffering, enabling interactive TUIs (`vim`, `nano`, `htop`, `ssh`) and continuous streams (`tail -f`, `ping`).
-- **Pipelines & Redirection Plumbing**: Native support for tokenized pipes (`|`) and file redirections (`>`, `>>`) wired directly to builtins (`caps | grep PROC`, `autopsy > trace.log`).
-- **Session Environment & Dynamic Aliases**: In-memory alias table and environment variables (`alias`, `unalias`, `export`, `unset`), with automatic startup sourcing of `~/.ooshrc`.
-- **Script & Shebang Execution**: Positional script execution (`oosh script.oosh [args...]`) with native shebang support (`#!/usr/local/bin/oosh`).
-- **Intelligent Tab Completion**: Autocompletes builtins and `$PATH` binaries on the initial token, and relative filesystem paths on arguments.
-- **Persistent Command History**: Command line history saved cleanly to `~/.oosh_history`.
+`oosh v0.6.0` elevates the sovereign shell to full interactive ergonomics matching standard Bash while preserving openOODA capability security:
+- **Standard Bash PS1 Prompt**: Formats standard `user@hostname:dir$ ` (or `# ` for root) with clean tilde contraction (`~`) and support for custom `$PS1` environment overrides.
+- **Silent Normal Startup**: Clean, unobtrusive shell launch without promotional banners (banner displayed only on `-v`/`--version` or `version`).
+- **Unintercepted Host Binaries**: Direct execution of standard system tools (`whoami`, `stat`, `ping`, `ls`, `grep`) without conversational interception.
+- **Modular VT100 Line Editor (`term/`)**: Clean modular terminal handling with raw mode, arrow key cursor navigation, history browsing (`~/.oosh_history`), and standard shortcuts (Ctrl+A, Ctrl+E, Ctrl+U, Ctrl+D, Ctrl+C).
+- **Direct Process Spawning & Unbuffered I/O**: Direct process invocation via `sys_exec_wait` with stdio inheritance, running interactive TUIs (`vim`, `nano`, `htop`, `ssh`) and streaming utilities seamlessly.
+- **Signal Handling & Process Groups**: Raw mode disabling before child execution and prompt reprint on Ctrl+C without killing the shell.
+- **Session State Persistence**: Full support for `export`, `unset`, `alias`, `unalias`, and automatic sourcing of `~/.ooshrc`.
+- **Pipelines & Redirection Plumbing**: Native support for tokenized pipes (`|`) and file redirections (`>`, `>>`) across builtins and system commands.
+- **Script & Shebang Execution**: Positional script execution (`oosh script.oosh [args...]`) with shebang support.
+- **Clean Columnar Autopsy & Non-Intrusive Typo Remedy**: Diagnostic flight recording with clean columnar postmortem (`last`/`dmesg` style) and helpful command suggestions on exit code 127.
 
 ---
 

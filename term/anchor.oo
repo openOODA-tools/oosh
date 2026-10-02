@@ -1,0 +1,36 @@
+// # Terminal Subsystem Anchor Shim
+//
+// Logline: Re-exports terminal raw mode, line editor, escape decoder, and history management.
+//
+// Setup: Bridges terminal capabilities across openOODA shell submodules.
+//
+// Beats:
+//   1. Re-export raw mode lifecycle controllers.
+//   2. Re-export escape sequence reader and key events.
+//   3. Re-export in-memory line buffer editor.
+//   4. Re-export persistent command history storage.
+
+import "raw.oo";
+import "read.oo";
+import "line.oo";
+import "history.oo";
+
+pub fn term_enable(ffi: &FfiCap) -> Result[String, String] {
+    return term_enable_raw(ffi);
+}
+
+pub fn term_disable(ffi: &FfiCap) -> Result[String, String] {
+    return term_disable_raw(ffi);
+}
+
+pub fn term_read(ffi: &FfiCap) -> KeyEvent {
+    return term_read_key(ffi);
+}
+
+pub fn term_line_new() -> LineEditor {
+    return line_editor_new();
+}
+
+pub fn term_history_load(fs_r: &FsReadCap, env: &EnvCap) -> HistoryState {
+    return history_load(fs_r, env);
+}

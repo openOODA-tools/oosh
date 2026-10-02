@@ -83,7 +83,7 @@ pub fn is_remedy_cmd(cmd: String) -> Bool {
 
 pub fn is_scry_cmd(cmd: String) -> Bool {
     let t: String = str_trim(cmd);
-    return t == "scry" || str_starts_with(t, "scry ") || t == "inspect" || str_starts_with(t, "inspect ") || t == "probe";
+    return t == "scry" || str_starts_with(t, "scry ") || t == "oosh inspect" || str_starts_with(t, "oosh inspect ") || t == "probe";
 }
 
 pub fn dispatch_diagnostics(sys: &ProcessCap, cwd: String, rec: FlightRecord, cmd: String) -> Bool {

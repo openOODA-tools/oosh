@@ -2,18 +2,18 @@
 //
 // Logline: Formats and displays built-in command guides, shortcuts, and contextual help documentation.
 //
-// Setup: Terminal ANSI string formatting with cyberpunk cards, reference guide catalog, and telemetry display.
+// Setup: Terminal ANSI string formatting with reference guide catalog and telemetry display.
 //
 // Beats:
 //   1. Render categorized sovereign shell command reference.
 //   2. Provide focused guidance for individual builtin commands.
-//   3. Format node posture, capability audits, and ambient telemetry.
+//   3. Format node posture, capability audits, and system observation.
 
 import "std/fs/process/process.oo";
 import "ui/anchor.oo";
 
 pub fn get_help_guide() -> String {
-    let top: String = ui_card_top("ᚱ", "sovereign builtins & registry") + "\n";
+    let top: String = ui_card_top("", "sovereign builtins & registry") + "\n";
     let s1: String = ui_card_section("Navigation") + "\n" +
         "    cd [dir], goto, jump, walk   change directory (~, .., relative, absolute)\n" +
         "    ..                           navigate to parent directory\n" +
@@ -24,13 +24,13 @@ pub fn get_help_guide() -> String {
         "    exit, quit, q, :q, bye       terminate shell session cleanly\n" +
         "    clear, cls, clean, reset     clear terminal screen\n";
     let s3: String = ui_card_section("System & Capability Audit") + "\n" +
-        "    status, stat, health, info   node posture and runtime telemetry\n" +
-        "    caps, perms, whoami          audit active openOODA capability tokens\n" +
+        "    status, info, health         node posture and runtime telemetry\n" +
+        "    caps, perms, tokens          audit active openOODA capability tokens\n" +
         "    version, ver, about          display shell banner and version\n" +
         "    rune, token, talisman        query hardware ambient token enclave\n" +
         "    autopsy, bb, blackbox        examine flight recorder / crash telemetry\n" +
         "    link [sock], connect         connect or probe syntropd IPC daemon\n" +
-        "    scry [target], inspect       deep-scan process or system diagnostics\n" +
+        "    scry [target], oosh inspect  deep-scan process or system diagnostics\n" +
         "    remedy, fix, repair          diagnose last failure and suggest recovery\n";
     let s4: String = ui_card_section("Intent & Host Execution") + "\n" +
         "    open [target], view, show    open file or URL with default desktop app\n" +
@@ -50,7 +50,7 @@ pub fn print_help_guide() {
 pub fn print_context_help(raw_topic: String) {
     let topic: String = str_trim(raw_topic);
     if topic == "cd" || topic == "goto" || topic == "jump" || topic == ".." || topic == "walk" {
-        println(ui_card_top("ᚱ", "cd [dir] / .. / ... / take <dir>"));
+        println(ui_card_top("", "cd [dir] / .. / ... / take <dir>"));
         println(ui_card_row("Summary", "Navigation builtins. Bare '..' jumps up one level, '...' jumps two."));
         println(ui_card_row("Ergonomics", "'take <dir>' (or 'mkcd') creates a directory and cds into it in one step."));
         println(ui_card_row("Aliases", "goto, jump, walk, .., ..."));
@@ -58,42 +58,42 @@ pub fn print_context_help(raw_topic: String) {
         return;
     }
     if topic == "exit" || topic == "quit" || topic == ":q" || topic == "q" || topic == "bye" {
-        println(ui_card_top("ᚱ", "exit / quit / :q / bye"));
+        println(ui_card_top("", "exit / quit / :q / bye"));
         println(ui_card_row("Summary", "Terminates current oosh session cleanly and restores terminal state."));
         println(ui_card_row("Aliases", "quit, q, :q, :q!, :x, bye, logout, leave, close"));
         println(ui_card_bottom("SESSION HELP"));
         return;
     }
-    if topic == "caps" || topic == "whoami" || topic == "perms" || topic == "tokens" {
-        println(ui_card_top("ᛏ", "caps / perms / whoami"));
+    if topic == "caps" || topic == "perms" || topic == "tokens" {
+        println(ui_card_top("", "caps / perms / tokens"));
         println(ui_card_row("Summary", "Audits active openOODA unforgeable capability tokens and host identity."));
-        println(ui_card_row("Aliases", "cap, capabilities, perms, permissions, tokens, authority, whoami"));
+        println(ui_card_row("Aliases", "cap, capabilities, perms, permissions, tokens, authority"));
         println(ui_card_bottom("CAPABILITIES HELP"));
         return;
     }
     if topic == "status" || topic == "health" || topic == "info" {
-        println(ui_card_top("ᛟ", "status / health / info"));
+        println(ui_card_top("", "status / health / info"));
         println(ui_card_row("Summary", "Displays node posture, active substrate, and syntropd link telemetry."));
-        println(ui_card_row("Aliases", "stat, info, health, posture, ping, check, --status, -s"));
+        println(ui_card_row("Aliases", "info, health, posture, check, --status, -s"));
         println(ui_card_bottom("STATUS HELP"));
         return;
     }
     if topic == "take" || topic == "mkcd" || topic == "mcd" {
-        println(ui_card_top("ᚱ", "take <dir> / mkcd <dir>"));
+        println(ui_card_top("", "take <dir> / mkcd <dir>"));
         println(ui_card_row("Summary", "Atomically creates directory hierarchy ('mkdir -p') and navigates into it."));
         println(ui_card_row("Aliases", "mkcd, mcd, mdcd, create-cd"));
         println(ui_card_bottom("ERGONOMICS HELP"));
         return;
     }
     if topic == "remedy" || topic == "fix" || topic == "repair" {
-        println(ui_card_top("ᛉ", "remedy / fix / repair"));
+        println(ui_card_top("", "remedy / fix / repair"));
         println(ui_card_row("Summary", "Analyzes the flight recorder failure envelope and generates recovery commands."));
         println(ui_card_row("Aliases", "fix, repair, heal, patch, resolve"));
         println(ui_card_bottom("DIAGNOSTICS HELP"));
         return;
     }
     if topic == "autopsy" || topic == "bb" || topic == "blackbox" || topic == "flight" || topic == "crash" {
-        println(ui_card_top("ᚺ", "autopsy / bb / blackbox"));
+        println(ui_card_top("", "autopsy / bb / blackbox"));
         println(ui_card_row("Summary", "Renders flight recorder chronological timeline and failure postmortem."));
         println(ui_card_row("Aliases", "bb, blackbox, flight, crash, postmortem"));
         println(ui_card_bottom("BLACKBOX HELP"));
@@ -103,7 +103,7 @@ pub fn print_context_help(raw_topic: String) {
 }
 
 pub fn get_status_string(sys: &ProcessCap, cwd: String) -> String {
-    let top: String = ui_card_top("ᛟ", "oosh node telemetry & posture") + "\n";
+    let top: String = ui_card_top("", "oosh node telemetry & posture") + "\n";
     let r1: String = ui_card_row("Mode", "Standalone Sovereign Shell") + "\n";
     let r2: String = ui_card_row("CWD", cwd) + "\n";
     let r3: String = ui_card_row("Substrate", "openOODA native runtime (glibc x86_64)") + "\n";
@@ -126,14 +126,14 @@ pub fn print_status(sys: &ProcessCap, cwd: String) {
 pub fn get_caps_string(sys: &ProcessCap) -> String {
     let user_res: Result[String, String] = process_exec(sys, "id -un 2>/dev/null || whoami");
     let user_str: String = match user_res { Ok(u) => str_trim(u), Err(_) => "sovereign" };
-    let top: String = ui_card_top("ᛏ", "sovereign capability audit") + "\n";
+    let top: String = ui_card_top("", "sovereign capability audit") + "\n";
     let r1: String = ui_card_row("Identity", user_str) + "\n";
     let r2: String = ui_card_row("Tokens Held", "&ProcessCap (PROC: host process execution)") + "\n";
     let r3: String = ui_card_row("            ", "&EnvCap     (environment isolation)") + "\n";
     let r4: String = ui_card_row("            ", "&FsReadCap  (filesystem inspection)") + "\n";
     let r5: String = ui_card_row("            ", "&TimeCap    (monotonic latency clock)") + "\n";
     let r6: String = ui_card_row("Enclave", "Software Sandbox (glibc standalone)") + "\n";
-    let r7: String = ui_card_row("Rune Token", "Unbound (local terminal session)") + "\n";
+    let r7: String = ui_card_row("Security Model", "Zero Ambient Authority") + "\n";
     let bot: String = ui_card_bottom("CAPABILITY VERIFIED") + "\n";
     return top + r1 + r2 + r3 + r4 + r5 + r6 + r7 + bot;
 }
@@ -143,7 +143,7 @@ pub fn print_caps(sys: &ProcessCap) {
 }
 
 pub fn print_autopsy() {
-    println(ui_card_top("ᚺ", "oosh flight recorder (blackbox)"));
+    println(ui_card_top("", "oosh flight recorder (blackbox)"));
     println(ui_card_row("Postmortem", "Nominal (0 unhandled faults)"));
     println(ui_card_row("Causal trace", "Clean execution pipeline"));
     println(ui_card_row("Flight log", "Armed (in-memory ring buffer)"));
@@ -151,15 +151,15 @@ pub fn print_autopsy() {
 }
 
 pub fn print_rune() {
-    println(ui_card_top("ᚱ", "oosh ambient rune status"));
-    println(ui_card_row("Hardware", "No physical rune token detected on USB/NFC"));
+    println(ui_card_top("", "oosh token status"));
+    println(ui_card_row("Hardware", "No physical token detected on USB/NFC"));
     println(ui_card_row("Subsystem", "Ambient listener dormant"));
     println(ui_card_row("Authority", "Session operating under local host terminal"));
-    println(ui_card_bottom("RUNE UNBOUND"));
+    println(ui_card_bottom("TOKEN UNBOUND"));
 }
 
 pub fn print_link() {
-    println(ui_card_top("⬡", "syntropd link coordinator"));
+    println(ui_card_top("", "syntropd link coordinator"));
     println(ui_card_row("Target", "/run/oosh/control.sock or /tmp/oosh-control.sock"));
     println(ui_card_row("Status", "Varlink IPC daemon ready (start with 'oosh --daemon')"));
     println(ui_card_row("Protocol", "Standard Varlink NUL-delimited JSON RPC"));
@@ -167,14 +167,14 @@ pub fn print_link() {
 }
 
 pub fn print_remedy() {
-    println(ui_card_top("ᛉ", "oosh remedy engine"));
+    println(ui_card_top("", "oosh remedy engine"));
     println(ui_card_row("Diagnostic", "No active failure trace detected in current scope."));
     println(ui_card_row("Hint", "If a command fails, invoke 'remedy' immediately to diagnose."));
     println(ui_card_bottom("ENVELOPE NOMINAL"));
 }
 
 pub fn print_scry(sys: &ProcessCap, cwd: String) {
-    println(ui_card_top("ᛈ", "scry system observation & telemetry"));
+    println(ui_card_top("", "scry system observation & telemetry"));
     let diag: Result[String, String] = process_exec(sys, "cd \"" + cwd + "\" && (uptime && free -h | head -2) 2>/dev/null");
     let diag_str: String = match diag { Ok(s) => s, Err(_) => "system telemetry unavailable\n" };
     print(diag_str);
@@ -185,16 +185,12 @@ pub fn is_help_cmd(cmd: String) -> Bool {
     return cmd == "help" || cmd == "-h" || cmd == "--help" || cmd == "-?" || cmd == "/?" || cmd == "--h" || cmd == "?" || cmd == "man" || cmd == "manual" || cmd == "guide" || cmd == "docs" || cmd == "commands" || cmd == "what";
 }
 
-pub fn is_greeting_cmd(cmd: String) -> Bool {
-    return cmd == "hi" || cmd == "hello" || cmd == "hey" || cmd == "yo" || cmd == "greetings" || cmd == "howdy" || cmd == "sup" || cmd == "morning" || cmd == "evening";
-}
-
 pub fn is_status_cmd(cmd: String) -> Bool {
-    return cmd == "status" || cmd == "stat" || cmd == "info" || cmd == "health" || cmd == "posture" || cmd == "ping" || cmd == "check" || cmd == "--status" || cmd == "-s";
+    return cmd == "status" || cmd == "info" || cmd == "health" || cmd == "posture" || cmd == "check" || cmd == "--status" || cmd == "-s";
 }
 
 pub fn is_caps_cmd(cmd: String) -> Bool {
-    return cmd == "caps" || cmd == "cap" || cmd == "capabilities" || cmd == "perms" || cmd == "permissions" || cmd == "tokens" || cmd == "authority" || cmd == "whoami";
+    return cmd == "caps" || cmd == "cap" || cmd == "capabilities" || cmd == "perms" || cmd == "permissions" || cmd == "tokens" || cmd == "authority";
 }
 
 pub fn is_rune_cmd(cmd: String) -> Bool {
@@ -202,16 +198,10 @@ pub fn is_rune_cmd(cmd: String) -> Bool {
 }
 
 pub fn is_scry_cmd(cmd: String) -> Bool {
-    return cmd == "scry" || str_starts_with(cmd, "scry ") || cmd == "inspect" || str_starts_with(cmd, "inspect ") || cmd == "probe";
+    return cmd == "scry" || str_starts_with(cmd, "scry ") || cmd == "oosh inspect" || str_starts_with(cmd, "oosh inspect ") || cmd == "probe";
 }
 
 pub fn dispatch_manual(sys: &ProcessCap, cwd: String, line: String) -> Bool {
-    let esc: String = bytes_to_str(bytes_push(bytes_new(), 27));
-    if is_greeting_cmd(line) {
-        println(esc + "[1;33m⚡ oosh:" + esc + "[0m Greetings, sovereign. The shell is listening.");
-        println("   Type " + esc + "[1;36mhelp" + esc + "[0m for builtins or prefix queries with " + esc + "[1;35m?" + esc + "[0m for intent.");
-        return true;
-    }
     if is_help_cmd(line) {
         print_help_guide();
         return true;

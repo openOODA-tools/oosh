@@ -1,0 +1,81 @@
+// # Terminal Persistent Command History
+//
+// Logline: Manages in-memory history ring and persistence to ~/.oosh_history.
+//
+// Setup: Requires FsReadCap and FsWriteCap to read and append history.
+//
+// Beats:
+//   1. Load existing session history from ~/.oosh_history.
+//   2. Navigate previous and next entries via history index.
+//   3. Append new execution entries to in-memory list and disk file.
+
+import "std/fs/process/env.oo";
+
+pub type HistoryState = struct {
+    entries: List[String],
+    file_path: String,
+    cursor_idx: Int
+};
+
+fn parse_history_lines(s: String) -> List[String] {
+    let mut entries: List[String] = list_new();
+    let n: Int = chars_len(s);
+    let mut cur: String = "";
+    let mut i: Int = 0;
+    while i < n {
+        let ch: String = char_at(s, i);
+        if ch == "\n" {
+            let t: String = str_trim(cur);
+            if t != "" { entries = list_push(entries, t); }
+            cur = "";
+        } else if ch != "\r" { cur = cur + ch; }
+        i = i + 1;
+    }
+    if str_trim(cur) != "" { entries = list_push(entries, str_trim(cur)); }
+    return entries;
+}
+
+pub fn history_load(fs_r: &FsReadCap, env: &EnvCap) -> HistoryState {
+    let hr: Result[String, String] = env_get(env, "HOME");
+    let home: String = match hr { Ok(h) => h, Err(_) => "" };
+    let path: String = home + "/.oosh_history";
+    let mut entries: List[String] = list_new();
+    let r: Result[String, String] = read_file(fs_r, path);
+    if r.is_ok() {
+        entries = parse_history_lines(match r { Ok(s) => s, Err(_) => "" });
+    }
+    let idx: Int = list_len(entries);
+    return HistoryState { entries: entries, file_path: path, cursor_idx: idx };
+}
+
+pub fn history_add(fs_w: &FsWriteCap, hist: HistoryState, cmd: String) -> HistoryState {
+    let t: String = str_trim(cmd);
+    if t == "" { return hist; }
+    let updated_entries: List[String] = list_push(hist.entries, t);
+    let _ = file_append_sync(fs_w, hist.file_path, t + "\n");
+    let new_idx: Int = list_len(updated_entries);
+    return HistoryState { entries: updated_entries, file_path: hist.file_path, cursor_idx: new_idx };
+}
+
+pub fn history_prev(hist: HistoryState) -> Result[String, String] {
+    let n: Int = list_len(hist.entries);
+    if n == 0 || hist.cursor_idx <= 0 { return Err("start"); }
+    let next_idx: Int = hist.cursor_idx - 1;
+    return Ok(list_get(hist.entries, next_idx));
+}
+
+pub fn history_next(hist: HistoryState) -> Result[String, String] {
+    let n: Int = list_len(hist.entries);
+    if hist.cursor_idx + 1 < n {
+        return Ok(list_get(hist.entries, hist.cursor_idx + 1));
+    }
+    return Err("end");
+}
+
+pub fn history_set_cursor(hist: HistoryState, idx: Int) -> HistoryState {
+    return HistoryState { entries: hist.entries, file_path: hist.file_path, cursor_idx: idx };
+}
+
+pub fn history_reset_cursor(hist: HistoryState) -> HistoryState {
+    return HistoryState { entries: hist.entries, file_path: hist.file_path, cursor_idx: list_len(hist.entries) };
+}

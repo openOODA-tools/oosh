@@ -1,0 +1,79 @@
+// # Terminal In-Memory Line Editor
+//
+// Logline: Manages line buffer text, cursor navigation, and ANSI screen redrawing.
+//
+// Setup: Pure string manipulation and ANSI cursor escape positioning.
+//
+// Beats:
+//   1. Maintain line buffer string and cursor index.
+//   2. Apply insertions, backspace, and cursor motions.
+//   3. Redraw prompt and active line buffer to standard output.
+
+pub type LineEditor = struct {
+    buf: String,
+    cursor: Int
+};
+
+pub fn line_editor_new() -> LineEditor {
+    return LineEditor { buf: "", cursor: 0 };
+}
+
+pub fn line_editor_reset() -> LineEditor {
+    return LineEditor { buf: "", cursor: 0 };
+}
+
+pub fn line_editor_set(ed: LineEditor, s: String) -> LineEditor {
+    return LineEditor { buf: s, cursor: chars_len(s) };
+}
+
+pub fn line_editor_insert(ed: LineEditor, ch: String) -> LineEditor {
+    let clen: Int = chars_len(ed.buf);
+    let head: String = str_slice(ed.buf, 0, ed.cursor);
+    let tail: String = str_slice(ed.buf, ed.cursor, clen);
+    return LineEditor { buf: head + ch + tail, cursor: ed.cursor + chars_len(ch) };
+}
+
+pub fn line_editor_backspace(ed: LineEditor) -> LineEditor {
+    if ed.cursor <= 0 { return ed; }
+    let clen: Int = chars_len(ed.buf);
+    let head: String = str_slice(ed.buf, 0, ed.cursor - 1);
+    let tail: String = str_slice(ed.buf, ed.cursor, clen);
+    return LineEditor { buf: head + tail, cursor: ed.cursor - 1 };
+}
+
+pub fn line_editor_delete(ed: LineEditor) -> LineEditor {
+    let clen: Int = chars_len(ed.buf);
+    if ed.cursor >= clen { return ed; }
+    let head: String = str_slice(ed.buf, 0, ed.cursor);
+    let tail: String = str_slice(ed.buf, ed.cursor + 1, clen);
+    return LineEditor { buf: head + tail, cursor: ed.cursor };
+}
+
+pub fn line_editor_move_left(ed: LineEditor) -> LineEditor {
+    if ed.cursor > 0 { return LineEditor { buf: ed.buf, cursor: ed.cursor - 1 }; }
+    return ed;
+}
+
+pub fn line_editor_move_right(ed: LineEditor) -> LineEditor {
+    let clen: Int = chars_len(ed.buf);
+    if ed.cursor < clen { return LineEditor { buf: ed.buf, cursor: ed.cursor + 1 }; }
+    return ed;
+}
+
+pub fn line_editor_home(ed: LineEditor) -> LineEditor {
+    return LineEditor { buf: ed.buf, cursor: 0 };
+}
+
+pub fn line_editor_end(ed: LineEditor) -> LineEditor {
+    return LineEditor { buf: ed.buf, cursor: chars_len(ed.buf) };
+}
+
+pub fn line_editor_redraw(prompt: String, ed: LineEditor) {
+    let esc: String = bytes_to_str(bytes_push(bytes_new(), 27));
+    let clen: Int = chars_len(ed.buf);
+    print("\r" + prompt + ed.buf + esc + "[K");
+    if ed.cursor < clen {
+        let diff: Int = clen - ed.cursor;
+        print(esc + "[" + diff.to_string() + "D");
+    }
+}

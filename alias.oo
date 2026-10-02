@@ -1,18 +1,28 @@
-// # oosh Session Command Alias Table
+// # oosh Session Command Alias and State Table
 //
-// Logline: Manages in-memory command aliases, shortcut definitions, and line expansion.
+// Logline: Manages in-memory session state, command aliases, and environment variables.
 //
-// Setup: Pure string associative map. Stores alias definitions across prompt iterations.
+// Setup: Pure string associative map. Stores session environment and alias definitions across prompt iterations.
 //
 // Beats:
-//   1. Initialize empty alias map table.
-//   2. Store, lookup, and remove alias key-value definitions.
-//   3. Format active aliases for display.
-//   4. Expand first-token aliases in command lines.
+//   1. Initialize session state, env map, and alias table.
+//   2. Store, lookup, and remove alias and env key-value definitions.
+//   3. Format active aliases for display and expand command line shortcuts.
 
 pub type AliasMap = struct {
     names: List[String],
     targets: List[String]
+};
+
+pub type EnvMap = struct {
+    keys: List[String],
+    vals: List[String]
+};
+
+pub type SessionState = struct {
+    cwd: String,
+    env_map: EnvMap,
+    alias_map: AliasMap
 };
 
 pub fn alias_map_new() -> AliasMap {
@@ -95,4 +105,100 @@ pub fn alias_expand(m: AliasMap, line: String) -> String {
         return target + rest;
     }
     return line;
+}
+
+pub fn split_cmd_tokens(cmd: String) -> List[String] {
+    let mut tokens: List[String] = list_new();
+    let n: Int = chars_len(cmd);
+    let mut cur: String = "";
+    let mut in_q: Bool = false;
+    let mut q_ch: String = "";
+    let mut i: Int = 0;
+    while i < n {
+        let ch: String = char_at(cmd, i);
+        if in_q {
+            if ch == q_ch { in_q = false; q_ch = ""; } else { cur = cur + ch; }
+        } else if ch == "\"" || ch == "'" {
+            in_q = true; q_ch = ch;
+        } else if ch == " " || ch == "\t" {
+            if cur != "" { tokens = list_push(tokens, cur); cur = ""; }
+        } else { cur = cur + ch; }
+        i = i + 1;
+    }
+    if cur != "" { tokens = list_push(tokens, cur); }
+    return tokens;
+}
+
+pub fn parse_cd_target(line: String, cwd: String, home: String, oldpwd: String) -> String {
+    let raw_t: String = if line == ".." { ".." } else if line == "..." { "../.." } else if line == "...." { "../../.." } else if line == "-" { "-" } else if line == "cd" || line == "chdir" || line == "goto" || line == "jump" || line == "walk" { "~" } else if str_starts_with(line, "cd ") { str_slice(line, 3, chars_len(line)) } else if str_starts_with(line, "chdir ") { str_slice(line, 6, chars_len(line)) } else { str_slice(line, 5, chars_len(line)) };
+    let clean_t: String = str_trim(raw_t);
+    if clean_t == "~" || clean_t == "" { return home; }
+    if clean_t == "-" { return oldpwd; }
+    if str_starts_with(clean_t, "~/") { return home + str_slice(clean_t, 1, chars_len(clean_t)); }
+    return clean_t;
+}
+
+pub fn env_map_new() -> EnvMap {
+    let empty_k: List[String] = list_new();
+    let empty_v: List[String] = list_new();
+    return EnvMap { keys: empty_k, vals: empty_v };
+}
+
+pub fn env_map_get(m: EnvMap, key: String) -> Result[String, String] {
+    let n: Int = list_len(m.keys);
+    let mut i: Int = 0;
+    while i < n {
+        if list_get(m.keys, i) == key { return Ok(list_get(m.vals, i)); }
+        i = i + 1;
+    }
+    return Err("not_found");
+}
+
+pub fn env_map_set(m: EnvMap, key: String, val: String) -> EnvMap {
+    let mut new_k: List[String] = list_new();
+    let mut new_v: List[String] = list_new();
+    let n: Int = list_len(m.keys);
+    let mut replaced: Bool = false;
+    let mut i: Int = 0;
+    while i < n {
+        let cur_k: String = list_get(m.keys, i);
+        if cur_k == key {
+            new_k = list_push(new_k, key);
+            new_v = list_push(new_v, val);
+            replaced = true;
+        } else {
+            new_k = list_push(new_k, cur_k);
+            new_v = list_push(new_v, list_get(m.vals, i));
+        }
+        i = i + 1;
+    }
+    if !replaced {
+        new_k = list_push(new_k, key);
+        new_v = list_push(new_v, val);
+    }
+    return EnvMap { keys: new_k, vals: new_v };
+}
+
+pub fn env_map_remove(m: EnvMap, key: String) -> EnvMap {
+    let mut new_k: List[String] = list_new();
+    let mut new_v: List[String] = list_new();
+    let n: Int = list_len(m.keys);
+    let mut i: Int = 0;
+    while i < n {
+        let cur_k: String = list_get(m.keys, i);
+        if cur_k != key {
+            new_k = list_push(new_k, cur_k);
+            new_v = list_push(new_v, list_get(m.vals, i));
+        }
+        i = i + 1;
+    }
+    return EnvMap { keys: new_k, vals: new_v };
+}
+
+pub fn session_state_new(init_cwd: String, init_aliases: AliasMap) -> SessionState {
+    return SessionState {
+        cwd: init_cwd,
+        env_map: env_map_new(),
+        alias_map: init_aliases
+    };
 }

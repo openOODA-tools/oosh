@@ -20,10 +20,10 @@ pub fn is_navigation_verb(verb: String) -> Bool {
 
 pub fn is_builtin_verb(verb: String) -> Bool {
     return is_navigation_verb(verb) ||
-           verb == "status" || verb == "stat" || verb == "info" || verb == "health" || verb == "posture" ||
-           verb == "caps" || verb == "cap" || verb == "whoami" || verb == "perms" || verb == "tokens" ||
+           verb == "status" || verb == "info" || verb == "health" || verb == "posture" ||
+           verb == "caps" || verb == "cap" || verb == "perms" || verb == "tokens" ||
            verb == "help" || verb == "-h" || verb == "--help" || verb == "?" || verb == "guide" || verb == "docs" ||
-           verb == "scry" || verb == "inspect" || verb == "probe" || verb == "trace" ||
+           verb == "scry" || verb == "oosh inspect" || verb == "probe" || verb == "trace" ||
            verb == "autopsy" || verb == "bb" || verb == "blackbox" || verb == "crash" ||
            verb == "remedy" || verb == "fix" || verb == "repair" || verb == "heal" ||
            verb == "rune" || verb == "token" || verb == "link" || verb == "connect" ||
@@ -72,18 +72,18 @@ pub fn render_syntax_accent(cmd: String) -> String {
     let rst: String = cyber_reset();
 
     if is_intent_query(trimmed) {
-        return cyber_purple() + "✦ [INTENT CHANNEL]" + rst;
+        return cyber_purple() + "[INTENT CHANNEL]" + rst;
     }
 
     let verb: String = extract_verb(trimmed);
     if is_navigation_verb(verb) {
-        return cyber_green() + "→ [NAVIGATION: " + verb + "]" + rst;
+        return cyber_green() + "[NAVIGATION: " + verb + "]" + rst;
     }
     if is_builtin_verb(verb) {
-        return cyber_amber() + "ᚱ [SOVEREIGN BUILTIN: " + verb + "]" + rst;
+        return cyber_amber() + "[SOVEREIGN BUILTIN: " + verb + "]" + rst;
     }
 
-    return cyber_cyan() + "⚡ [HOST BINARY: " + verb + "]" + rst;
+    return cyber_cyan() + "[HOST BINARY: " + verb + "]" + rst;
 }
 
 fn color_token(tok: String, is_first: Bool) -> String {

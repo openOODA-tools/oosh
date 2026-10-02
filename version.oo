@@ -10,11 +10,11 @@
 //   3. is_version_cmd() matches version command aliases.
 
 pub fn oosh_version() -> String {
-    return "0.5.0";
+    return "0.6.0";
 }
 
 pub fn oosh_banner() -> String {
-    return "oosh v0.5.0 (openOODA sovereign shell)";
+    return "oosh v0.6.0 (openOODA sovereign shell)";
 }
 
 pub fn is_version_cmd(cmd: String) -> Bool {

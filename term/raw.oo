@@ -1,0 +1,18 @@
+// # Terminal Raw Mode Lifecycle Management
+//
+// Logline: Configures terminal into raw mode and restores cooked mode via FfiCap.
+//
+// Setup: Requires FfiCap token to invoke oodar TUI intrinsics.
+//
+// Beats:
+//   1. Enable raw terminal mode via POSIX termios.
+//   2. Restore canonical cooked terminal mode.
+//   3. Provide raw mode status probe.
+
+pub fn term_enable_raw(ffi: &FfiCap) -> Result[String, String] {
+    return oo_tui_enable_raw(ffi, "");
+}
+
+pub fn term_disable_raw(ffi: &FfiCap) -> Result[String, String] {
+    return oo_tui_disable_raw(ffi, "");
+}

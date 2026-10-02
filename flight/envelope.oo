@@ -8,10 +8,8 @@
 //   1. Initialize session flight record state and circular execution trace.
 //   2. Update execution envelope upon process completion (success or failure).
 //   3. Manage FIFO oldest-first ring buffer eviction at fixed capacity.
-//   4. Render blackbox autopsy inspection card with 68-col frame and Hagalaz rune.
+//   4. Render clean Unix columnar autopsy flight recorder report.
 
-import "ui/palette.oo";
-import "ui/card.oo";
 
 pub type FlightEntry = struct {
     seq: Int,
@@ -168,41 +166,26 @@ pub fn update_flight_duration(rec: FlightRecord, duration_ms: Int) -> FlightReco
 }
 
 fn format_trace_entry(entry: FlightEntry) -> String {
-    let cyan: String = cyber_cyan();
-    let amber: String = cyber_amber();
-    let green: String = cyber_green();
-    let red: String = cyber_red();
-    let rst: String = cyber_reset();
-
-    let seq_str: String = amber + "#" + fmt_digits_2(entry.seq) + rst;
-    let status_str: String = if entry.exit_code == 0 {
-        green + pad_right_str("✔ 0", 6) + rst
-    } else {
-        red + pad_right_str("✘ " + entry.exit_code.to_string(), 6) + rst
-    };
-    let dur_raw: String = entry.duration_ms.to_string() + "ms";
-    let dur_str: String = cyan + "⏱ " + pad_left_str(dur_raw, 5) + rst;
-    let pid_str: String = if entry.pid > 0 { " [" + entry.pid.to_string() + "]" } else { "" };
-    let cmd_str: String = safe_str_prefix(entry.cmd, 24);
-
-    return cyan + "║ " + rst + seq_str + "  " + status_str + " " + dur_str + pid_str + "  " + cmd_str;
+    let seq_str: String = "#" + fmt_digits_2(entry.seq);
+    let status_str: String = if entry.exit_code == 0 { "OK  0" } else { "ERR " + entry.exit_code.to_string() };
+    let dur_str: String = pad_left_str(entry.duration_ms.to_string() + "ms", 7);
+    let pid_str: String = pad_left_str(if entry.pid > 0 { entry.pid.to_string() } else { "-" }, 7);
+    let cmd_str: String = safe_str_prefix(entry.cmd, 32);
+    return pad_right_str(seq_str, 6) + " " + pad_right_str(status_str, 8) + " " + dur_str + " " + pid_str + "  " + cmd_str;
 }
 
 pub fn render_autopsy_card(rec: FlightRecord) -> String {
-    let top: String = card_top("ᚺ", "FLIGHT RECORDER (BLACKBOX) AUTOPSY");
+    let top: String = "=== AUTOPSY FLIGHT RECORDER ===";
     let total_str: String = rec.total_commands.to_string();
     let failed_str: String = rec.failed_count.to_string();
     let cap_str: String = rec.capacity.to_string();
-    let r1: String = card_row("Flight log", "Armed (in-memory ring buffer, " + total_str + " commands traced)");
-    let r2: String = card_row("Buffer Capacity", cap_str + " recent executions");
-    let r3: String = card_row("Total Executions", total_str);
-    let r4: String = card_row("Failed Count", failed_str);
+    let header_info: String = "Buffer: " + total_str + " traced (capacity " + cap_str + ") | Failures: " + failed_str;
 
-    let sec_trace: String = card_section("CHRONOLOGICAL EXECUTION TIMELINE");
+    let sec_trace: String = "\nCHRONOLOGICAL EXECUTION TIMELINE:\nSEQ    STATUS     TIME     PID  COMMAND";
     let num_entries: Int = list_len(rec.entries);
     let mut trace_body: String = "";
     if num_entries == 0 {
-        trace_body = card_row("Timeline", "(empty trace - no commands executed yet)");
+        trace_body = "  (empty trace - no commands executed yet)";
     } else {
         let mut i: Int = 0;
         while i < num_entries {
@@ -213,7 +196,7 @@ pub fn render_autopsy_card(rec: FlightRecord) -> String {
         }
     }
 
-    let sec_post: String = card_section("POSTMORTEM FAILURE ENVELOPE");
+    let sec_post: String = "\nPOSTMORTEM FAILURE ENVELOPE:";
     let post_body: String = if rec.has_failed {
         let code_str: String = rec.last_exit_code.to_string();
         let dur_str: String = rec.last_duration_ms.to_string() + "ms";
@@ -226,23 +209,17 @@ pub fn render_autopsy_card(rec: FlightRecord) -> String {
         } else {
             "Process exited with non-zero status " + code_str
         };
-        card_row_colored("Postmortem", "ALERT (non-zero fault detected)", cyber_red()) + "\n" +
-        card_row("Faulted Command", rec.last_failed_cmd) + "\n" +
-        card_row_colored("Exit Code", code_str, cyber_red()) + "\n" +
-        card_row("Fault Latency", dur_str) + "\n" +
-        card_row("Peak Memory", rec.last_peak_mem) + "\n" +
-        card_row("Causal Link", rec.last_causal_link) + "\n" +
-        card_row_colored("Root Cause", root_cause, cyber_amber()) + "\n" +
-        card_row("Captured Stderr", safe_str_prefix(rec.last_stderr, 100)) + "\n" +
-        card_row("Remedy Hint", "Run 'remedy' or 'fix' for interactive recovery guidance")
+        "Faulted Command : " + rec.last_failed_cmd + "\n" +
+        "Exit Code       : " + code_str + "\n" +
+        "Latency         : " + dur_str + "\n" +
+        "Peak Memory     : " + rec.last_peak_mem + "\n" +
+        "Root Cause      : " + root_cause + "\n" +
+        "Captured Stderr : " + safe_str_prefix(rec.last_stderr, 100)
     } else {
-        card_row_colored("Postmortem", "Nominal (0 unhandled faults)", cyber_green()) + "\n" +
-        card_row("Causal trace", "Clean execution pipeline (" + rec.last_causal_link + ")") + "\n" +
-        card_row("Last Successful", if rec.last_success_cmd == "" { "none" } else { rec.last_success_cmd })
+        "Status : Nominal (0 unhandled faults)\n" +
+        "Trace  : Clean execution pipeline\n" +
+        "Last   : " + if rec.last_success_cmd == "" { "none" } else { rec.last_success_cmd }
     };
 
-    let bottom: String = card_bottom("AUTOPSY COMPLETE");
-    return top + "\n" + r1 + "\n" + r2 + "\n" + r3 + "\n" + r4 + "\n" +
-           sec_trace + "\n" + trace_body + "\n" +
-           sec_post + "\n" + post_body + "\n" + bottom;
+    return top + "\n" + header_info + sec_trace + "\n" + trace_body + "\n" + sec_post + "\n" + post_body + "\n=== AUTOPSY COMPLETE ===";
 }

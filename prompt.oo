@@ -1,13 +1,13 @@
 // # oosh Prompt Renderer
 //
-// Logline: Renders the sovereign shell prompt glyph and current working directory path with ANSI styling.
+// Logline: Renders standard POSIX bash prompt and current working directory path.
 //
 // Setup: Pure string formatting. Formats current directory from active shell state with tilde abbreviation.
 //
 // Beats:
 //   1. Resolve active directory string safely.
 //   2. Abbreviate home directory path with tilde glyph when applicable.
-//   3. Render high-contrast sovereign rune symbol and active cursor dock.
+//   3. Render standard POSIX Bash prompt or custom PS1 sovereign posture.
 
 import "std/fs/process/env.oo";
 import "ui/anchor.oo";
@@ -20,25 +20,29 @@ pub fn format_prompt_path(env: &EnvCap, cwd: String) -> String {
     let hr: Result[String, String] = env_get(env, "HOME");
     let home: String = match hr { Ok(h) => h, Err(_) => "" };
 
-    if home != "" && str_starts_with(cwd, home) {
-        let rest: String = str_slice(cwd, chars_len(home), chars_len(cwd));
-        return "~" + rest;
+    if home != "" {
+        if cwd == home { return "~"; }
+        if str_starts_with(cwd, home + "/") {
+            let rest: String = str_slice(cwd, chars_len(home), chars_len(cwd));
+            return "~" + rest;
+        }
     }
     return cwd;
 }
 
 pub fn render_prompt_state(env: &EnvCap, cwd: String, has_failure: Bool) -> String {
-    let esc: String = ansi_esc();
+    let ps1_r: Result[String, String] = env_get(env, "PS1");
+    if ps1_r.is_ok() {
+        let ps1: String = match ps1_r { Ok(s) => s, Err(_) => "" };
+        if ps1 != "" { return ps1; }
+    }
     let display_path: String = format_prompt_path(env, cwd);
-    // TrueColor cyberpunk: Electric Amber rune, Neon Cyan cwd path, Glowing arrow delimiter
-    let rune: String = esc + "[38;2;255;184;0mᚱ" + esc + "[0m";
-    let path_str: String = esc + "[38;2;0;240;255m" + display_path + esc + "[0m";
-    let arrow: String = if has_failure {
-        esc + "[38;2;255;51;102m❯" + esc + "[0m"
-    } else {
-        esc + "[38;2;0;255;102m❯" + esc + "[0m"
-    };
-    return rune + " " + path_str + " " + arrow + " ";
+    let ur: Result[String, String] = env_get(env, "USER");
+    let user_name: String = match ur { Ok(u) => u, Err(_) => "user" };
+    let hr: Result[String, String] = env_get(env, "HOSTNAME");
+    let host_name: String = match hr { Ok(h) => h, Err(_) => "localhost" };
+    let sym: String = if user_name == "root" { "# " } else { "$ " };
+    return user_name + "@" + host_name + ":" + display_path + sym;
 }
 
 pub fn render_prompt(env: &EnvCap, cwd: String) -> String {
@@ -52,6 +56,5 @@ pub fn render_prompt_with_dock(fs_r: &FsReadCap, env: &EnvCap, cwd: String, has_
 }
 
 pub fn render_plain_prompt(env: &EnvCap, cwd: String) -> String {
-    let display_path: String = format_prompt_path(env, cwd);
-    return "ᚱ " + display_path + " ❯ ";
+    return render_prompt_state(env, cwd, false);
 }

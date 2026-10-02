@@ -1,0 +1,58 @@
+// # Terminal ANSI Escape Sequence Decoder
+//
+// Logline: Decodes raw VT100 and ANSI escape sequences into structured key events.
+//
+// Setup: Reads raw stdin bytes under FfiCap.
+//
+// Beats:
+//   1. Read initial byte from standard input stream.
+//   2. Decode VT100 multi-byte escape sequences for arrow keys and navigation.
+//   3. Dispatch standardized KeyEvent tokens.
+
+pub type KeyEvent = struct {
+    action: String,
+    text: String
+};
+
+pub fn term_read_key(ffi: &FfiCap) -> KeyEvent {
+    let b_res: Result[String, String] = oo_tui_read_byte(ffi, "");
+    if b_res.is_err() {
+        return KeyEvent { action: "eof", text: "" };
+    }
+    let byte_val: String = match b_res { Ok(s) => s, Err(_) => "" };
+    let b: Int = if chars_len(byte_val) > 0 { byte_at(byte_val, 0) } else { 0 };
+
+    if b == 27 {
+        let s1 = match oo_tui_read_byte(ffi, "") { Ok(s) => s, Err(_) => "" };
+        if s1 == "[" {
+            let s2 = match oo_tui_read_byte(ffi, "") { Ok(s) => s, Err(_) => "" };
+            if s2 == "A" { return KeyEvent { action: "up", text: "" }; }
+            if s2 == "B" { return KeyEvent { action: "down", text: "" }; }
+            if s2 == "C" { return KeyEvent { action: "right", text: "" }; }
+            if s2 == "D" { return KeyEvent { action: "left", text: "" }; }
+            if s2 == "H" || s2 == "1" || s2 == "7" {
+                if s2 != "H" { let _ = oo_tui_read_byte(ffi, ""); }
+                return KeyEvent { action: "home", text: "" };
+            }
+            if s2 == "F" || s2 == "4" || s2 == "8" {
+                if s2 != "F" { let _ = oo_tui_read_byte(ffi, ""); }
+                return KeyEvent { action: "end", text: "" };
+            }
+            if s2 == "3" {
+                let _ = oo_tui_read_byte(ffi, "");
+                return KeyEvent { action: "delete", text: "" };
+            }
+        }
+        return KeyEvent { action: "none", text: "" };
+    }
+    if b == 13 || b == 10 { return KeyEvent { action: "enter", text: "" }; }
+    if b == 127 || b == 8 { return KeyEvent { action: "backspace", text: "" }; }
+    if b == 9 { return KeyEvent { action: "tab", text: "" }; }
+    if b == 3 { return KeyEvent { action: "ctrl_c", text: "" }; }
+    if b == 4 { return KeyEvent { action: "ctrl_d", text: "" }; }
+    if b == 1 { return KeyEvent { action: "home", text: "" }; }
+    if b == 5 { return KeyEvent { action: "end", text: "" }; }
+    if b == 21 { return KeyEvent { action: "ctrl_u", text: "" }; }
+    if b >= 32 { return KeyEvent { action: "char", text: byte_val }; }
+    return KeyEvent { action: "none", text: "" };
+}

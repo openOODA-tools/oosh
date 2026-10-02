@@ -1,4 +1,4 @@
-# oosh v0.5.0 Makefile
+# oosh v0.6.0 Makefile
 #
 # Build, verify, and test the openOODA sovereign shell.
 #
@@ -24,7 +24,8 @@ SRC := main.oo version.oo anchor.oo prompt.oo dispatch.oo engine.oo manual.oo al
        ui/anchor.oo ui/palette.oo ui/card.oo ui/dock.oo ui/accent.oo \
        diagnostics/anchor.oo flight/anchor.oo flight/envelope.oo flight/telemetry.oo flight/remedy.oo flight/rules.oo \
        intent/anchor.oo intent/scanner.oo intent/context.oo intent/safety.oo intent/synthesize.oo intent/preview.oo \
-       ipc/anchor.oo ipc/varlink.oo ipc/daemon.oo
+       ipc/anchor.oo ipc/varlink.oo ipc/daemon.oo \
+       term/anchor.oo term/raw.oo term/read.oo term/line.oo term/history.oo
 
 .PHONY: all build test parity line-cap file-law academy check verify install clean test-e2e test-tier1 test-tier2 test-tier3 test-tier4 test-tier5
 

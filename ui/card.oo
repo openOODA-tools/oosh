@@ -1,28 +1,18 @@
-// # Cyberpunk Visual Card Renderer
+// # Visual Card Formatter
 //
-// Logline: Formats rich visual card containers, frames, and gradient borders with shadow accents.
+// Logline: Formats structured text cards and clean Unix columnar sections.
 //
-// Setup: Pure string formatting. Imports ui/palette.oo for TrueColor sequence styling.
+// Setup: Pure string formatting. Imports ui/palette.oo for color sequence styling.
 //
 // Beats:
-//   1. Render top frame boundary with embedded rune and title banner.
+//   1. Render section header title with standard boundary glyphs.
 //   2. Format card row elements with aligned labels, dividers, and values.
-//   3. Render bottom frame boundary with shadow gradient block accents.
+//   3. Render clean card bottom boundary badge.
 
 import "palette.oo";
 
-fn repeat_char(ch: String, count: Int) -> String {
-    let mut s: String = "";
-    let mut i: Int = 0;
-    while i < count {
-        s = s + ch;
-        i = i + 1;
-    }
-    return s;
-}
-
 pub fn card_shadow() -> String {
-    return cyber_gray() + "░▒▓" + cyber_reset();
+    return "";
 }
 
 pub fn card_top(rune: String, title: String) -> String {
@@ -30,55 +20,40 @@ pub fn card_top(rune: String, title: String) -> String {
     let amber: String = cyber_amber();
     let rst: String = cyber_reset();
     let bold: String = cyber_bold();
-    let t_len: Int = chars_len(title);
-    let rem: Int = 68 - (t_len + 8) - 1;
-    let bar_len: Int = if rem < 4 { 4 } else { rem };
-    let bar: String = repeat_char("═", bar_len);
-    return cyan + "╔═" + amber + "[ " + bold + rune + " " + title + rst + amber + " ]" + cyan + bar + "╗" + rst;
+    return cyan + "+-- [ " + bold + amber + title + rst + cyan + " ]" + rst;
 }
 
 pub fn card_section(title: String) -> String {
     let cyan: String = cyber_cyan();
     let purp: String = cyber_purple();
     let rst: String = cyber_reset();
-    let t_len: Int = chars_len(title);
-    let rem: Int = 68 - (t_len + 5) - 1;
-    let bar_len: Int = if rem < 4 { 4 } else { rem };
-    let bar: String = repeat_char("─", bar_len);
-    return cyan + "╟──" + purp + " " + title + " " + cyan + bar + "╢" + rst;
+    return cyan + "|-- " + purp + title + rst;
 }
 
 pub fn card_row(label: String, val: String) -> String {
-    let cyan: String = cyber_cyan();
     let amber: String = cyber_amber();
     let rst: String = cyber_reset();
-    return cyan + "║ " + amber + label + rst + ": " + val + rst;
+    return "  | " + amber + label + rst + ": " + val + rst;
 }
 
 pub fn card_row_colored(label: String, val: String, val_color: String) -> String {
-    let cyan: String = cyber_cyan();
     let amber: String = cyber_amber();
     let rst: String = cyber_reset();
-    return cyan + "║ " + amber + label + rst + ": " + val_color + val + rst;
+    return "  | " + amber + label + rst + ": " + val_color + val + rst;
 }
 
 pub fn card_divider() -> String {
     let cyan: String = cyber_cyan();
     let rst: String = cyber_reset();
-    return cyan + "╟──────────────────────────────────────────────────────────────────╢" + rst;
+    return cyan + "+------------------------------------------------------------------" + rst;
 }
 
 pub fn card_bottom(badge: String) -> String {
     let cyan: String = cyber_cyan();
     let green: String = cyber_green();
     let rst: String = cyber_reset();
-    let shadow: String = card_shadow();
     if badge == "" {
-        return cyan + "╚══════════════════════════════════════════════════════════════════╝" + rst + " " + shadow;
+        return cyan + "+------------------------------------------------------------------" + rst;
     }
-    let b_len: Int = chars_len(badge);
-    let rem: Int = 68 - (b_len + 6) - 1;
-    let bar_len: Int = if rem < 4 { 4 } else { rem };
-    let bar: String = repeat_char("═", bar_len);
-    return cyan + "╚═" + green + "[ " + badge + " ]" + cyan + bar + "╝" + rst + " " + shadow;
+    return cyan + "+-- [ " + green + badge + cyan + " ]" + rst;
 }

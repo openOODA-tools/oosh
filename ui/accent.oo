@@ -15,7 +15,7 @@ pub fn is_navigation_verb(verb: String) -> Bool {
     return verb == "cd" || verb == "chdir" || verb == "goto" || verb == "jump" || verb == "walk" ||
            verb == ".." || verb == "..." || verb == "...." || verb == "-" ||
            verb == "take" || verb == "mkcd" || verb == "mcd" || verb == "mdcd" ||
-           verb == "pwd" || verb == "cwd" || verb == "where" || verb == "here";
+           verb == "pwd" || verb == "cwd" || verb == "where" || verb == "here" || verb == "whereami";
 }
 
 pub fn is_builtin_verb(verb: String) -> Bool {
@@ -153,16 +153,26 @@ pub fn accent_command_tokens(cmd: String) -> String {
                 cur = "";
             }
             out = out + ch;
-        } else if ch == "|" || ch == ">" || ch == "<" {
+        } else if ch == "|" || ch == ">" || ch == "<" || ch == ";" || (ch == "&" && i + 1 < n && char_at(cmd, i + 1) == "&") {
             if cur != "" {
                 out = out + color_token(cur, is_first);
                 is_first = false;
                 cur = "";
             }
-            // Check double >>
             if ch == ">" && i + 1 < n && char_at(cmd, i + 1) == ">" {
                 out = out + color_token(">>", false);
                 i = i + 1;
+            } else if ch == "&" && i + 1 < n && char_at(cmd, i + 1) == "&" {
+                out = out + color_token("&&", false);
+                i = i + 1;
+                is_first = true;
+            } else if ch == "|" && i + 1 < n && char_at(cmd, i + 1) == "|" {
+                out = out + color_token("||", false);
+                i = i + 1;
+                is_first = true;
+            } else if ch == "|" || ch == ";" {
+                out = out + color_token(ch, false);
+                is_first = true;
             } else {
                 out = out + color_token(ch, false);
             }

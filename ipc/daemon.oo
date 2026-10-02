@@ -49,18 +49,23 @@ pub fn prepare_socket_path(sys: &ProcessCap, env: &EnvCap) -> String {
     if ov != "" {
         return ov;
     }
+    let p_ov: Result[String, String] = process_exec(sys, "printenv OOSH_SOCKET 2>/dev/null");
+    let pov: String = match p_ov { Ok(s) => str_trim(s), Err(_) => "" };
+    if pov != "" {
+        return pov;
+    }
     let r_primary: Result[String, String] = process_exec(sys, "mkdir -p /run/oosh 2>/dev/null && test -w /run/oosh");
     if r_primary.is_ok() {
         return "/run/oosh/control.sock";
     }
-    let r_dir: Result[String, String] = env_get(env, "XDG_RUNTIME_DIR");
-    let xdg: String = match r_dir { Ok(s) => s, Err(_) => "" };
+    let p_xdg: Result[String, String] = process_exec(sys, "printenv XDG_RUNTIME_DIR 2>/dev/null");
+    let xdg: String = match p_xdg { Ok(s) => str_trim(s), Err(_) => "" };
     if xdg != "" {
         let _ = process_exec(sys, "mkdir -p \"" + xdg + "/oosh\" 2>/dev/null");
         return xdg + "/oosh/control.sock";
     }
-    let r_home: Result[String, String] = env_get(env, "HOME");
-    let home: String = match r_home { Ok(s) => s, Err(_) => "" };
+    let p_home: Result[String, String] = process_exec(sys, "printenv HOME 2>/dev/null");
+    let home: String = match p_home { Ok(s) => str_trim(s), Err(_) => "" };
     if home != "" {
         let _ = process_exec(sys, "mkdir -p \"" + home + "/.cache/oosh\" 2>/dev/null");
         return home + "/.cache/oosh/control.sock";

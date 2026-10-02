@@ -19,6 +19,33 @@ pub fn resolve_node_id(env: &EnvCap) -> String {
     return user_name + "@" + host_name;
 }
 
+pub fn resolve_ambient_user(env: &EnvCap, cwd: String) -> String {
+    let ur: Result[String, String] = env_get(env, "USER");
+    let u: String = match ur { Ok(s) => s, Err(_) => "" };
+    if u != "" { return u; }
+    if str_starts_with(cwd, "/home/") {
+        let after: String = str_slice(cwd, 6, chars_len(cwd));
+        let s_idx: Int = str_index_of(after, "/");
+        return if s_idx > 0 { str_slice(after, 0, s_idx) } else { after };
+    }
+    if str_starts_with(cwd, "/root") { return "root"; }
+    return "sovereign";
+}
+
+pub fn resolve_ambient_home(env: &EnvCap, cwd: String) -> String {
+    let hr: Result[String, String] = env_get(env, "HOME");
+    let h: String = match hr { Ok(s) => s, Err(_) => "" };
+    if h != "" { return h; }
+    if str_starts_with(cwd, "/home/") {
+        let after: String = str_slice(cwd, 6, chars_len(cwd));
+        let s_idx: Int = str_index_of(after, "/");
+        let u: String = if s_idx > 0 { str_slice(after, 0, s_idx) } else { after };
+        if u != "" { return "/home/" + u; }
+    }
+    if str_starts_with(cwd, "/root") { return "/root"; }
+    return "";
+}
+
 fn path_dirname(p: String) -> String {
     let n: Int = chars_len(p);
     let mut i: Int = n;
@@ -62,8 +89,7 @@ pub fn resolve_git_branch(fs_r: &FsReadCap, cwd: String) -> String {
 }
 
 pub fn render_ambient_dock(fs_r: &FsReadCap, env: &EnvCap, cwd: String, has_failure: Bool, last_rc: Int) -> String {
-    let hr: Result[String, String] = env_get(env, "HOME");
-    let home: String = match hr { Ok(h) => h, Err(_) => "" };
+    let home: String = resolve_ambient_home(env, cwd);
     let mut disp_cwd: String = cwd + "";
     if home != "" {
         if cwd == home {
@@ -73,19 +99,22 @@ pub fn render_ambient_dock(fs_r: &FsReadCap, env: &EnvCap, cwd: String, has_fail
         }
     }
     let branch: String = resolve_git_branch(fs_r, cwd);
-    let node: String = resolve_node_id(env);
+    let user_name: String = resolve_ambient_user(env, cwd);
+    let host_file: Result[String, String] = read_file(fs_r, "/etc/hostname");
+    let host_name: String = match host_file { Ok(s) => str_trim(s), Err(_) => "node" };
+    let node: String = user_name + "@" + (if host_name != "" { host_name } else { "node" });
+
     let esc: String = bytes_to_str(bytes_push(bytes_new(), 27));
-    let dim: String = esc + "[2m";
     let cyan: String = esc + "[38;2;0;240;255m";
     let purple: String = esc + "[38;2;189;0;255m";
     let amber: String = esc + "[38;2;255;184;0m";
     let gray: String = esc + "[38;2;110;120;140m";
     let rst: String = esc + "[0m";
 
-    let branch_part: String = if branch != "" { " " + purple + "git:" + branch + rst } else { "" };
-    let host_part: String = " " + gray + "[" + node + "]" + rst;
-    let cap_part: String = " " + amber + "CAPS: PROC+FS+NET" + rst;
-    let path_part: String = cyan + disp_cwd + rst;
+    let branch_part: String = if branch != "" { " " + purple + "(git:" + branch + ")" + rst } else { "" };
+    let host_part: String = gray + "[" + node + "]" + rst;
+    let path_part: String = " " + cyan + disp_cwd + rst;
+    let cap_part: String = " " + amber + "[CAPS: PROC+FS+NET]" + rst;
 
-    return dim + "┌ " + rst + path_part + branch_part + host_part + cap_part + "\r\n";
+    return host_part + path_part + branch_part + cap_part + "\r\n";
 }

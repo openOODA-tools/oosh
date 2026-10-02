@@ -17,8 +17,17 @@ pub fn ansi_esc() -> String {
 }
 
 pub fn format_prompt_path(env: &EnvCap, cwd: String) -> String {
-    let hr: Result[String, String] = env_get(env, "HOME");
-    let home: String = match hr { Ok(h) => h, Err(_) => "" };
+    let mut home: String = match env_get(env, "HOME") { Ok(h) => h, Err(_) => "" };
+    if home == "" {
+        if str_starts_with(cwd, "/home/") {
+            let after: String = str_slice(cwd, 6, chars_len(cwd));
+            let s_idx: Int = str_index_of(after, "/");
+            let u: String = if s_idx > 0 { str_slice(after, 0, s_idx) } else { after };
+            if u != "" { home = "/home/" + u; }
+        } else if str_starts_with(cwd, "/root") {
+            home = "/root";
+        }
+    }
 
     if home != "" {
         if cwd == home { return "~"; }

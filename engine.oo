@@ -35,14 +35,6 @@ pub fn run_engine(fs_r: &FsReadCap, sys: &ProcessCap, env: &EnvCap, time: &TimeC
         } else {
             render_prompt_state(env, session.cwd, rec.has_failed)
         };
-        if is_interactive {
-            if !has_ps1 {
-                let dock: String = render_ambient_dock(fs_r, env, session.cwd, rec.has_failed, rec.last_exit_code);
-                print(dock);
-            }
-            print(base_prompt);
-        }
-
         let remedy_cand: String = if rec.has_failed && rec.last_exit_code != 0 {
             let diag: DiagnosticResult = flight_rules_match(rec.last_failed_cmd, rec.last_exit_code, rec.last_stderr, session.cwd);
             diag.actionable_cmd
@@ -54,7 +46,11 @@ pub fn run_engine(fs_r: &FsReadCap, sys: &ProcessCap, env: &EnvCap, time: &TimeC
         } else {
             ""
         };
-        if is_interactive && cur_ghost != "" {
+        if is_interactive {
+            if !has_ps1 {
+                let dock: String = render_ambient_dock(fs_r, env, session.cwd, rec.has_failed, rec.last_exit_code);
+                print(dock);
+            }
             line_editor_redraw_full(base_prompt, ed, cur_ghost);
         }
 
@@ -99,7 +95,10 @@ pub fn run_engine(fs_r: &FsReadCap, sys: &ProcessCap, env: &EnvCap, time: &TimeC
                 cur_ghost = "";
                 line_editor_redraw_full(base_prompt, ed, cur_ghost);
             } else if is_interactive && action == "right" {
-                if ed.cursor == chars_len(ed.buf) && cur_ghost != "" && ed.buf != "" {
+                if ed.buf == "" && remedy_cand != "" {
+                    ed = line_editor_set(ed, remedy_cand);
+                    cur_ghost = "";
+                } else if ed.cursor == chars_len(ed.buf) && cur_ghost != "" && ed.buf != "" {
                     ed = line_editor_set(ed, ed.buf + cur_ghost);
                     cur_ghost = "";
                 } else {

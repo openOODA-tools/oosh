@@ -147,6 +147,11 @@ pub fn main(bind: &BindCap, fs_r: &FsReadCap, sys: &ProcessCap, sys_cap: &SysCap
     let cwd: String = match pr { Ok(s) => s, Err(_) => "." };
     let rec: FlightRecord = flight_init();
     let mut session: SessionState = session_state_new(cwd, alias_map_new());
+    let p_ps1: Result[String, String] = process_exec(sys, "printenv PS1 2>/dev/null");
+    let parent_ps1: String = match p_ps1 { Ok(s) => str_trim(s), Err(_) => "" };
+    if parent_ps1 != "" {
+        session = SessionState { cwd: session.cwd, env_map: env_map_set(session.env_map, "PS1", parent_ps1), alias_map: session.alias_map, job_table: session.job_table, func_map: session.func_map };
+    }
 
     if varlink_payload != "" {
         let reply: String = ipc_route(sys, cwd, rec, varlink_payload);
@@ -168,7 +173,11 @@ pub fn main(bind: &BindCap, fs_r: &FsReadCap, sys: &ProcessCap, sys_cap: &SysCap
 
     // Source ~/.ooshrc configuration into session environment and alias table
     let hr: Result[String, String] = env_get(env, "HOME");
-    let home: String = match hr { Ok(h) => h, Err(_) => "" };
+    let mut home: String = match hr { Ok(h) => h, Err(_) => "" };
+    if home == "" {
+        let p_home: Result[String, String] = process_exec(sys, "printenv HOME 2>/dev/null");
+        home = match p_home { Ok(s) => str_trim(s), Err(_) => "" };
+    }
     if home != "" {
         let ooshrc_path: String = home + "/.ooshrc";
         let ooshrc_read: Result[String, String] = read_file(fs_r, ooshrc_path);

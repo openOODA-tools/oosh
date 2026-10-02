@@ -87,7 +87,7 @@ pub fn complete_token(fs_r: &FsReadCap, cur_line: String, alias_names: List[Stri
         if char_at(prefix_tok, si) == "/" { sl_idx = si; }
         si = si + 1;
     }
-    let dir_path: String = if sl_idx >= 0 { str_slice(prefix_tok, 0, sl_idx) } else { "." };
+    let dir_path: String = if sl_idx == 0 { "/" } else if sl_idx > 0 { str_slice(prefix_tok, 0, sl_idx) } else { "." };
     let file_prefix: String = if sl_idx >= 0 { str_slice(prefix_tok, sl_idx + 1, plen) } else { prefix_tok };
     let entries: List[String] = oo_fs_read_dir(fs_r, dir_path);
     let elen: Int = list_len(entries);
@@ -103,7 +103,7 @@ pub fn complete_token(fs_r: &FsReadCap, cur_line: String, alias_names: List[Stri
     let mlen: Int = list_len(matches);
     if mlen == 0 { return cur_line; }
     if mlen == 1 {
-        let match_path: String = if sl_idx >= 0 { dir_path + "/" + list_get(matches, 0) } else { list_get(matches, 0) };
+        let match_path: String = if sl_idx == 0 { "/" + list_get(matches, 0) } else if sl_idx > 0 { dir_path + "/" + list_get(matches, 0) } else { list_get(matches, 0) };
         return prefix_head + match_path;
     }
     let first_m: String = list_get(matches, 0);
@@ -125,7 +125,7 @@ pub fn complete_token(fs_r: &FsReadCap, cur_line: String, alias_names: List[Stri
     }
     let common: String = str_slice(first_m, 0, cp_len);
     if chars_len(common) > chars_len(file_prefix) {
-        let match_path: String = if sl_idx >= 0 { dir_path + "/" + common } else { common };
+        let match_path: String = if sl_idx == 0 { "/" + common } else if sl_idx > 0 { dir_path + "/" + common } else { common };
         return prefix_head + match_path;
     }
     print("\r\n");
@@ -170,6 +170,16 @@ pub fn complete_ghost(fs_r: &FsReadCap, cur_line: String, alias_names: List[Stri
             if str_starts_with(aname, cur_line) { cmd_matches = list_push(cmd_matches, aname); }
             ai = ai + 1;
         }
+        if chars_len(cur_line) >= 2 && list_len(cmd_matches) <= 1 {
+            let bin_entries: List[String] = oo_fs_read_dir(fs_r, "/usr/bin");
+            let ben: Int = list_len(bin_entries);
+            let mut bei: Int = 0;
+            while bei < ben && list_len(cmd_matches) <= 1 {
+                let bname: String = list_get(bin_entries, bei);
+                if str_starts_with(bname, cur_line) { cmd_matches = list_push(cmd_matches, bname); }
+                bei = bei + 1;
+            }
+        }
         let cmlen: Int = list_len(cmd_matches);
         if cmlen == 1 {
             let cand: String = list_get(cmd_matches, 0);
@@ -188,7 +198,7 @@ pub fn complete_ghost(fs_r: &FsReadCap, cur_line: String, alias_names: List[Stri
         if char_at(prefix_tok, si) == "/" { sl_idx = si; }
         si = si + 1;
     }
-    let dir_path: String = if sl_idx >= 0 { str_slice(prefix_tok, 0, sl_idx) } else { "." };
+    let dir_path: String = if sl_idx == 0 { "/" } else if sl_idx > 0 { str_slice(prefix_tok, 0, sl_idx) } else { "." };
     let file_prefix: String = if sl_idx >= 0 { str_slice(prefix_tok, sl_idx + 1, plen) } else { prefix_tok };
     let entries: List[String] = oo_fs_read_dir(fs_r, dir_path);
     let elen: Int = list_len(entries);

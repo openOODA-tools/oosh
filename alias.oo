@@ -7,7 +7,9 @@
 // Beats:
 //   1. Initialize session state, env map, and alias table.
 //   2. Store, lookup, and remove alias and env key-value definitions.
-//   3. Format active aliases for display and expand command line shortcuts.
+//   3. Format active aliases, split compounds, and expand environment variables.
+
+import "std/fs/process/env.oo";
 
 pub type AliasMap = struct {
     names: List[String],
@@ -23,6 +25,12 @@ pub type SessionState = struct {
     cwd: String,
     env_map: EnvMap,
     alias_map: AliasMap
+};
+
+pub type CompoundSplit = struct {
+    lhs: String,
+    op: String,
+    rhs: String
 };
 
 pub fn alias_map_new() -> AliasMap {
@@ -41,26 +49,6 @@ pub fn alias_map_get(m: AliasMap, name: String) -> Result[String, String] {
     return Err("not_found");
 }
 
-pub fn alias_map_set(m: AliasMap, name: String, target: String) -> AliasMap {
-    let mut new_n: List[String] = list_new();
-    let mut new_t: List[String] = list_new();
-    let n: Int = list_len(m.names);
-    let mut replaced: Bool = false;
-    let mut i: Int = 0;
-    while i < n {
-        let cur_name: String = list_get(m.names, i);
-        if cur_name == name {
-            new_n = list_push(new_n, name); new_t = list_push(new_t, target);
-            replaced = true;
-        } else {
-            new_n = list_push(new_n, cur_name); new_t = list_push(new_t, list_get(m.targets, i));
-        }
-        i = i + 1;
-    }
-    if !replaced { new_n = list_push(new_n, name); new_t = list_push(new_t, target); }
-    return AliasMap { names: new_n, targets: new_t };
-}
-
 pub fn alias_map_remove(m: AliasMap, name: String) -> AliasMap {
     let mut new_n: List[String] = list_new();
     let mut new_t: List[String] = list_new();
@@ -74,6 +62,11 @@ pub fn alias_map_remove(m: AliasMap, name: String) -> AliasMap {
         i = i + 1;
     }
     return AliasMap { names: new_n, targets: new_t };
+}
+
+pub fn alias_map_set(m: AliasMap, name: String, target: String) -> AliasMap {
+    let rem: AliasMap = alias_map_remove(m, name);
+    return AliasMap { names: list_push(rem.names, name), targets: list_push(rem.targets, target) };
 }
 
 pub fn format_aliases(m: AliasMap) -> String {
@@ -129,15 +122,6 @@ pub fn split_cmd_tokens(cmd: String) -> List[String] {
     return tokens;
 }
 
-pub fn parse_cd_target(line: String, cwd: String, home: String, oldpwd: String) -> String {
-    let raw_t: String = if line == ".." { ".." } else if line == "..." { "../.." } else if line == "...." { "../../.." } else if line == "-" { "-" } else if line == "cd" || line == "chdir" || line == "goto" || line == "jump" || line == "walk" { "~" } else if str_starts_with(line, "cd ") { str_slice(line, 3, chars_len(line)) } else if str_starts_with(line, "chdir ") { str_slice(line, 6, chars_len(line)) } else { str_slice(line, 5, chars_len(line)) };
-    let clean_t: String = str_trim(raw_t);
-    if clean_t == "~" || clean_t == "" { return home; }
-    if clean_t == "-" { return oldpwd; }
-    if str_starts_with(clean_t, "~/") { return home + str_slice(clean_t, 1, chars_len(clean_t)); }
-    return clean_t;
-}
-
 pub fn env_map_new() -> EnvMap {
     let empty_k: List[String] = list_new();
     let empty_v: List[String] = list_new();
@@ -154,31 +138,6 @@ pub fn env_map_get(m: EnvMap, key: String) -> Result[String, String] {
     return Err("not_found");
 }
 
-pub fn env_map_set(m: EnvMap, key: String, val: String) -> EnvMap {
-    let mut new_k: List[String] = list_new();
-    let mut new_v: List[String] = list_new();
-    let n: Int = list_len(m.keys);
-    let mut replaced: Bool = false;
-    let mut i: Int = 0;
-    while i < n {
-        let cur_k: String = list_get(m.keys, i);
-        if cur_k == key {
-            new_k = list_push(new_k, key);
-            new_v = list_push(new_v, val);
-            replaced = true;
-        } else {
-            new_k = list_push(new_k, cur_k);
-            new_v = list_push(new_v, list_get(m.vals, i));
-        }
-        i = i + 1;
-    }
-    if !replaced {
-        new_k = list_push(new_k, key);
-        new_v = list_push(new_v, val);
-    }
-    return EnvMap { keys: new_k, vals: new_v };
-}
-
 pub fn env_map_remove(m: EnvMap, key: String) -> EnvMap {
     let mut new_k: List[String] = list_new();
     let mut new_v: List[String] = list_new();
@@ -187,12 +146,16 @@ pub fn env_map_remove(m: EnvMap, key: String) -> EnvMap {
     while i < n {
         let cur_k: String = list_get(m.keys, i);
         if cur_k != key {
-            new_k = list_push(new_k, cur_k);
-            new_v = list_push(new_v, list_get(m.vals, i));
+            new_k = list_push(new_k, cur_k); new_v = list_push(new_v, list_get(m.vals, i));
         }
         i = i + 1;
     }
     return EnvMap { keys: new_k, vals: new_v };
+}
+
+pub fn env_map_set(m: EnvMap, key: String, val: String) -> EnvMap {
+    let rem: EnvMap = env_map_remove(m, key);
+    return EnvMap { keys: list_push(rem.keys, key), vals: list_push(rem.vals, val) };
 }
 
 pub fn session_state_new(init_cwd: String, init_aliases: AliasMap) -> SessionState {
@@ -201,4 +164,86 @@ pub fn session_state_new(init_cwd: String, init_aliases: AliasMap) -> SessionSta
         env_map: env_map_new(),
         alias_map: init_aliases
     };
+}
+
+pub fn find_compound_op(cmd: String) -> CompoundSplit {
+    let n: Int = chars_len(cmd);
+    let mut in_s: Bool = false;
+    let mut in_d: Bool = false;
+    let mut i: Int = 0;
+    while i < n {
+        let ch: String = char_at(cmd, i);
+        if ch == "'" && !in_d { in_s = !in_s; }
+        else if ch == "\"" && !in_s { in_d = !in_d; }
+        else if !in_s && !in_d {
+            if ch == ";" {
+                return CompoundSplit { lhs: str_trim(str_slice(cmd, 0, i)), op: ";", rhs: str_trim(str_slice(cmd, i + 1, n)) };
+            }
+            if i + 1 < n {
+                let next_ch: String = char_at(cmd, i + 1);
+                if ch == "&" && next_ch == "&" {
+                    return CompoundSplit { lhs: str_trim(str_slice(cmd, 0, i)), op: "&&", rhs: str_trim(str_slice(cmd, i + 2, n)) };
+                }
+                if ch == "|" && next_ch == "|" {
+                    return CompoundSplit { lhs: str_trim(str_slice(cmd, 0, i)), op: "||", rhs: str_trim(str_slice(cmd, i + 2, n)) };
+                }
+            }
+        }
+        i = i + 1;
+    }
+    return CompoundSplit { lhs: cmd, op: "", rhs: "" };
+}
+
+pub fn expand_env_vars(env: &EnvCap, session: SessionState, last_rc: Int, line: String) -> String {
+    let n: Int = chars_len(line);
+    let mut out: String = "";
+    let mut in_s: Bool = false;
+    let mut i: Int = 0;
+    while i < n {
+        let ch: String = char_at(line, i);
+        if ch == "'" { in_s = !in_s; out = out + ch; i = i + 1; }
+        else if ch == "$" && !in_s && i + 1 < n {
+            let next_ch: String = char_at(line, i + 1);
+            if next_ch == "?" {
+                out = out + last_rc.to_string();
+                i = i + 2;
+            } else if next_ch == "{" {
+                let mut close_idx: Int = -1;
+                let mut ci: Int = i + 2;
+                while ci < n {
+                    if char_at(line, ci) == "}" { close_idx = ci; ci = n; }
+                    else { ci = ci + 1; }
+                }
+                if close_idx >= 0 {
+                    let k: String = str_slice(line, i + 2, close_idx);
+                    let val: String = match env_map_get(session.env_map, k) {
+                        Ok(v) => v,
+                        Err(_) => match env_get(env, k) { Ok(ev) => ev, Err(_) => "" }
+                    };
+                    out = out + val;
+                    i = close_idx + 1;
+                } else { out = out + "${"; i = i + 2; }
+            } else {
+                let mut vi: Int = i + 1;
+                let mut var_name: String = "";
+                while vi < n {
+                    let vc: String = char_at(line, vi);
+                    let vb: Int = byte_at(vc, 0);
+                    if (vb >= 65 && vb <= 90) || (vb >= 97 && vb <= 122) || (vb >= 48 && vb <= 57) || vb == 95 {
+                        var_name = var_name + vc;
+                        vi = vi + 1;
+                    } else { vi = n; }
+                }
+                if chars_len(var_name) > 0 {
+                    let val: String = match env_map_get(session.env_map, var_name) {
+                        Ok(v) => v,
+                        Err(_) => match env_get(env, var_name) { Ok(ev) => ev, Err(_) => "" }
+                    };
+                    out = out + val;
+                    i = i + 1 + chars_len(var_name);
+                } else { out = out + "$"; i = i + 1; }
+            }
+        } else { out = out + ch; i = i + 1; }
+    }
+    return out;
 }

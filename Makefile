@@ -1,4 +1,4 @@
-# oosh v0.6.0 Makefile
+# oosh v0.6.1 Makefile
 #
 # Build, verify, and test the openOODA sovereign shell.
 #
@@ -88,6 +88,10 @@ test: $(BIN)
 	@printf "alias ll='echo alias_pass'\nll\n" | ./$(BIN) --no-banner | grep -q "alias_pass" && echo "PASS: alias expansion"
 	@echo "=== testing export inheritance ==="
 	@printf "export TEST_ENV_VAR=passed\nprintenv\n" | ./$(BIN) --no-banner | grep -q "TEST_ENV_VAR=passed" && echo "PASS: export inheritance"
+	@echo "=== testing compound export and parameter expansion ==="
+	@test "$$(./$(BIN) -c 'export HELLO=world && echo $$HELLO')" = "world" && echo "PASS: export HELLO=world && echo \$$HELLO"
+	@echo "=== testing compound alias chaining ==="
+	@test "$$(./$(BIN) -c 'alias ll="echo alias_pass" && ll')" = "alias_pass" && echo "PASS: alias ll=... && ll"
 	@echo "=== testing script file execution ==="
 	@printf "echo script_run_ok\n" > /tmp/test_oosh_run.oosh && ./$(BIN) /tmp/test_oosh_run.oosh | grep -q "script_run_ok" && rm -f /tmp/test_oosh_run.oosh && echo "PASS: script file execution"
 

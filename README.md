@@ -71,9 +71,9 @@ curl -fsSL https://openooda-tools.github.io/oosh/install.sh | bash -s -- --unins
 
 ---
 
-## 4. Pure POSIX Bash Ergonomics (v0.6.0)
+## 4. Pure POSIX Bash Ergonomics (v0.6.1)
 
-`oosh v0.6.0` elevates the sovereign shell to full interactive ergonomics matching standard Bash while preserving openOODA capability security:
+`oosh v0.6.1` elevates the sovereign shell to full interactive ergonomics matching standard Bash while preserving openOODA capability security:
 - **Standard Bash PS1 Prompt**: Formats standard `user@hostname:dir$ ` (or `# ` for root) with clean tilde contraction (`~`) and support for custom `$PS1` environment overrides.
 - **Silent Normal Startup**: Clean, unobtrusive shell launch without promotional banners (banner displayed only on `-v`/`--version` or `version`).
 - **Unintercepted Host Binaries**: Direct execution of standard system tools (`whoami`, `stat`, `ping`, `ls`, `grep`) without conversational interception.

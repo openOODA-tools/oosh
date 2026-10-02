@@ -58,3 +58,13 @@ pub fn render_prompt_with_dock(fs_r: &FsReadCap, env: &EnvCap, cwd: String, has_
 pub fn render_plain_prompt(env: &EnvCap, cwd: String) -> String {
     return render_prompt_state(env, cwd, false);
 }
+
+pub fn parse_cd_target(line: String, cwd: String, home: String, oldpwd: String) -> String {
+    let raw_t: String = if line == ".." { ".." } else if line == "..." { "../.." } else if line == "...." { "../../.." } else if line == "-" { "-" } else if line == "cd" || line == "chdir" || line == "goto" || line == "jump" || line == "walk" { "~" } else if str_starts_with(line, "cd ") { str_slice(line, 3, chars_len(line)) } else if str_starts_with(line, "chdir ") { str_slice(line, 6, chars_len(line)) } else { str_slice(line, 5, chars_len(line)) };
+    let clean_t: String = str_trim(raw_t);
+    if clean_t == "~" || clean_t == "" { return home; }
+    if clean_t == "-" { return oldpwd; }
+    if str_starts_with(clean_t, "~/") { return home + str_slice(clean_t, 1, chars_len(clean_t)); }
+    return clean_t;
+}
+

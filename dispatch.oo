@@ -49,10 +49,8 @@ fn get_builtin_output(sys: &ProcessCap, env: &EnvCap, fs_r: &FsReadCap, cwd: Str
     if is_status_cmd(cmd) { return Ok(get_status_string(sys, cwd)); }
     if is_help_cmd(cmd) { return Ok(get_help_guide()); }
     if cmd == "history" || cmd == "hist" {
-        let hr: Result[String, String] = env_get(env, "HOME");
-        let home: String = match hr { Ok(h) => h, Err(_) => "" };
-        let h_res: Result[String, String] = read_file(fs_r, home + "/.oosh_history");
-        return match h_res { Ok(s) => Ok(s), Err(_) => Ok("No history available\n") };
+        let home: String = match env_get(env, "HOME") { Ok(h) => h, Err(_) => "" };
+        return match read_file(fs_r, home + "/.oosh_history") { Ok(s) => Ok(s), Err(_) => Ok("No history available\n") };
     }
     if cmd == "alias" { return Ok(format_aliases(aliases)); }
     if str_starts_with(cmd, "echo ") { return Ok(str_slice(cmd, 5, chars_len(cmd)) + "\n"); }
@@ -64,7 +62,19 @@ pub fn dispatch_line(fs_r: &FsReadCap, fs_w: &FsWriteCap, sys: &ProcessCap, env:
     let esc: String = ansi_esc();
     let cwd: String = session.cwd;
     if raw_trimmed == "" { return make_res(cwd, false, 0, rec, session); }
-    let line: String = alias_expand(session.alias_map, raw_trimmed);
+
+    let split: CompoundSplit = find_compound_op(raw_trimmed);
+    if split.op != "" {
+        let res1: DispatchResult = dispatch_line(fs_r, fs_w, sys, env, ffi, split.lhs, rec, session);
+        if res1.should_exit { return res1; }
+        if split.op == ";" || (split.op == "&&" && res1.exit_code == 0) || (split.op == "||" && res1.exit_code != 0) {
+            return dispatch_line(fs_r, fs_w, sys, env, ffi, split.rhs, res1.flight_rec, res1.session);
+        }
+        return res1;
+    }
+
+    let expanded: String = expand_env_vars(env, session, rec.last_exit_code, raw_trimmed);
+    let line: String = alias_expand(session.alias_map, expanded);
 
     // Redirection and Pipeline Plumbing for Builtins
     if str_contains(line, ">") && !str_contains(line, "|") {
@@ -102,9 +112,7 @@ pub fn dispatch_line(fs_r: &FsReadCap, fs_w: &FsWriteCap, sys: &ProcessCap, env:
     }
     if is_exit(line) { return make_res(cwd, true, 0, rec, session); }
     if is_version_cmd(line) { println("oosh " + oosh_version()); return make_res(cwd, false, 0, rec, session); }
-    if dispatch_manual(sys, cwd, line) { return make_res(cwd, false, 0, rec, session); }
-    if dispatch_ui(sys, cwd, line) { return make_res(cwd, false, 0, rec, session); }
-    if dispatch_diagnostics(sys, cwd, rec, line) { return make_res(cwd, false, 0, rec, session); }
+    if dispatch_manual(sys, cwd, line) || dispatch_ui(sys, cwd, line) || dispatch_diagnostics(sys, cwd, rec, line) { return make_res(cwd, false, 0, rec, session); }
     if is_link_cmd(line) { ipc_dispatch_link(sys, env, cwd, rec, line); return make_res(cwd, false, 0, rec, session); }
     if intent_is_query(line) || str_starts_with(line, "ai ") {
         let q: IntentQuery = parse_intent_query(line);
@@ -114,11 +122,17 @@ pub fn dispatch_line(fs_r: &FsReadCap, fs_w: &FsWriteCap, sys: &ProcessCap, env:
         return make_res(cwd, false, 0, rec, session);
     }
     if line == "pwd" || line == "cwd" || line == "where" || line == "here" { println(cwd); return make_res(cwd, false, 0, rec, session); }
+    if line == "echo" { println(""); return make_res(cwd, false, 0, flight_success(rec, line, 0), session); }
+    if str_starts_with(line, "echo ") {
+        let raw_e: String = str_slice(line, 5, chars_len(line));
+        let elen: Int = chars_len(raw_e);
+        let echo_out: String = if elen >= 2 && ((str_starts_with(raw_e, "\"") && str_ends_with(raw_e, "\"")) || (str_starts_with(raw_e, "'") && str_ends_with(raw_e, "'"))) { str_slice(raw_e, 1, elen - 1) } else { raw_e };
+        println(echo_out);
+        return make_res(cwd, false, 0, flight_success(rec, line, 0), session);
+    }
     if line == "history" || line == "hist" || line == "past" || line == "recall" {
-        let hr: Result[String, String] = env_get(env, "HOME");
-        let home: String = match hr { Ok(h) => h, Err(_) => "" };
-        let h_res: Result[String, String] = read_file(fs_r, home + "/.oosh_history");
-        let h_str: String = match h_res { Ok(s) => s, Err(_) => "No history available\n" };
+        let home: String = match env_get(env, "HOME") { Ok(h) => h, Err(_) => "" };
+        let h_str: String = match read_file(fs_r, home + "/.oosh_history") { Ok(s) => s, Err(_) => "No history available\n" };
         print(h_str); if !str_ends_with(h_str, "\n") { println(""); }
         return make_res(cwd, false, 0, rec, session);
     }
@@ -131,16 +145,12 @@ pub fn dispatch_line(fs_r: &FsReadCap, fs_w: &FsWriteCap, sys: &ProcessCap, env:
             let raw_val: String = str_trim(str_slice(rest, eq_pos + 1, chars_len(rest)));
             let rlen: Int = chars_len(raw_val);
             let aval: String = if rlen >= 2 && ((str_starts_with(raw_val, "\"") && str_ends_with(raw_val, "\"")) || (str_starts_with(raw_val, "'") && str_ends_with(raw_val, "'"))) { str_slice(raw_val, 1, rlen - 1) } else { raw_val };
-            let new_aliases: AliasMap = alias_map_set(session.alias_map, aname, aval);
-            let new_sess: SessionState = SessionState { cwd: cwd, env_map: session.env_map, alias_map: new_aliases };
-            return make_res(cwd, false, 0, rec, new_sess);
+            return make_res(cwd, false, 0, rec, SessionState { cwd: cwd, env_map: session.env_map, alias_map: alias_map_set(session.alias_map, aname, aval) });
         }
     }
     if str_starts_with(line, "unalias ") {
         let aname: String = str_trim(str_slice(line, 8, chars_len(line)));
-        let new_aliases: AliasMap = alias_map_remove(session.alias_map, aname);
-        let new_sess: SessionState = SessionState { cwd: cwd, env_map: session.env_map, alias_map: new_aliases };
-        return make_res(cwd, false, 0, rec, new_sess);
+        return make_res(cwd, false, 0, rec, SessionState { cwd: cwd, env_map: session.env_map, alias_map: alias_map_remove(session.alias_map, aname) });
     }
     if line == "export" {
         let n: Int = list_len(session.env_map.keys);
@@ -155,30 +165,23 @@ pub fn dispatch_line(fs_r: &FsReadCap, fs_w: &FsWriteCap, sys: &ProcessCap, env:
     if str_starts_with(line, "export ") {
         let rest: String = str_trim(str_slice(line, 7, chars_len(line)));
         let eq_pos: Int = str_index_of(rest, "=");
-        let mut new_sess: SessionState = session;
-        if eq_pos > 0 {
-            let k: String = str_trim(str_slice(rest, 0, eq_pos));
-            let raw_v: String = str_trim(str_slice(rest, eq_pos + 1, chars_len(rest)));
-            let vlen: Int = chars_len(raw_v);
-            let v: String = if vlen >= 2 && ((str_starts_with(raw_v, "\"") && str_ends_with(raw_v, "\"")) || (str_starts_with(raw_v, "'") && str_ends_with(raw_v, "'"))) { str_slice(raw_v, 1, vlen - 1) } else { raw_v };
-            new_sess = SessionState { cwd: cwd, env_map: env_map_set(session.env_map, k, v), alias_map: session.alias_map };
-        }
-        let _ = oo_tui_write(ffi, esc + "_set:" + rest);
-        return make_res(cwd, false, 0, rec, new_sess);
+        let k: String = if eq_pos > 0 { str_trim(str_slice(rest, 0, eq_pos)) } else { rest };
+        let raw_v: String = if eq_pos > 0 { str_trim(str_slice(rest, eq_pos + 1, chars_len(rest))) } else { match env_map_get(session.env_map, rest) { Ok(v) => v, Err(_) => match env_get(env, rest) { Ok(s) => s, Err(_) => "" } } };
+        let vlen: Int = chars_len(raw_v);
+        let v: String = if vlen >= 2 && ((str_starts_with(raw_v, "\"") && str_ends_with(raw_v, "\"")) || (str_starts_with(raw_v, "'") && str_ends_with(raw_v, "'"))) { str_slice(raw_v, 1, vlen - 1) } else { raw_v };
+        let _ = oo_tui_write(ffi, esc + "_set:" + k + "=" + v);
+        return make_res(cwd, false, 0, rec, SessionState { cwd: cwd, env_map: env_map_set(session.env_map, k, v), alias_map: session.alias_map });
     }
     if str_starts_with(line, "unset ") {
         let var_name: String = str_trim(str_slice(line, 6, chars_len(line)));
-        let new_sess: SessionState = SessionState { cwd: cwd, env_map: env_map_remove(session.env_map, var_name), alias_map: session.alias_map };
         let _ = oo_tui_write(ffi, esc + "_uns:" + var_name);
-        return make_res(cwd, false, 0, rec, new_sess);
+        return make_res(cwd, false, 0, rec, SessionState { cwd: cwd, env_map: env_map_remove(session.env_map, var_name), alias_map: session.alias_map });
     }
 
     // Native Navigation: cd, chdir, goto, jump, walk, .., ..., ....
     if line == ".." || line == "..." || line == "...." || line == "-" || line == "cd" || line == "chdir" || line == "goto" || line == "jump" || line == "walk" || str_starts_with(line, "cd ") || str_starts_with(line, "chdir ") || str_starts_with(line, "goto ") || str_starts_with(line, "jump ") || str_starts_with(line, "walk ") {
-        let hr: Result[String, String] = env_get(env, "HOME");
-        let home: String = match hr { Ok(h) => h, Err(_) => "" };
-        let oldpwd_r: Result[String, String] = env_get(env, "OLDPWD");
-        let oldpwd: String = match oldpwd_r { Ok(o) => o, Err(_) => cwd };
+        let home: String = match env_get(env, "HOME") { Ok(h) => h, Err(_) => "" };
+        let oldpwd: String = match env_get(env, "OLDPWD") { Ok(o) => o, Err(_) => cwd };
         let target_dir: String = parse_cd_target(line, cwd, home, oldpwd);
         let cd_res = oo_tui_write(ffi, esc + "_cd:" + target_dir);
         if cd_res.is_err() {
@@ -187,27 +190,21 @@ pub fn dispatch_line(fs_r: &FsReadCap, fs_w: &FsWriteCap, sys: &ProcessCap, env:
         }
         let resolved: String = match cd_res { Ok(d) => str_trim(d), Err(_) => cwd };
         let _ = oo_tui_write(ffi, esc + "_set:OLDPWD=" + cwd);
-        let new_sess: SessionState = SessionState { cwd: resolved, env_map: session.env_map, alias_map: session.alias_map };
-        return make_res(resolved, false, 0, flight_success(rec, line, 0), new_sess);
+        return make_res(resolved, false, 0, flight_success(rec, line, 0), SessionState { cwd: resolved, env_map: session.env_map, alias_map: session.alias_map });
     }
 
     // Modern ergonomics: take <dir>, mkcd <dir>
     if str_starts_with(line, "take ") || str_starts_with(line, "mkcd ") || str_starts_with(line, "mcd ") || str_starts_with(line, "mdcd ") {
-        let raw_t: String = if str_starts_with(line, "take ") { str_slice(line, 5, chars_len(line)) } else if str_starts_with(line, "mkcd ") { str_slice(line, 5, chars_len(line)) } else if str_starts_with(line, "mcd ") { str_slice(line, 4, chars_len(line)) } else { str_slice(line, 5, chars_len(line)) };
-        let clean_t: String = str_trim(raw_t);
-        let hr: Result[String, String] = env_get(env, "HOME");
-        let home: String = match hr { Ok(h) => h, Err(_) => "" };
+        let clean_t: String = str_trim(str_slice(line, str_index_of(line, " ") + 1, chars_len(line)));
+        let home: String = match env_get(env, "HOME") { Ok(h) => h, Err(_) => "" };
         let target_dir: String = if str_starts_with(clean_t, "~/") { home + str_slice(clean_t, 1, chars_len(clean_t)) } else { clean_t };
-        let mk_res = oo_tui_write(ffi, esc + "_mkdir:" + target_dir);
-        if mk_res.is_err() {
+        if oo_tui_write(ffi, esc + "_mkdir:" + target_dir).is_err() {
             println("oosh: mkdir: cannot create directory '" + clean_t + "'");
             return make_res(cwd, false, 1, flight_failure(rec, line, 1, "failed to create directory", 0), session);
         }
-        let cd_res = oo_tui_write(ffi, esc + "_cd:" + target_dir);
-        let resolved: String = match cd_res { Ok(d) => str_trim(d), Err(_) => cwd };
+        let resolved: String = match oo_tui_write(ffi, esc + "_cd:" + target_dir) { Ok(d) => str_trim(d), Err(_) => cwd };
         let _ = oo_tui_write(ffi, esc + "_set:OLDPWD=" + cwd);
-        let new_sess: SessionState = SessionState { cwd: resolved, env_map: session.env_map, alias_map: session.alias_map };
-        return make_res(resolved, false, 0, flight_success(rec, line, 0), new_sess);
+        return make_res(resolved, false, 0, flight_success(rec, line, 0), SessionState { cwd: resolved, env_map: session.env_map, alias_map: session.alias_map });
     }
 
     // Compound shell operators (external pipelines, redirections, sequences)

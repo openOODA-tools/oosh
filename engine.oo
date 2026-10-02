@@ -96,7 +96,12 @@ pub fn run_engine(fs_r: &FsReadCap, sys: &ProcessCap, env: &EnvCap, time: &TimeC
     if is_interactive { let _ = term_enable(ffi); }
 
     while running {
-        let base_prompt: String = render_prompt_state(env, session.cwd, rec.has_failed);
+        let ps1_res: Result[String, String] = env_map_get(session.env_map, "PS1");
+        let base_prompt: String = if ps1_res.is_ok() {
+            match ps1_res { Ok(s) => s, Err(_) => "" }
+        } else {
+            render_prompt_state(env, session.cwd, rec.has_failed)
+        };
         if is_interactive { print(base_prompt); }
 
         let mut line_done: Bool = false;

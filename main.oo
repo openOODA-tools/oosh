@@ -100,6 +100,38 @@ fn run_script_file(fs_r: &FsReadCap, fs_w: &FsWriteCap, sys: &ProcessCap, env: &
     return res.exit_code;
 }
 
+fn extract_startup_ps1(fs_r: &FsReadCap, env: &EnvCap) -> String {
+    let r_proc: Result[String, String] = read_file(fs_r, "/proc/self/environ");
+    if r_proc.is_ok() {
+        let env_blob: String = match r_proc { Ok(s) => s, Err(_) => "" };
+        let nul_sep: String = bytes_to_str(bytes_push(bytes_new(), 0));
+        let entries: List[String] = str_split(env_blob, nul_sep);
+        let n: Int = list_len(entries);
+        let mut i: Int = 0;
+        while i < n {
+            let entry: String = list_get(entries, i);
+            if str_starts_with(entry, "PS1=") {
+                let v: String = str_slice(entry, 4, chars_len(entry));
+                if v != "" {
+                    return v;
+                }
+            }
+            i = i + 1;
+        }
+    }
+    let r_oo: Result[String, String] = env_get(env, "OO_PS1");
+    let oo_val: String = match r_oo { Ok(s) => s, Err(_) => "" };
+    if oo_val != "" {
+        return oo_val;
+    }
+    let r_ooda: Result[String, String] = env_get(env, "OODA_PS1");
+    let ooda_val: String = match r_ooda { Ok(s) => s, Err(_) => "" };
+    if ooda_val != "" {
+        return ooda_val;
+    }
+    return "";
+}
+
 pub fn main(bind: &BindCap, fs_r: &FsReadCap, sys: &ProcessCap, sys_cap: &SysCap, env: &EnvCap, time: &TimeCap, fs_w: &FsWriteCap, alloc: &AllocCap, thread: &ThreadCap, ffi: &FfiCap, args: List[String]) -> Result[Int, String] {
     let _h = dlopen(ffi, "");
     let pre: Result[String, String] = validate_argv(args);
@@ -147,8 +179,7 @@ pub fn main(bind: &BindCap, fs_r: &FsReadCap, sys: &ProcessCap, sys_cap: &SysCap
     let cwd: String = match pr { Ok(s) => s, Err(_) => "." };
     let rec: FlightRecord = flight_init();
     let mut session: SessionState = session_state_new(cwd, alias_map_new());
-    let p_ps1: Result[String, String] = process_exec(sys, "printenv PS1 2>/dev/null");
-    let parent_ps1: String = match p_ps1 { Ok(s) => str_trim(s), Err(_) => "" };
+    let parent_ps1: String = extract_startup_ps1(fs_r, env);
     if parent_ps1 != "" {
         session = SessionState { cwd: session.cwd, env_map: env_map_set(session.env_map, "PS1", parent_ps1), alias_map: session.alias_map, job_table: session.job_table, func_map: session.func_map };
     }

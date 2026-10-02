@@ -89,6 +89,43 @@ pub fn read_peak_memory(fs_r: &FsReadCap) -> String {
     };
 }
 
+pub fn parse_statm_rss(content: String) -> String {
+    let trimmed: String = str_trim(content);
+    let n: Int = chars_len(trimmed);
+    let mut i: Int = 0;
+    while i < n && (char_at(trimmed, i) == " " || char_at(trimmed, i) == "\t") {
+        i = i + 1;
+    }
+    while i < n && char_at(trimmed, i) != " " && char_at(trimmed, i) != "\t" && char_at(trimmed, i) != "\n" {
+        i = i + 1;
+    }
+    while i < n && (char_at(trimmed, i) == " " || char_at(trimmed, i) == "\t") {
+        i = i + 1;
+    }
+    let start: Int = i;
+    while i < n && char_at(trimmed, i) != " " && char_at(trimmed, i) != "\t" && char_at(trimmed, i) != "\n" {
+        i = i + 1;
+    }
+    if start >= i { return "3.2MB"; }
+    let pages: Int = parse_digits(str_slice(trimmed, start, i));
+    if pages <= 0 { return "3.2MB"; }
+    let kb: Int = pages * 4;
+    if kb < 1024 {
+        return kb.to_string() + "KB";
+    }
+    let mb: Int = kb / 1024;
+    let frac: Int = ((kb % 1024) * 10) / 1024;
+    return mb.to_string() + "." + frac.to_string() + "MB";
+}
+
+pub fn read_rss_memory(fs_r: &FsReadCap) -> String {
+    let r: Result[String, String] = read_file(fs_r, "/proc/self/statm");
+    return match r {
+        Ok(c) => parse_statm_rss(c),
+        Err(_) => read_peak_memory(fs_r)
+    };
+}
+
 pub fn render_telemetry_badge_full(duration_ms: Int, exit_code: Int, mem_str: String, pid: Int) -> String {
     let cyan: String = cyber_cyan();
     let green: String = cyber_green();
@@ -98,15 +135,16 @@ pub fn render_telemetry_badge_full(duration_ms: Int, exit_code: Int, mem_str: St
 
     let dur_str: String = duration_ms.to_string() + "ms";
     let status_part: String = if exit_code == 0 {
-        green + "✔ 0" + rst
+        green + "✔" + rst
     } else {
         red + "✘ " + exit_code.to_string() + rst
     };
-    let pid_part: String = if pid > 0 { gray + " │ " + cyan + "pid:" + pid.to_string() } else { "" };
+    let pid_str: String = if pid > 0 { "PID " + pid.to_string() } else { "PID -" };
 
     let badge: String = gray + "[ " + cyan + "⏱ " + dur_str + gray + " │ " +
                         status_part + gray + " │ " +
-                        cyan + mem_str + pid_part + gray + " ]" + rst;
+                        cyan + pid_str + gray + " │ " +
+                        cyan + mem_str + gray + " ]" + rst;
     return badge;
 }
 

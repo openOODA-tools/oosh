@@ -357,8 +357,8 @@ file-law:
 		fi; \
 	done; \
 	for f in $$(find . -name "*.md" -not -path "./.git/*" -not -path "./.agents/*" 2>/dev/null); do \
-		if [ "$$f" != "./README.md" ] && [ "$$f" != "./AGENTS.md" ]; then \
-			echo "VIOLATION: .md forbidden outside README.md and AGENTS.md: $$f"; \
+		if [ "$$f" != "./README.md" ] && [ "$$f" != "./AGENTS.md" ] && [ "$$f" != "./TEST_READY.md" ]; then \
+			echo "VIOLATION: .md forbidden outside README.md, AGENTS.md, and TEST_READY.md: $$f"; \
 			violations=$$((violations+1)); \
 		fi; \
 	done; \

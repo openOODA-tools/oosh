@@ -48,7 +48,11 @@ pub fn flight_telemetry_full(dur: Int, code: Int, mem: String, pid: Int) -> Stri
 }
 
 pub fn flight_memory(fs_r: &FsReadCap) -> String {
-    return read_peak_memory(fs_r);
+    return read_rss_memory(fs_r);
+}
+
+pub fn flight_rss_memory(fs_r: &FsReadCap) -> String {
+    return read_rss_memory(fs_r);
 }
 
 pub fn flight_pid(fs_r: &FsReadCap) -> Int {

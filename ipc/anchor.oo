@@ -30,7 +30,7 @@ pub fn probe_syntrop(sys: &ProcessCap) -> SyntropStatus {
         "$( (test -e /run/syntrop/toold.sock || test -e /run/syntrop/io.syntrop.Tool1) && echo 1 || echo 0 ) " +
         "$( (test -e /run/syntrop/sentry.sock || test -e /run/syntrop/io.syntrop.Sentry1) && echo 1 || echo 0 ) " +
         "$( (test -e /run/syntrop/runtimed.sock || test -e /run/syntrop/io.syntrop.Runtime1) && echo 1 || echo 0 ) " +
-        "$( (test -e /run/oosh/control.sock || test -e /tmp/oosh-control.sock) && echo 1 || echo 0 )";
+        "$( (test -e /run/oosh/control.sock || test -e /tmp/oosh-control.sock || ls /run/user/*/oosh/control.sock 2>/dev/null || ls ~/.cache/oosh/control.sock 2>/dev/null) && echo 1 || echo 0 )";
     let pr: Result[String, String] = process_exec(sys, probe_cmd);
     let s: String = match pr {
         Ok(v) => v,
@@ -56,7 +56,7 @@ pub fn syntrop_online_count(st: SyntropStatus) -> Int {
 
 pub fn render_link_card(sys: &ProcessCap, env: &EnvCap) -> String {
     let st: SyntropStatus = probe_syntrop(sys);
-    let sock: String = resolve_socket_path(env);
+    let sock: String = prepare_socket_path(sys, env);
     let count: Int = syntrop_online_count(st);
 
     let top: String = ui_card_top("⬡", "SYNTROPD IPC LINK COORDINATOR");
@@ -103,7 +103,7 @@ pub fn ipc_dispatch_link(sys: &ProcessCap, env: &EnvCap, cwd: String, rec: Fligh
         println(ui_card_row("toold", "/run/syntrop/io.syntrop.Tool1"));
         println(ui_card_row("sentry", "/run/syntrop/sentry.sock"));
         println(ui_card_row("runtimed", "/run/syntrop/io.syntrop.Runtime1"));
-        println(ui_card_row("control", resolve_socket_path(env)));
+        println(ui_card_row("control", prepare_socket_path(sys, env)));
         println(ui_card_bottom("5 ENDPOINTS REGISTERED"));
         return;
     }

@@ -144,6 +144,7 @@ pub fn main(bind: &BindCap, fs_r: &FsReadCap, sys: &ProcessCap, sys_cap: &SysCap
     let mut one_shot_cmd: String = "";
     let mut has_c_flag: Bool = false;
     let mut is_daemon: Bool = false;
+    let mut has_varlink_call: Bool = false;
     let mut varlink_payload: String = "";
     let mut script_file: String = "";
     let mut script_args: List[String] = list_new();
@@ -161,6 +162,7 @@ pub fn main(bind: &BindCap, fs_r: &FsReadCap, sys: &ProcessCap, sys_cap: &SysCap
             one_shot_cmd = list_get(args, i + 1);
             i = i + 2;
         } else if a == "--varlink-call" {
+            has_varlink_call = true;
             varlink_payload = list_get(args, i + 1);
             i = i + 2;
         } else if !str_starts_with(a, "-") {
@@ -184,7 +186,7 @@ pub fn main(bind: &BindCap, fs_r: &FsReadCap, sys: &ProcessCap, sys_cap: &SysCap
         session = SessionState { cwd: session.cwd, env_map: env_map_set(session.env_map, "PS1", parent_ps1), alias_map: session.alias_map, job_table: session.job_table, func_map: session.func_map };
     }
 
-    if varlink_payload != "" {
+    if has_varlink_call {
         let reply: String = ipc_route(sys, cwd, rec, varlink_payload);
         print(reply);
         return Ok(0);

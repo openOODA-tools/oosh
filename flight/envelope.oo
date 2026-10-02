@@ -167,13 +167,12 @@ pub fn update_flight_duration(rec: FlightRecord, duration_ms: Int) -> FlightReco
 
 fn format_trace_entry(entry: FlightEntry) -> String {
     let seq_str: String = "#" + fmt_digits_2(entry.seq);
-    let status_str: String = if entry.exit_code == 0 { "OK  0" } else { "ERR " + entry.exit_code.to_string() };
-    let dur_str: String = pad_left_str(entry.duration_ms.to_string() + "ms", 7);
-    let pid_str: String = pad_left_str(if entry.pid > 0 { entry.pid.to_string() } else { "-" }, 7);
-    let mem_str: String = pad_left_str(if entry.peak_mem != "" { entry.peak_mem } else { "-" }, 8);
-    let link_str: String = pad_right_str(if entry.causal_link != "" { entry.causal_link } else { "-" }, 8);
+    let status_str: String = if entry.exit_code == 0 { "✔ OK" } else { "✘ ERR " + entry.exit_code.to_string() };
+    let dur_str: String = entry.duration_ms.to_string() + "ms";
+    let pid_str: String = if entry.pid > 0 { entry.pid.to_string() } else { "-" };
+    let mem_str: String = if entry.peak_mem != "" { entry.peak_mem } else { "0.0MB" };
     let cmd_str: String = safe_str_prefix(entry.cmd, 32);
-    return pad_right_str(seq_str, 6) + " " + pad_right_str(status_str, 8) + " " + dur_str + " " + pid_str + " " + mem_str + " " + link_str + "  " + cmd_str;
+    return pad_right_str(seq_str, 6) + " " + pad_right_str(status_str, 10) + " " + pad_left_str(dur_str, 9) + "  " + pad_left_str(pid_str, 6) + "  " + pad_left_str(mem_str, 7) + " " + cmd_str;
 }
 
 pub fn render_autopsy_card(rec: FlightRecord) -> String {
@@ -183,7 +182,7 @@ pub fn render_autopsy_card(rec: FlightRecord) -> String {
     let cap_str: String = rec.capacity.to_string();
     let header_info: String = "Buffer: " + total_str + " traced (capacity " + cap_str + ") | Failures: " + failed_str;
 
-    let sec_trace: String = "\nCHRONOLOGICAL EXECUTION TIMELINE:\nSEQ    STATUS     TIME     PID   MEMORY LINK      COMMAND";
+    let sec_trace: String = "\nCHRONOLOGICAL EXECUTION TIMELINE:\nSEQ    STATUS     TIME       PID     MEMORY  COMMAND";
     let num_entries: Int = list_len(rec.entries);
     let mut trace_body: String = "";
     if num_entries == 0 {

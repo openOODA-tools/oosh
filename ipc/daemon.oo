@@ -19,11 +19,27 @@ fn ansi_esc() -> String {
     return bytes_to_str(bytes_push(bytes_new(), 27));
 }
 
+fn get_parent_env(sys: &ProcessCap, env: &EnvCap, var_name: String) -> String {
+    let r_e: Result[String, String] = env_get(env, var_name);
+    let v: String = match r_e { Ok(s) => s, Err(_) => "" };
+    if v != "" {
+        return v;
+    }
+    let cmd: String = "bash -c 'tr \"\\0\" \"\\n\" < /proc/$PPID/environ 2>/dev/null | grep \"^" + var_name + "=\" | head -n1 | cut -d= -f2-'";
+    let r_p: Result[String, String] = process_exec(sys, cmd);
+    return match r_p { Ok(s) => str_trim(s), Err(_) => "" };
+}
+
 pub fn resolve_socket_path(env: &EnvCap) -> String {
     let r_override: Result[String, String] = env_get(env, "OOSH_SOCKET");
     let ov: String = match r_override { Ok(s) => s, Err(_) => "" };
     if ov != "" {
         return ov;
+    }
+    let r_oo: Result[String, String] = env_get(env, "OO_SOCKET");
+    let oo_sock: String = match r_oo { Ok(s) => s, Err(_) => "" };
+    if oo_sock != "" {
+        return oo_sock;
     }
     let r_user: Result[String, String] = env_get(env, "USER");
     let user: String = match r_user { Ok(s) => s, Err(_) => "" };
@@ -44,31 +60,31 @@ pub fn resolve_socket_path(env: &EnvCap) -> String {
 }
 
 pub fn prepare_socket_path(sys: &ProcessCap, env: &EnvCap) -> String {
-    let r_override: Result[String, String] = env_get(env, "OOSH_SOCKET");
-    let ov: String = match r_override { Ok(s) => s, Err(_) => "" };
+    let ov_oosh: String = get_parent_env(sys, env, "OOSH_SOCKET");
+    let ov_oo: String = get_parent_env(sys, env, "OO_SOCKET");
+    let ov: String = if ov_oosh != "" { ov_oosh } else { ov_oo };
     if ov != "" {
+        let prep_cmd: String = "d=\"$(dirname \"" + ov + "\")\"; if [ \"$d\" != \"/tmp\" ] && [ \"$d\" != \"/\" ] && [ \"$d\" != \"/run\" ]; then mkdir -p -m 0700 \"$d\" 2>/dev/null; chmod 0700 \"$d\" 2>/dev/null; fi";
+        let _ = process_exec(sys, prep_cmd);
         return ov;
     }
-    let p_ov: Result[String, String] = process_exec(sys, "printenv OOSH_SOCKET 2>/dev/null");
-    let pov: String = match p_ov { Ok(s) => str_trim(s), Err(_) => "" };
-    if pov != "" {
-        return pov;
-    }
-    let r_primary: Result[String, String] = process_exec(sys, "mkdir -p /run/oosh 2>/dev/null && test -w /run/oosh");
+    let r_primary: Result[String, String] = process_exec(sys, "mkdir -p -m 0700 /run/oosh 2>/dev/null && chmod 0700 /run/oosh 2>/dev/null && test -w /run/oosh");
     if r_primary.is_ok() {
         return "/run/oosh/control.sock";
     }
-    let p_xdg: Result[String, String] = process_exec(sys, "printenv XDG_RUNTIME_DIR 2>/dev/null");
-    let xdg: String = match p_xdg { Ok(s) => str_trim(s), Err(_) => "" };
+    let xdg: String = get_parent_env(sys, env, "XDG_RUNTIME_DIR");
     if xdg != "" {
-        let _ = process_exec(sys, "mkdir -p \"" + xdg + "/oosh\" 2>/dev/null");
-        return xdg + "/oosh/control.sock";
+        let r_xdg: Result[String, String] = process_exec(sys, "mkdir -p -m 0700 \"" + xdg + "/oosh\" 2>/dev/null && chmod 0700 \"" + xdg + "/oosh\" 2>/dev/null && test -w \"" + xdg + "/oosh\"");
+        if r_xdg.is_ok() {
+            return xdg + "/oosh/control.sock";
+        }
     }
-    let p_home: Result[String, String] = process_exec(sys, "printenv HOME 2>/dev/null");
-    let home: String = match p_home { Ok(s) => str_trim(s), Err(_) => "" };
+    let home: String = get_parent_env(sys, env, "HOME");
     if home != "" {
-        let _ = process_exec(sys, "mkdir -p \"" + home + "/.cache/oosh\" 2>/dev/null");
-        return home + "/.cache/oosh/control.sock";
+        let r_home: Result[String, String] = process_exec(sys, "mkdir -p -m 0700 \"" + home + "/.cache/oosh\" 2>/dev/null && chmod 0700 \"" + home + "/.cache/oosh\" 2>/dev/null && test -w \"" + home + "/.cache/oosh\"");
+        if r_home.is_ok() {
+            return home + "/.cache/oosh/control.sock";
+        }
     }
     return "/tmp/oosh-control.sock";
 }
@@ -104,7 +120,7 @@ pub fn run_daemon_loop(sys: &ProcessCap, env: &EnvCap, ffi: &FfiCap, cwd: String
     println(ui_card_row("Self-Test Ping", str_trim(ping_res)));
 
     // Resolve binary path for child process IPC dispatch
-    let bin_lookup: Result[String, String] = process_exec(sys, "[ -x ./dist/oosh ] && echo ./dist/oosh || command -v oosh || echo dist/oosh");
+    let bin_lookup: Result[String, String] = process_exec(sys, "[ -x ./dist/oosh ] && realpath ./dist/oosh 2>/dev/null || command -v oosh || echo ./dist/oosh");
     let bin_path: String = match bin_lookup { Ok(s) => str_trim(s), Err(_) => "./dist/oosh" };
 
     // Launch native compiled C AF_UNIX epoll daemon loop via APC channel.

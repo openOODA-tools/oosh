@@ -1,13 +1,13 @@
 // # Syntax Control Flow and Function Table
 //
-// Logline: Parses and evaluates loops (for/while), conditionals (if), subshells, and functions.
+// Logline: Parses and evaluates loops (for/while), conditionals (if/case), subshells, and functions.
 //
 // Setup: Bridges control flow statements and in-memory function definitions.
 //
 // Beats:
 //   1. Maintain session function table for user-defined shell functions.
 //   2. Parse and evaluate test/[ conditions, string equality, and numeric comparisons.
-//   3. Recognize for/while loops, if/then/else conditionals, and subshell blocks.
+//   3. Recognize for/while loops, if/case conditionals, and subshell blocks.
 
 import "lexer.oo";
 import "std/fs/process/process.oo";
@@ -18,9 +18,7 @@ pub type FunctionMap = struct {
 };
 
 pub fn func_map_new() -> FunctionMap {
-    let empty_n: List[String] = list_new();
-    let empty_b: List[String] = list_new();
-    return FunctionMap { names: empty_n, bodies: empty_b };
+    return FunctionMap { names: list_new(), bodies: list_new() };
 }
 
 pub fn func_map_get(m: FunctionMap, name: String) -> Result[String, String] {
@@ -50,26 +48,18 @@ pub fn func_map_set(m: FunctionMap, name: String, body: String) -> FunctionMap {
 
 pub fn is_subshell_stmt(line: String) -> Bool {
     let t: String = str_trim(line);
-    let n: Int = chars_len(t);
-    return n >= 2 && str_starts_with(t, "(") && str_ends_with(t, ")");
+    return chars_len(t) >= 2 && str_starts_with(t, "(") && str_ends_with(t, ")");
 }
 
 pub fn extract_subshell_body(line: String) -> String {
     let t: String = str_trim(line);
     let n: Int = chars_len(t);
-    if n >= 2 && str_starts_with(t, "(") && str_ends_with(t, ")") {
-        return str_trim(str_slice(t, 1, n - 1));
-    }
-    return t;
+    return if n >= 2 && str_starts_with(t, "(") && str_ends_with(t, ")") { str_trim(str_slice(t, 1, n - 1)) } else { t };
 }
 
 pub fn is_function_def(line: String) -> Bool {
     let t: String = str_trim(line);
-    if str_starts_with(t, "function ") && str_contains(t, "{") && str_ends_with(t, "}") {
-        return true;
-    }
-    let p_idx: Int = str_index_of(t, "()");
-    return p_idx > 0 && str_contains(t, "{") && str_ends_with(t, "}");
+    return (str_starts_with(t, "function ") || str_index_of(t, "()") > 0) && str_contains(t, "{") && str_ends_with(t, "}");
 }
 
 pub fn parse_function_def(line: String) -> Result[CompoundSplit, String] {
@@ -111,9 +101,12 @@ pub type IfStmtDef = struct {
     else_body: String
 };
 
+pub type CaseStmtDef = struct {
+    matched_body: String
+};
+
 pub fn for_def_empty() -> ForLoopDef {
-    let empty: List[String] = list_new();
-    return ForLoopDef { var_name: "", items: empty, body: "" };
+    return ForLoopDef { var_name: "", items: list_new(), body: "" };
 }
 
 pub fn find_keyword_delimited(line: String, kw: String, last: Bool) -> Int {
@@ -132,25 +125,16 @@ pub fn find_keyword_delimited(line: String, kw: String, last: Bool) -> Int {
         else if ch == "'" && !in_d { in_s = !in_s; i = i + 1; }
         else if ch == "\"" && !in_s { in_d = !in_d; i = i + 1; }
         else if !in_s && !in_d {
-            let sub: String = str_slice(line, i, i + kn);
-            if sub == kw {
-                let prev_ok: Bool = if i == 0 { true } else {
-                    let prev: String = char_at(line, i - 1);
-                    prev == " " || prev == "\t" || prev == "\n" || prev == ";"
-                };
-                let next_ok: Bool = if i + kn == n { true } else {
-                    let next: String = char_at(line, i + kn);
-                    next == " " || next == "\t" || next == "\n" || next == ";"
-                };
+            if str_slice(line, i, i + kn) == kw {
+                let prev_ok: Bool = i == 0 || char_at(line, i - 1) == " " || char_at(line, i - 1) == "\t" || char_at(line, i - 1) == "\n" || char_at(line, i - 1) == ";";
+                let next_ok: Bool = i + kn == n || char_at(line, i + kn) == " " || char_at(line, i + kn) == "\t" || char_at(line, i + kn) == "\n" || char_at(line, i + kn) == ";";
                 if prev_ok && next_ok {
                     if !last { return i; }
                     last_pos = i;
                 }
             }
             i = i + 1;
-        } else {
-            i = i + 1;
-        }
+        } else { i = i + 1; }
     }
     return last_pos;
 }
@@ -159,8 +143,8 @@ pub fn parse_for_stmt(line: String) -> Result[ForLoopDef, String] {
     let do_i: Int = find_keyword_delimited(line, "do", false);
     let done_i: Int = find_keyword_delimited(line, "done", true);
     if do_i <= 0 || done_i <= do_i { return Err("malformed_for"); }
-    let sc_i: Int = str_index_of(line, ";");
-    let header: String = str_trim(str_slice(line, 4, if sc_i > 0 && sc_i < do_i { sc_i } else { do_i }));
+    let mut header: String = str_trim(str_slice(line, 4, do_i));
+    if str_ends_with(header, ";") { header = str_trim(str_slice(header, 0, chars_len(header) - 1)); }
     let body: String = str_trim(str_slice(line, do_i + 2, done_i));
     let h_toks: List[String] = split_cmd_tokens_quote_aware(header);
     if list_len(h_toks) < 3 { return Err("missing_in_clause"); }
@@ -178,18 +162,17 @@ pub fn parse_while_stmt(line: String) -> Result[WhileLoopDef, String] {
     let do_i: Int = find_keyword_delimited(line, "do", false);
     let done_i: Int = find_keyword_delimited(line, "done", true);
     if do_i <= 0 || done_i <= do_i { return Err("malformed_while"); }
-    let sc_i: Int = str_index_of(line, ";");
-    let cond: String = str_trim(str_slice(line, 6, if sc_i > 0 && sc_i < do_i { sc_i } else { do_i }));
-    let body: String = str_trim(str_slice(line, do_i + 2, done_i));
-    return Ok(WhileLoopDef { cond: cond, body: body });
+    let mut cond: String = str_trim(str_slice(line, 6, do_i));
+    if str_ends_with(cond, ";") { cond = str_trim(str_slice(cond, 0, chars_len(cond) - 1)); }
+    return Ok(WhileLoopDef { cond: cond, body: str_trim(str_slice(line, do_i + 2, done_i)) });
 }
 
 pub fn parse_if_stmt(line: String) -> Result[IfStmtDef, String] {
     let then_i: Int = find_keyword_delimited(line, "then", false);
     let fi_i: Int = find_keyword_delimited(line, "fi", true);
     if then_i <= 0 || fi_i <= then_i { return Err("malformed_if"); }
-    let sc_i: Int = str_index_of(line, ";");
-    let cond: String = str_trim(str_slice(line, 3, if sc_i > 0 && sc_i < then_i { sc_i } else { then_i }));
+    let mut cond: String = str_trim(str_slice(line, 3, then_i));
+    if str_ends_with(cond, ";") { cond = str_trim(str_slice(cond, 0, chars_len(cond) - 1)); }
     let rem: String = str_trim(str_slice(line, then_i + 4, fi_i));
     let else_i: Int = find_keyword_delimited(rem, "else", false);
     let then_body: String = if else_i > 0 { str_trim(str_slice(rem, 0, else_i)) } else { rem };
@@ -197,25 +180,61 @@ pub fn parse_if_stmt(line: String) -> Result[IfStmtDef, String] {
     return Ok(IfStmtDef { cond: cond, then_body: then_body, else_body: else_body });
 }
 
+
+pub fn is_case_stmt(line: String) -> Bool {
+    let t: String = str_trim(line);
+    let in_i: Int = find_keyword_delimited(t, "in", false);
+    let esac_i: Int = find_keyword_delimited(t, "esac", true);
+    return str_starts_with(t, "case ") && in_i > 0 && esac_i > in_i;
+}
+
+pub fn parse_case_stmt(line: String) -> Result[CaseStmtDef, String] {
+    let in_i: Int = find_keyword_delimited(line, "in", false);
+    let esac_i: Int = find_keyword_delimited(line, "esac", true);
+    if in_i <= 0 || esac_i <= in_i { return Err("malformed_case"); }
+    let raw_w: String = str_trim(str_slice(line, 5, in_i));
+    let wlen: Int = chars_len(raw_w);
+    let target_word: String = if wlen >= 2 && ((str_starts_with(raw_w, "\"") && str_ends_with(raw_w, "\"")) || (str_starts_with(raw_w, "'") && str_ends_with(raw_w, "'"))) { str_slice(raw_w, 1, wlen - 1) } else { raw_w };
+    let body: String = str_slice(line, in_i + 2, esac_i);
+    let bn: Int = chars_len(body);
+    let mut i: Int = 0;
+    let mut chunk_start: Int = 0;
+    while i <= bn {
+        let is_sep: Bool = if i + 1 < bn { char_at(body, i) == ";" && char_at(body, i + 1) == ";" } else { i == bn };
+        if is_sep {
+            let chunk: String = str_trim(str_slice(body, chunk_start, i));
+            let p_idx: Int = str_index_of(chunk, ")");
+            if p_idx > 0 {
+                let pat: String = str_trim(str_slice(chunk, 0, p_idx));
+                let action: String = str_trim(str_slice(chunk, p_idx + 1, chars_len(chunk)));
+                if pat == target_word || pat == "*" || (str_ends_with(pat, "*") && str_starts_with(target_word, str_slice(pat, 0, chars_len(pat) - 1))) {
+                    return Ok(CaseStmtDef { matched_body: action });
+                }
+            }
+            chunk_start = i + 2;
+            i = i + 1;
+        }
+        i = i + 1;
+    }
+    return Ok(CaseStmtDef { matched_body: "" });
+}
+
 pub fn is_for_stmt(line: String) -> Bool {
     let t: String = str_trim(line);
     let do_i: Int = find_keyword_delimited(t, "do", false);
-    let done_i: Int = find_keyword_delimited(t, "done", true);
-    return str_starts_with(t, "for ") && do_i > 0 && done_i > do_i;
+    return str_starts_with(t, "for ") && do_i > 0 && find_keyword_delimited(t, "done", true) > do_i;
 }
 
 pub fn is_while_stmt(line: String) -> Bool {
     let t: String = str_trim(line);
     let do_i: Int = find_keyword_delimited(t, "do", false);
-    let done_i: Int = find_keyword_delimited(t, "done", true);
-    return str_starts_with(t, "while ") && do_i > 0 && done_i > do_i;
+    return str_starts_with(t, "while ") && do_i > 0 && find_keyword_delimited(t, "done", true) > do_i;
 }
 
 pub fn is_if_stmt(line: String) -> Bool {
     let t: String = str_trim(line);
     let then_i: Int = find_keyword_delimited(t, "then", false);
-    let fi_i: Int = find_keyword_delimited(t, "fi", true);
-    return str_starts_with(t, "if ") && then_i > 0 && fi_i > then_i;
+    return str_starts_with(t, "if ") && then_i > 0 && find_keyword_delimited(t, "fi", true) > then_i;
 }
 
 pub fn eval_test_tokens(sys: &ProcessCap, tokens: List[String]) -> Bool {
@@ -230,6 +249,5 @@ pub fn eval_test_tokens(sys: &ProcessCap, tokens: List[String]) -> Bool {
         cmd = cmd + " \"" + list_get(tokens, i) + "\"";
         i = i + 1;
     }
-    let r: Result[String, String] = process_exec(sys, cmd);
-    return r.is_ok();
+    return process_exec(sys, cmd).is_ok();
 }

@@ -81,48 +81,23 @@ fn run_script_file(fs_r: &FsReadCap, fs_w: &FsWriteCap, sys: &ProcessCap, env: &
         return 1;
     }
     let content: String = match sr { Ok(s) => s, Err(_) => "" };
-    let n: Int = chars_len(content);
-    let mut cur: String = "";
-    let mut i: Int = 0;
-    let mut cur_rec: FlightRecord = rec;
-    let mut cur_sess: SessionState = session;
-
-    cur_sess = SessionState { cwd: cur_sess.cwd, env_map: env_map_set(cur_sess.env_map, "0", script_path), alias_map: cur_sess.alias_map, job_table: cur_sess.job_table, func_map: cur_sess.func_map };
     let num_args: Int = list_len(script_args);
-    cur_sess = SessionState { cwd: cur_sess.cwd, env_map: env_map_set(cur_sess.env_map, "#", num_args.to_string()), alias_map: cur_sess.alias_map, job_table: cur_sess.job_table, func_map: cur_sess.func_map };
+    let mut em: EnvMap = session.env_map;
+    em = env_map_set(em, "0", script_path);
+    em = env_map_set(em, "#", num_args.to_string());
     let mut all_args_str: String = "";
     let mut ai: Int = 0;
     while ai < num_args {
         let arg_val: String = list_get(script_args, ai);
-        cur_sess = SessionState { cwd: cur_sess.cwd, env_map: env_map_set(cur_sess.env_map, (ai + 1).to_string(), arg_val), alias_map: cur_sess.alias_map, job_table: cur_sess.job_table, func_map: cur_sess.func_map };
+        em = env_map_set(em, (ai + 1).to_string(), arg_val);
         all_args_str = if all_args_str == "" { arg_val } else { all_args_str + " " + arg_val };
         ai = ai + 1;
     }
-    cur_sess = SessionState { cwd: cur_sess.cwd, env_map: env_map_set(cur_sess.env_map, "@", all_args_str), alias_map: cur_sess.alias_map, job_table: cur_sess.job_table, func_map: cur_sess.func_map };
-    cur_sess = SessionState { cwd: cur_sess.cwd, env_map: env_map_set(cur_sess.env_map, "*", all_args_str), alias_map: cur_sess.alias_map, job_table: cur_sess.job_table, func_map: cur_sess.func_map };
-
-    while i < n {
-        let ch: String = char_at(content, i);
-        if ch == "\n" {
-            let line: String = str_trim(cur);
-            cur = "";
-            if line != "" && !str_starts_with(line, "#") {
-                let res: DispatchResult = dispatch_line(fs_r, fs_w, sys, env, ffi, line, cur_rec, cur_sess);
-                cur_rec = res.flight_rec;
-                cur_sess = res.session;
-                if res.should_exit || res.exit_code != 0 { return res.exit_code; }
-            }
-        } else if ch != "\r" {
-            cur = cur + ch;
-        }
-        i = i + 1;
-    }
-    let last_line: String = str_trim(cur);
-    if last_line != "" && !str_starts_with(last_line, "#") {
-        let res: DispatchResult = dispatch_line(fs_r, fs_w, sys, env, ffi, last_line, cur_rec, cur_sess);
-        return res.exit_code;
-    }
-    return 0;
+    em = env_map_set(em, "@", all_args_str);
+    em = env_map_set(em, "*", all_args_str);
+    let cur_sess: SessionState = SessionState { cwd: session.cwd, env_map: em, alias_map: session.alias_map, job_table: session.job_table, func_map: session.func_map };
+    let res: DispatchResult = dispatch_line(fs_r, fs_w, sys, env, ffi, content, rec, cur_sess);
+    return res.exit_code;
 }
 
 pub fn main(bind: &BindCap, fs_r: &FsReadCap, sys: &ProcessCap, sys_cap: &SysCap, env: &EnvCap, time: &TimeCap, fs_w: &FsWriteCap, alloc: &AllocCap, thread: &ThreadCap, ffi: &FfiCap, args: List[String]) -> Result[Int, String] {
@@ -199,26 +174,8 @@ pub fn main(bind: &BindCap, fs_r: &FsReadCap, sys: &ProcessCap, sys_cap: &SysCap
         let ooshrc_read: Result[String, String] = read_file(fs_r, ooshrc_path);
         if ooshrc_read.is_ok() {
             let rc_content: String = match ooshrc_read { Ok(s) => s, Err(_) => "" };
-            let rn: Int = chars_len(rc_content);
-            let mut rcur: String = "";
-            let mut ri: Int = 0;
-            while ri < rn {
-                let rch: String = char_at(rc_content, ri);
-                if rch == "\n" {
-                    let rline: String = str_trim(rcur);
-                    rcur = "";
-                    if rline != "" && !str_starts_with(rline, "#") {
-                        let res: DispatchResult = dispatch_line(fs_r, fs_w, sys, env, ffi, rline, rec, session);
-                        session = res.session;
-                    }
-                } else if rch != "\r" { rcur = rcur + rch; }
-                ri = ri + 1;
-            }
-            let rlast: String = str_trim(rcur);
-            if rlast != "" && !str_starts_with(rlast, "#") {
-                let res: DispatchResult = dispatch_line(fs_r, fs_w, sys, env, ffi, rlast, rec, session);
-                session = res.session;
-            }
+            let rc_res: DispatchResult = dispatch_line(fs_r, fs_w, sys, env, ffi, rc_content, rec, session);
+            session = rc_res.session;
         }
     }
 

@@ -194,7 +194,7 @@ pub fn is_caps_cmd(cmd: String) -> Bool {
 }
 
 pub fn is_rune_cmd(cmd: String) -> Bool {
-    return cmd == "rune" || str_starts_with(cmd, "rune ") || cmd == "token" || str_starts_with(cmd, "token ") || cmd == "talisman" || cmd == "dongle" || cmd == "key" || cmd == "staff" || cmd == "haptic";
+    return cmd == "rune" || cmd == "token" || cmd == "talisman" || cmd == "dongle" || cmd == "key" || cmd == "staff" || cmd == "haptic";
 }
 
 pub fn is_scry_cmd(cmd: String) -> Bool {

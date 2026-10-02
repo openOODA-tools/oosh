@@ -1,4 +1,4 @@
-# oosh v0.7.0 Makefile
+# oosh v0.8.0 Makefile
 #
 # Build, verify, and test the openOODA sovereign shell.
 #

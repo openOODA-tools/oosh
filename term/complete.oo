@@ -18,25 +18,26 @@ pub fn complete_token(fs_r: &FsReadCap, cur_line: String, alias_names: List[Stri
         if ch == " " || ch == "\t" { last_sp = i; }
         i = i + 1;
     }
-    if last_sp < 0 {
+    if last_sp < 0 && !str_contains(cur_line, "/") {
         let builtins: String = "help:version:status:caps:whereami:history:clear:remedy:autopsy:export:unset:alias:unalias:take:pwd:cd:exit:echo:scry";
         let bn: Int = chars_len(builtins);
         let mut cur: String = "";
         let mut bi: Int = 0;
+        let mut cmd_matches: List[String] = list_new();
         while bi < bn {
             let ch: String = char_at(builtins, bi);
             if ch == ":" {
-                if str_starts_with(cur, cur_line) { return cur; }
+                if str_starts_with(cur, cur_line) { cmd_matches = list_push(cmd_matches, cur); }
                 cur = "";
             } else { cur = cur + ch; }
             bi = bi + 1;
         }
-        if cur != "" && str_starts_with(cur, cur_line) { return cur; }
+        if cur != "" && str_starts_with(cur, cur_line) { cmd_matches = list_push(cmd_matches, cur); }
         let an: Int = list_len(alias_names);
         let mut ai: Int = 0;
         while ai < an {
             let aname: String = list_get(alias_names, ai);
-            if str_starts_with(aname, cur_line) { return aname; }
+            if str_starts_with(aname, cur_line) { cmd_matches = list_push(cmd_matches, aname); }
             ai = ai + 1;
         }
         let bin_entries: List[String] = oo_fs_read_dir(fs_r, "/usr/bin");
@@ -44,13 +45,41 @@ pub fn complete_token(fs_r: &FsReadCap, cur_line: String, alias_names: List[Stri
         let mut bei: Int = 0;
         while bei < ben {
             let bname: String = list_get(bin_entries, bei);
-            if str_starts_with(bname, cur_line) { return bname; }
+            if str_starts_with(bname, cur_line) { cmd_matches = list_push(cmd_matches, bname); }
             bei = bei + 1;
         }
+        let cmlen: Int = list_len(cmd_matches);
+        if cmlen == 0 { return cur_line; }
+        if cmlen == 1 { return list_get(cmd_matches, 0); }
+        let first_c: String = list_get(cmd_matches, 0);
+        let mut c_cp: Int = chars_len(first_c);
+        let mut ci: Int = 1;
+        while ci < cmlen {
+            let cand: String = list_get(cmd_matches, ci);
+            let clen: Int = chars_len(cand);
+            if clen < c_cp { c_cp = clen; }
+            let mut j: Int = 0;
+            while j < c_cp {
+                if char_at(first_c, j) != char_at(cand, j) { c_cp = j; }
+                else { j = j + 1; }
+            }
+            ci = ci + 1;
+        }
+        let c_common: String = str_slice(first_c, 0, c_cp);
+        if chars_len(c_common) > chars_len(cur_line) { return c_common; }
+        print("\r\n");
+        let mut pi: Int = 0;
+        let limit: Int = if cmlen > 30 { 30 } else { cmlen };
+        while pi < limit {
+            print(list_get(cmd_matches, pi) + "  ");
+            pi = pi + 1;
+        }
+        if cmlen > limit { print("... (" + (cmlen - limit).to_string() + " more)"); }
+        print("\r\n");
         return cur_line;
     }
-    let prefix_tok: String = str_slice(cur_line, last_sp + 1, n);
-    let prefix_head: String = str_slice(cur_line, 0, last_sp + 1);
+    let prefix_tok: String = if last_sp >= 0 { str_slice(cur_line, last_sp + 1, n) } else { cur_line };
+    let prefix_head: String = if last_sp >= 0 { str_slice(cur_line, 0, last_sp + 1) } else { "" };
     let mut sl_idx: Int = -1;
     let mut si: Int = 0;
     let plen: Int = chars_len(prefix_tok);

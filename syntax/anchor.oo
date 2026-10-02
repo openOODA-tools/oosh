@@ -1,0 +1,19 @@
+// # Syntax Subsystem Anchor Shim
+//
+// Logline: Re-exports syntax lexing, parameter expansion, globbing, and control flow.
+//
+// Setup: Bridges parser and expansion facilities across openOODA shell modules.
+//
+// Beats:
+//   1. Re-export quote-aware lexer and splitting utilities.
+//   2. Re-export command substitution and variable expansion.
+//   3. Re-export filesystem wildcard expansion and control constructs.
+
+import "lexer.oo";
+import "expand.oo";
+import "glob.oo";
+import "control.oo";
+
+pub fn syntax_anchor_probe() -> String {
+    return "syntax_ready";
+}

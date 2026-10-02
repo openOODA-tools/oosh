@@ -1,0 +1,133 @@
+// # Syntax Globbing and Wildcard Matcher
+//
+// Logline: Expands filesystem wildcards (* and ?) against directory entries.
+//
+// Setup: Requires FsReadCap to inspect directory contents and resolve pattern matches.
+//
+// Beats:
+//   1. Identify unquoted wildcard tokens (* and ?) in command arguments.
+//   2. Match filenames against wildcard patterns with hidden-file protection.
+//   3. Sort matching entries alphabetically and expand argument lists.
+
+fn glob_match_rec(pat: String, pi: Int, plen: Int, s: String, si: Int, slen: Int) -> Bool {
+    let mut p: Int = pi;
+    let mut t: Int = si;
+    while p < plen {
+        let pc: String = char_at(pat, p);
+        if pc == "*" {
+            while p + 1 < plen && char_at(pat, p + 1) == "*" { p = p + 1; }
+            if p + 1 == plen { return true; }
+            let mut k: Int = t;
+            while k <= slen {
+                if glob_match_rec(pat, p + 1, plen, s, k, slen) { return true; }
+                k = k + 1;
+            }
+            return false;
+        } else if t < slen && (pc == "?" || pc == char_at(s, t)) {
+            p = p + 1;
+            t = t + 1;
+        } else {
+            return false;
+        }
+    }
+    return t == slen;
+}
+
+pub fn matches_glob(pattern: String, name: String) -> Bool {
+    let plen: Int = chars_len(pattern);
+    let slen: Int = chars_len(name);
+    if slen > 0 && char_at(name, 0) == "." && (plen == 0 || char_at(pattern, 0) != ".") {
+        return false;
+    }
+    return glob_match_rec(pattern, 0, plen, name, 0, slen);
+}
+
+fn str_is_less(a: String, b: String) -> Bool {
+    let la: Int = chars_len(a);
+    let lb: Int = chars_len(b);
+    let min_len: Int = if la < lb { la } else { lb };
+    let mut i: Int = 0;
+    while i < min_len {
+        let ba: Int = byte_at(a, i);
+        let bb: Int = byte_at(b, i);
+        if ba < bb { return true; }
+        if ba > bb { return false; }
+        i = i + 1;
+    }
+    return la < lb;
+}
+
+fn sort_strings(items: List[String]) -> List[String] {
+    let n: Int = list_len(items);
+    let mut res: List[String] = list_new();
+    let mut i: Int = 0;
+    while i < n {
+        let cur: String = list_get(items, i);
+        let mut inserted: Bool = false;
+        let mut new_res: List[String] = list_new();
+        let rn: Int = list_len(res);
+        let mut j: Int = 0;
+        while j < rn {
+            let existing: String = list_get(res, j);
+            if !inserted && str_is_less(cur, existing) {
+                new_res = list_push(new_res, cur);
+                inserted = true;
+            }
+            new_res = list_push(new_res, existing);
+            j = j + 1;
+        }
+        if !inserted { new_res = list_push(new_res, cur); }
+        res = new_res;
+        i = i + 1;
+    }
+    return res;
+}
+
+pub fn expand_glob_token(fs_r: &FsReadCap, token: String) -> List[String] {
+    if !str_contains(token, "*") && !str_contains(token, "?") {
+        return list_push(list_new(), token);
+    }
+    let n: Int = chars_len(token);
+    let mut last_sl: Int = -1;
+    let mut i: Int = 0;
+    while i < n {
+        if char_at(token, i) == "/" { last_sl = i; }
+        i = i + 1;
+    }
+    let dir_path: String = if last_sl >= 0 { if last_sl == 0 { "/" } else { str_slice(token, 0, last_sl) } } else { "." };
+    let pat: String = if last_sl >= 0 { str_slice(token, last_sl + 1, n) } else { token };
+    let entries: List[String] = oo_fs_read_dir(fs_r, dir_path);
+    let elen: Int = list_len(entries);
+    let mut matches: List[String] = list_new();
+    let mut ei: Int = 0;
+    while ei < elen {
+        let ent: String = list_get(entries, ei);
+        if matches_glob(pat, ent) {
+            let full_match: String = if last_sl >= 0 {
+                if dir_path == "/" { "/" + ent } else { dir_path + "/" + ent }
+            } else { ent };
+            matches = list_push(matches, full_match);
+        }
+        ei = ei + 1;
+    }
+    if list_len(matches) == 0 { return list_push(list_new(), token); }
+    return sort_strings(matches);
+}
+
+pub fn expand_globs(fs_r: &FsReadCap, tokens: List[String]) -> List[String] {
+    let mut out: List[String] = list_new();
+    let n: Int = list_len(tokens);
+    let mut i: Int = 0;
+    while i < n {
+        let tok: String = list_get(tokens, i);
+        let expanded: List[String] = expand_glob_token(fs_r, tok);
+        let en: Int = list_len(expanded);
+        let mut j: Int = 0;
+        while j < en {
+            out = list_push(out, list_get(expanded, j));
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    return out;
+}

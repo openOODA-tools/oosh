@@ -1,0 +1,82 @@
+// # Job Control Table and Task Records
+//
+// Logline: Manages in-memory background job descriptors, process IDs, and run status.
+//
+// Setup: Pure data definitions representing asynchronous shell task slots.
+//
+// Beats:
+//   1. Define Job struct with task id, pid, command line, and running state.
+//   2. Maintain JobTable collection with sequential job id allocation.
+//   3. Provide lookup, insertion, update, and removal methods for background jobs.
+
+pub type Job = struct {
+    id: Int,
+    pid: Int,
+    cmd: String,
+    status: String
+};
+
+pub type JobTable = struct {
+    jobs: List[Job],
+    next_id: Int
+};
+
+pub fn job_table_new() -> JobTable {
+    let empty: List[Job] = list_new();
+    return JobTable { jobs: empty, next_id: 1 };
+}
+
+pub fn job_table_add(t: JobTable, pid: Int, cmd: String) -> JobTable {
+    let new_job: Job = Job { id: t.next_id, pid: pid, cmd: cmd, status: "Running" };
+    return JobTable {
+        jobs: list_push(t.jobs, new_job),
+        next_id: t.next_id + 1
+    };
+}
+
+pub fn job_table_get(t: JobTable, id: Int) -> Result[Job, String] {
+    let n: Int = list_len(t.jobs);
+    let mut i: Int = 0;
+    while i < n {
+        let j: Job = list_get(t.jobs, i);
+        if j.id == id { return Ok(j); }
+        i = i + 1;
+    }
+    return Err("not_found");
+}
+
+pub fn job_table_get_latest(t: JobTable) -> Result[Job, String] {
+    let n: Int = list_len(t.jobs);
+    if n == 0 { return Err("empty"); }
+    return Ok(list_get(t.jobs, n - 1));
+}
+
+pub fn job_table_update_status(t: JobTable, id: Int, new_status: String) -> JobTable {
+    let mut new_list: List[Job] = list_new();
+    let n: Int = list_len(t.jobs);
+    let mut i: Int = 0;
+    while i < n {
+        let j: Job = list_get(t.jobs, i);
+        if j.id == id {
+            new_list = list_push(new_list, Job { id: j.id, pid: j.pid, cmd: j.cmd, status: new_status });
+        } else {
+            new_list = list_push(new_list, j);
+        }
+        i = i + 1;
+    }
+    return JobTable { jobs: new_list, next_id: t.next_id };
+}
+
+pub fn job_table_remove(t: JobTable, id: Int) -> JobTable {
+    let mut new_list: List[Job] = list_new();
+    let n: Int = list_len(t.jobs);
+    let mut i: Int = 0;
+    while i < n {
+        let j: Job = list_get(t.jobs, i);
+        if j.id != id {
+            new_list = list_push(new_list, j);
+        }
+        i = i + 1;
+    }
+    return JobTable { jobs: new_list, next_id: t.next_id };
+}

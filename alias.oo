@@ -10,27 +10,24 @@
 //   3. Format active aliases, split compounds, and expand environment variables.
 
 import "std/fs/process/env.oo";
+import "syntax/anchor.oo";
+import "job/anchor.oo";
+
+fn ansi_esc() -> String {
+    return bytes_to_str(bytes_push(bytes_new(), 27));
+}
 
 pub type AliasMap = struct {
     names: List[String],
     targets: List[String]
 };
 
-pub type EnvMap = struct {
-    keys: List[String],
-    vals: List[String]
-};
-
 pub type SessionState = struct {
     cwd: String,
     env_map: EnvMap,
-    alias_map: AliasMap
-};
-
-pub type CompoundSplit = struct {
-    lhs: String,
-    op: String,
-    rhs: String
+    alias_map: AliasMap,
+    job_table: JobTable,
+    func_map: FunctionMap
 };
 
 pub fn alias_map_new() -> AliasMap {
@@ -101,149 +98,134 @@ pub fn alias_expand(m: AliasMap, line: String) -> String {
 }
 
 pub fn split_cmd_tokens(cmd: String) -> List[String] {
-    let mut tokens: List[String] = list_new();
-    let n: Int = chars_len(cmd);
-    let mut cur: String = "";
-    let mut in_q: Bool = false;
-    let mut q_ch: String = "";
-    let mut i: Int = 0;
-    while i < n {
-        let ch: String = char_at(cmd, i);
-        if in_q {
-            if ch == q_ch { in_q = false; q_ch = ""; } else { cur = cur + ch; }
-        } else if ch == "\"" || ch == "'" {
-            in_q = true; q_ch = ch;
-        } else if ch == " " || ch == "\t" {
-            if cur != "" { tokens = list_push(tokens, cur); cur = ""; }
-        } else { cur = cur + ch; }
-        i = i + 1;
-    }
-    if cur != "" { tokens = list_push(tokens, cur); }
-    return tokens;
-}
-
-pub fn env_map_new() -> EnvMap {
-    let empty_k: List[String] = list_new();
-    let empty_v: List[String] = list_new();
-    return EnvMap { keys: empty_k, vals: empty_v };
-}
-
-pub fn env_map_get(m: EnvMap, key: String) -> Result[String, String] {
-    let n: Int = list_len(m.keys);
-    let mut i: Int = 0;
-    while i < n {
-        if list_get(m.keys, i) == key { return Ok(list_get(m.vals, i)); }
-        i = i + 1;
-    }
-    return Err("not_found");
-}
-
-pub fn env_map_remove(m: EnvMap, key: String) -> EnvMap {
-    let mut new_k: List[String] = list_new();
-    let mut new_v: List[String] = list_new();
-    let n: Int = list_len(m.keys);
-    let mut i: Int = 0;
-    while i < n {
-        let cur_k: String = list_get(m.keys, i);
-        if cur_k != key {
-            new_k = list_push(new_k, cur_k); new_v = list_push(new_v, list_get(m.vals, i));
-        }
-        i = i + 1;
-    }
-    return EnvMap { keys: new_k, vals: new_v };
-}
-
-pub fn env_map_set(m: EnvMap, key: String, val: String) -> EnvMap {
-    let rem: EnvMap = env_map_remove(m, key);
-    return EnvMap { keys: list_push(rem.keys, key), vals: list_push(rem.vals, val) };
+    return split_cmd_tokens_quote_aware(cmd);
 }
 
 pub fn session_state_new(init_cwd: String, init_aliases: AliasMap) -> SessionState {
     return SessionState {
         cwd: init_cwd,
         env_map: env_map_new(),
-        alias_map: init_aliases
+        alias_map: init_aliases,
+        job_table: job_table_new(),
+        func_map: func_map_new()
     };
 }
 
 pub fn find_compound_op(cmd: String) -> CompoundSplit {
-    let n: Int = chars_len(cmd);
-    let mut in_s: Bool = false;
-    let mut in_d: Bool = false;
-    let mut i: Int = 0;
-    while i < n {
-        let ch: String = char_at(cmd, i);
-        if ch == "'" && !in_d { in_s = !in_s; }
-        else if ch == "\"" && !in_s { in_d = !in_d; }
-        else if !in_s && !in_d {
-            if ch == ";" {
-                return CompoundSplit { lhs: str_trim(str_slice(cmd, 0, i)), op: ";", rhs: str_trim(str_slice(cmd, i + 1, n)) };
-            }
-            if i + 1 < n {
-                let next_ch: String = char_at(cmd, i + 1);
-                if ch == "&" && next_ch == "&" {
-                    return CompoundSplit { lhs: str_trim(str_slice(cmd, 0, i)), op: "&&", rhs: str_trim(str_slice(cmd, i + 2, n)) };
-                }
-                if ch == "|" && next_ch == "|" {
-                    return CompoundSplit { lhs: str_trim(str_slice(cmd, 0, i)), op: "||", rhs: str_trim(str_slice(cmd, i + 2, n)) };
-                }
-            }
-        }
-        i = i + 1;
-    }
-    return CompoundSplit { lhs: cmd, op: "", rhs: "" };
+    return find_compound_split(cmd);
 }
 
 pub fn expand_env_vars(env: &EnvCap, session: SessionState, last_rc: Int, line: String) -> String {
-    let n: Int = chars_len(line);
-    let mut out: String = "";
-    let mut in_s: Bool = false;
-    let mut i: Int = 0;
-    while i < n {
-        let ch: String = char_at(line, i);
-        if ch == "'" { in_s = !in_s; out = out + ch; i = i + 1; }
-        else if ch == "$" && !in_s && i + 1 < n {
-            let next_ch: String = char_at(line, i + 1);
-            if next_ch == "?" {
-                out = out + last_rc.to_string();
-                i = i + 2;
-            } else if next_ch == "{" {
-                let mut close_idx: Int = -1;
-                let mut ci: Int = i + 2;
-                while ci < n {
-                    if char_at(line, ci) == "}" { close_idx = ci; ci = n; }
-                    else { ci = ci + 1; }
-                }
-                if close_idx >= 0 {
-                    let k: String = str_slice(line, i + 2, close_idx);
-                    let val: String = match env_map_get(session.env_map, k) {
-                        Ok(v) => v,
-                        Err(_) => match env_get(env, k) { Ok(ev) => ev, Err(_) => "" }
-                    };
-                    out = out + val;
-                    i = close_idx + 1;
-                } else { out = out + "${"; i = i + 2; }
-            } else {
-                let mut vi: Int = i + 1;
-                let mut var_name: String = "";
-                while vi < n {
-                    let vc: String = char_at(line, vi);
-                    let vb: Int = byte_at(vc, 0);
-                    if (vb >= 65 && vb <= 90) || (vb >= 97 && vb <= 122) || (vb >= 48 && vb <= 57) || vb == 95 {
-                        var_name = var_name + vc;
-                        vi = vi + 1;
-                    } else { vi = n; }
-                }
-                if chars_len(var_name) > 0 {
-                    let val: String = match env_map_get(session.env_map, var_name) {
-                        Ok(v) => v,
-                        Err(_) => match env_get(env, var_name) { Ok(ev) => ev, Err(_) => "" }
-                    };
-                    out = out + val;
-                    i = i + 1 + chars_len(var_name);
-                } else { out = out + "$"; i = i + 1; }
-            }
-        } else { out = out + ch; i = i + 1; }
+    return expand_variables_safe(env, session.env_map, last_rc, line);
+}
+
+pub fn is_bare_assignment(line: String) -> Bool {
+    let t: String = str_trim(line);
+    let eq_pos: Int = str_index_of(t, "=");
+    if eq_pos <= 0 { return false; }
+    if str_starts_with(t, "==") || (eq_pos + 1 < chars_len(t) && char_at(t, eq_pos + 1) == "=") { return false; }
+    let first: String = char_at(t, 0);
+    let fb: Int = byte_at(first, 0);
+    if !((fb >= 65 && fb <= 90) || (fb >= 97 && fb <= 122) || fb == 95) { return false; }
+    let mut i: Int = 1;
+    while i < eq_pos {
+        let c: String = char_at(t, i);
+        let b: Int = byte_at(c, 0);
+        if !((b >= 65 && b <= 90) || (b >= 97 && b <= 122) || (b >= 48 && b <= 57) || b == 95) {
+            return false;
+        }
+        i = i + 1;
     }
-    return out;
+    return true;
+}
+
+pub fn is_session_builtin(line: String) -> Bool {
+    return line == "echo" || str_starts_with(line, "echo ") ||
+           line == "history" || line == "hist" || line == "past" || line == "recall" ||
+           line == "alias" || str_starts_with(line, "alias ") ||
+           str_starts_with(line, "unalias ") ||
+           line == "export" || str_starts_with(line, "export ") ||
+           str_starts_with(line, "unset ") ||
+           is_bare_assignment(line);
+}
+
+pub fn dispatch_session_builtin(ffi: &FfiCap, fs_r: &FsReadCap, sys: &ProcessCap, env: &EnvCap, cwd: String, line: String, session: SessionState) -> Result[SessionState, String] {
+    let esc: String = ansi_esc();
+    if line == "echo" { println(""); return Ok(session); }
+    if str_starts_with(line, "echo ") {
+        let raw_e: String = str_slice(line, 5, chars_len(line));
+        let toks: List[String] = split_cmd_tokens(raw_e);
+        let gtoks: List[String] = expand_globs(fs_r, toks);
+        let mut out: String = "";
+        let gn: Int = list_len(gtoks);
+        let mut gi: Int = 0;
+        while gi < gn {
+            let t: String = list_get(gtoks, gi);
+            out = if out == "" { t } else { out + " " + t };
+            gi = gi + 1;
+        }
+        println(out);
+        return Ok(session);
+    }
+    if line == "history" || line == "hist" || line == "past" || line == "recall" {
+        let home: String = match env_get(env, "HOME") { Ok(h) => h, Err(_) => "" };
+        let h_str: String = match read_file(fs_r, home + "/.oosh_history") { Ok(s) => s, Err(_) => "No history available\n" };
+        print(h_str); if !str_ends_with(h_str, "\n") { println(""); }
+        return Ok(session);
+    }
+    if line == "alias" { print(format_aliases(session.alias_map)); return Ok(session); }
+    if str_starts_with(line, "alias ") {
+        let rest: String = str_trim(str_slice(line, 6, chars_len(line)));
+        let eq_pos: Int = str_index_of(rest, "=");
+        if eq_pos > 0 {
+            let aname: String = str_trim(str_slice(rest, 0, eq_pos));
+            let raw_val: String = str_trim(str_slice(rest, eq_pos + 1, chars_len(rest)));
+            let rlen: Int = chars_len(raw_val);
+            let aval: String = if rlen >= 2 && ((str_starts_with(raw_val, "\"") && str_ends_with(raw_val, "\"")) || (str_starts_with(raw_val, "'") && str_ends_with(raw_val, "'"))) { str_slice(raw_val, 1, rlen - 1) } else { raw_val };
+            return Ok(SessionState { cwd: cwd, env_map: session.env_map, alias_map: alias_map_set(session.alias_map, aname, aval), job_table: session.job_table, func_map: session.func_map });
+        }
+        return Ok(session);
+    }
+    if str_starts_with(line, "unalias ") {
+        let aname: String = str_trim(str_slice(line, 8, chars_len(line)));
+        return Ok(SessionState { cwd: cwd, env_map: session.env_map, alias_map: alias_map_remove(session.alias_map, aname), job_table: session.job_table, func_map: session.func_map });
+    }
+    if line == "export" {
+        let n: Int = list_len(session.env_map.keys);
+        let mut i: Int = 0;
+        while i < n {
+            println("export " + list_get(session.env_map.keys, i) + "=\"" + list_get(session.env_map.vals, i) + "\"");
+            i = i + 1;
+        }
+        return Ok(session);
+    }
+    if str_starts_with(line, "export ") {
+        let rest: String = str_trim(str_slice(line, 7, chars_len(line)));
+        let eq_pos: Int = str_index_of(rest, "=");
+        if eq_pos > 0 {
+            let vname: String = str_trim(str_slice(rest, 0, eq_pos));
+            let raw_val: String = str_trim(str_slice(rest, eq_pos + 1, chars_len(rest)));
+            let rlen: Int = chars_len(raw_val);
+            let vval: String = if rlen >= 2 && ((str_starts_with(raw_val, "\"") && str_ends_with(raw_val, "\"")) || (str_starts_with(raw_val, "'") && str_ends_with(raw_val, "'"))) { str_slice(raw_val, 1, rlen - 1) } else { raw_val };
+            let _ = oo_tui_write(ffi, esc + "_set:" + vname + "=" + vval);
+            return Ok(SessionState { cwd: cwd, env_map: env_map_set(session.env_map, vname, vval), alias_map: session.alias_map, job_table: session.job_table, func_map: session.func_map });
+        }
+        return Ok(session);
+    }
+    if str_starts_with(line, "unset ") {
+        let vname: String = str_trim(str_slice(line, 6, chars_len(line)));
+        let _ = oo_tui_write(ffi, esc + "_unset:" + vname);
+        return Ok(SessionState { cwd: cwd, env_map: env_map_remove(session.env_map, vname), alias_map: session.alias_map, job_table: session.job_table, func_map: session.func_map });
+    }
+    if is_bare_assignment(line) {
+        let rest: String = str_trim(line);
+        let eq_pos: Int = str_index_of(rest, "=");
+        let vname: String = str_trim(str_slice(rest, 0, eq_pos));
+        let raw_val: String = str_trim(str_slice(rest, eq_pos + 1, chars_len(rest)));
+        let rlen: Int = chars_len(raw_val);
+        let vval: String = if rlen >= 2 && ((str_starts_with(raw_val, "\"") && str_ends_with(raw_val, "\"")) || (str_starts_with(raw_val, "'") && str_ends_with(raw_val, "'"))) { str_slice(raw_val, 1, rlen - 1) } else { raw_val };
+        let _ = oo_tui_write(ffi, esc + "_set:" + vname + "=" + vval);
+        return Ok(SessionState { cwd: cwd, env_map: env_map_set(session.env_map, vname, vval), alias_map: session.alias_map, job_table: session.job_table, func_map: session.func_map });
+    }
+    return Err("builtin failed");
 }

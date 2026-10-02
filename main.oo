@@ -74,7 +74,7 @@ fn validate_argv(args: List[String]) -> Result[String, String] {
     return Ok("validated");
 }
 
-fn run_script_file(fs_r: &FsReadCap, fs_w: &FsWriteCap, sys: &ProcessCap, env: &EnvCap, ffi: &FfiCap, script_path: String, rec: FlightRecord, session: SessionState) -> Int {
+fn run_script_file(fs_r: &FsReadCap, fs_w: &FsWriteCap, sys: &ProcessCap, env: &EnvCap, ffi: &FfiCap, script_path: String, script_args: List[String], rec: FlightRecord, session: SessionState) -> Int {
     let sr: Result[String, String] = read_file(fs_r, script_path);
     if sr.is_err() {
         println("ERR\toosh\tcannot read script: " + script_path);
@@ -86,6 +86,20 @@ fn run_script_file(fs_r: &FsReadCap, fs_w: &FsWriteCap, sys: &ProcessCap, env: &
     let mut i: Int = 0;
     let mut cur_rec: FlightRecord = rec;
     let mut cur_sess: SessionState = session;
+
+    cur_sess = SessionState { cwd: cur_sess.cwd, env_map: env_map_set(cur_sess.env_map, "0", script_path), alias_map: cur_sess.alias_map, job_table: cur_sess.job_table, func_map: cur_sess.func_map };
+    let num_args: Int = list_len(script_args);
+    cur_sess = SessionState { cwd: cur_sess.cwd, env_map: env_map_set(cur_sess.env_map, "#", num_args.to_string()), alias_map: cur_sess.alias_map, job_table: cur_sess.job_table, func_map: cur_sess.func_map };
+    let mut all_args_str: String = "";
+    let mut ai: Int = 0;
+    while ai < num_args {
+        let arg_val: String = list_get(script_args, ai);
+        cur_sess = SessionState { cwd: cur_sess.cwd, env_map: env_map_set(cur_sess.env_map, (ai + 1).to_string(), arg_val), alias_map: cur_sess.alias_map, job_table: cur_sess.job_table, func_map: cur_sess.func_map };
+        all_args_str = if all_args_str == "" { arg_val } else { all_args_str + " " + arg_val };
+        ai = ai + 1;
+    }
+    cur_sess = SessionState { cwd: cur_sess.cwd, env_map: env_map_set(cur_sess.env_map, "@", all_args_str), alias_map: cur_sess.alias_map, job_table: cur_sess.job_table, func_map: cur_sess.func_map };
+    cur_sess = SessionState { cwd: cur_sess.cwd, env_map: env_map_set(cur_sess.env_map, "*", all_args_str), alias_map: cur_sess.alias_map, job_table: cur_sess.job_table, func_map: cur_sess.func_map };
 
     while i < n {
         let ch: String = char_at(content, i);
@@ -209,12 +223,12 @@ pub fn main(bind: &BindCap, fs_r: &FsReadCap, sys: &ProcessCap, sys_cap: &SysCap
     }
 
     if script_file != "" {
-        let s_rc: Int = run_script_file(fs_r, fs_w, sys, env, ffi, script_file, rec, session);
+        let s_rc: Int = run_script_file(fs_r, fs_w, sys, env, ffi, script_file, script_args, rec, session);
         if s_rc != 0 { process_exit(s_rc); }
         return Ok(s_rc);
     }
 
-    let rc: Int = run_engine(fs_r, sys, env, time, bind, fs_w, ffi, session.alias_map);
+    let rc: Int = run_engine(fs_r, sys, env, time, bind, fs_w, ffi, session);
     if rc != 0 { process_exit(rc); }
     return Ok(rc);
 }

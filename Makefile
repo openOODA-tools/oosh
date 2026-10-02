@@ -1,4 +1,4 @@
-# oosh v0.6.1 Makefile
+# oosh v0.7.0 Makefile
 #
 # Build, verify, and test the openOODA sovereign shell.
 #
@@ -25,7 +25,10 @@ SRC := main.oo version.oo anchor.oo prompt.oo dispatch.oo engine.oo manual.oo al
        diagnostics/anchor.oo flight/anchor.oo flight/envelope.oo flight/telemetry.oo flight/remedy.oo flight/rules.oo \
        intent/anchor.oo intent/scanner.oo intent/context.oo intent/safety.oo intent/synthesize.oo intent/preview.oo \
        ipc/anchor.oo ipc/varlink.oo ipc/daemon.oo \
-       term/anchor.oo term/raw.oo term/read.oo term/line.oo term/history.oo
+       term/anchor.oo term/raw.oo term/read.oo term/line.oo term/history.oo term/complete.oo \
+       syntax/anchor.oo syntax/lexer.oo syntax/expand.oo syntax/glob.oo syntax/control.oo \
+       exec/anchor.oo exec/pipe.oo exec/nav.oo \
+       job/anchor.oo job/table.oo job/control.oo
 
 .PHONY: all build test parity line-cap file-law academy check verify install clean test-e2e test-tier1 test-tier2 test-tier3 test-tier4 test-tier5
 
@@ -94,6 +97,24 @@ test: $(BIN)
 	@test "$$(./$(BIN) -c 'alias ll="echo alias_pass" && ll')" = "alias_pass" && echo "PASS: alias ll=... && ll"
 	@echo "=== testing script file execution ==="
 	@printf "echo script_run_ok\n" > /tmp/test_oosh_run.oosh && ./$(BIN) /tmp/test_oosh_run.oosh | grep -q "script_run_ok" && rm -f /tmp/test_oosh_run.oosh && echo "PASS: script file execution"
+	@echo "=== testing quote-safe redirection (echo \"a > b\") ==="
+	@rm -f b_test && ./$(BIN) -c 'echo "hello > world"' | grep -q "hello > world" && test ! -f b_test && echo "PASS: quote-safe redirection"
+	@echo "=== testing script positional arguments (\$1, \$#, \$@) ==="
+	@printf "echo arg1=\$$1 count=\$$# all=\$$@\n" > /tmp/test_args.oosh && test "$$(./$(BIN) /tmp/test_args.oosh foo bar baz)" = "arg1=foo count=3 all=foo bar baz" && rm -f /tmp/test_args.oosh && echo "PASS: script positional args"
+	@echo "=== testing built-in pipeline (whereami | grep Location) ==="
+	@./$(BIN) -c "whereami | grep Location" | grep -q "Location:" && echo "PASS: built-in pipeline whereami"
+	@echo "=== testing command substitution \$(echo ...) ==="
+	@test "$$(./$(BIN) -c 'echo sub_$$(echo nested)')" = "sub_nested" && echo "PASS: command substitution"
+	@echo "=== testing glob wildcard expansion (*.oo) ==="
+	@./$(BIN) -c 'echo *.oo' | grep -q "main.oo" && echo "PASS: glob wildcard expansion"
+	@echo "=== testing for loop ==="
+	@test "$$(./$(BIN) -c 'for x in a b c; do echo item_$$x; done')" = "$$(printf "item_a\nitem_b\nitem_c")" && echo "PASS: for loop"
+	@echo "=== testing while loop ==="
+	@test "$$(./$(BIN) -c 'x=0; while test "$$x" != "done"; do echo running_$$x; x=done; done')" = "running_0" && echo "PASS: while loop"
+	@echo "=== testing if/else conditional ==="
+	@test "$$(./$(BIN) -c 'if test 1 -eq 1; then echo matched; else echo failed; fi')" = "matched" && echo "PASS: if conditional"
+	@echo "=== testing background job execution and jobs builtin ==="
+	@printf "sleep 0.1 &\njobs\n" | ./$(BIN) --no-banner | grep -q "sleep 0.1" && echo "PASS: background jobs"
 
 test-e2e: $(BIN) test-tier1 test-tier2 test-tier3 test-tier4 test-tier5
 	@echo "=================================================="

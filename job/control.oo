@@ -1,0 +1,117 @@
+// # Job Control Subsystem Controller
+//
+// Logline: Dispatches background processes and manages jobs, fg, and bg builtins.
+//
+// Setup: Interacts with process groups and terminal control via FfiCap APC channel.
+//
+// Beats:
+//   1. Spawn background command in detached process group and print job badge.
+//   2. Poll asynchronous process status via WNOHANG query.
+//   3. Bring background process to foreground with tcsetpgrp handover.
+
+import "table.oo";
+
+fn ansi_esc() -> String {
+    return bytes_to_str(bytes_push(bytes_new(), 27));
+}
+
+fn parse_int(s: String) -> Int {
+    let mut acc: Int = 0;
+    let len: Int = chars_len(s);
+    let mut i: Int = 0;
+    while i < len {
+        let c: String = char_at(s, i);
+        let digit: Int = if c == "0" { 0 } else if c == "1" { 1 } else if c == "2" { 2 } else if c == "3" { 3 } else if c == "4" { 4 } else if c == "5" { 5 } else if c == "6" { 6 } else if c == "7" { 7 } else if c == "8" { 8 } else if c == "9" { 9 } else { -1 };
+        if digit >= 0 { acc = acc * 10 + digit; }
+        i = i + 1;
+    }
+    return acc;
+}
+
+pub fn spawn_background(ffi: &FfiCap, t: JobTable, cmd: String) -> JobTable {
+    let esc: String = ansi_esc();
+    let apc_cmd: String = esc + "_bg:" + cmd;
+    let res = oo_tui_write(ffi, apc_cmd);
+    let pid_str: String = match res { Ok(s) => str_trim(s), Err(_) => "" };
+    let pid: Int = parse_int(pid_str);
+    let cur_id: Int = t.next_id;
+    println("[" + cur_id.to_string() + "] " + pid.to_string());
+    return job_table_add(t, pid, cmd);
+}
+
+pub fn sync_job_table(ffi: &FfiCap, t: JobTable) -> JobTable {
+    let esc: String = ansi_esc();
+    let n: Int = list_len(t.jobs);
+    let mut cur_t: JobTable = t;
+    let mut i: Int = 0;
+    while i < n {
+        let j: Job = list_get(cur_t.jobs, i);
+        let res = oo_tui_write(ffi, esc + "_job_poll:" + j.pid.to_string());
+        let st: String = match res { Ok(s) => str_trim(s), Err(_) => "Done" };
+        cur_t = job_table_update_status(cur_t, j.id, st);
+        i = i + 1;
+    }
+    return cur_t;
+}
+
+pub fn format_jobs_list(ffi: &FfiCap, t: JobTable) -> String {
+    let synced: JobTable = sync_job_table(ffi, t);
+    let n: Int = list_len(synced.jobs);
+    if n == 0 { return ""; }
+    let mut out: String = "";
+    let mut i: Int = 0;
+    while i < n {
+        let j: Job = list_get(synced.jobs, i);
+        let mark: String = if i == n - 1 { "+" } else { "-" };
+        out = out + "[" + j.id.to_string() + "]" + mark + "  " + j.status + "  " + j.cmd + " &\n";
+        i = i + 1;
+    }
+    return out;
+}
+
+pub fn resume_foreground(ffi: &FfiCap, t: JobTable, job_spec: String) -> Int {
+    let target_id: Int = if job_spec == "" || job_spec == "%" || job_spec == "%+" {
+        let lr: Result[Job, String] = job_table_get_latest(t);
+        match lr { Ok(j) => j.id, Err(_) => -1 }
+    } else if str_starts_with(job_spec, "%") {
+        parse_int(str_slice(job_spec, 1, chars_len(job_spec)))
+    } else {
+        parse_int(job_spec)
+    };
+    if target_id < 0 {
+        println("oosh: fg: current: no such job");
+        return 1;
+    }
+    let jr: Result[Job, String] = job_table_get(t, target_id);
+    if jr.is_err() {
+        println("oosh: fg: %" + target_id.to_string() + ": no such job");
+        return 1;
+    }
+    let j: Job = match jr { Ok(v) => v, Err(_) => Job { id: 0, pid: 0, cmd: "", status: "" } };
+    println(j.cmd);
+    let esc: String = ansi_esc();
+    let res = oo_tui_write(ffi, esc + "_job_fg:" + j.pid.to_string());
+    let rc_str: String = match res { Ok(s) => str_trim(s), Err(_) => "0" };
+    return parse_int(rc_str);
+}
+
+pub fn is_job_cmd(line: String) -> Bool {
+    return line == "jobs" || line == "fg" || str_starts_with(line, "fg ") || line == "bg" || str_starts_with(line, "bg ");
+}
+
+pub fn dispatch_job_cmd(ffi: &FfiCap, line: String, t: JobTable) -> Result[JobTable, String] {
+    if line == "jobs" {
+        print(format_jobs_list(ffi, t));
+        return Ok(t);
+    }
+    if line == "fg" || str_starts_with(line, "fg ") {
+        let spec: String = if line == "fg" { "" } else { str_trim(str_slice(line, 3, chars_len(line))) };
+        let rc: Int = resume_foreground(ffi, t, spec);
+        return if rc == 0 { Ok(t) } else { Err("foreground failed") };
+    }
+    if line == "bg" || str_starts_with(line, "bg ") {
+        return Ok(sync_job_table(ffi, t));
+    }
+    return Err("job command failed");
+}
+

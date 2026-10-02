@@ -1,0 +1,21 @@
+// # Execution Subsystem Anchor Shim
+//
+// Logline: Re-exports pipeline streaming, redirection, and directory navigation facilities.
+//
+// Setup: Bridges execution capabilities across openOODA shell submodules.
+//
+// Beats:
+//   1. Re-export kernel anonymous pipe streaming and file redirection.
+//   2. Re-export navigation command inspection and path resolution.
+//   3. Re-export directory mutation handlers.
+
+import "pipe.oo";
+import "nav.oo";
+
+pub fn exec_pipe_stream(ffi: &FfiCap, out_str: String, rhs: String) -> Int {
+    return route_builtin_pipeline(ffi, out_str, rhs);
+}
+
+pub fn exec_pipe_redirect(fs_w: &FsWriteCap, out_str: String, cwd: String, target_file: String, is_append: Bool) -> Int {
+    return route_builtin_redirection(fs_w, out_str, cwd, target_file, is_append);
+}

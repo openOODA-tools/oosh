@@ -1,0 +1,62 @@
+// # Execution Navigation Controller
+//
+// Logline: Mutates working directory and handles cd, chdir, and atomic take workflows.
+//
+// Setup: Requires FfiCap and EnvCap to update process working directory and environment.
+//
+// Beats:
+//   1. Resolve target directory from bare shortcuts (.., ..., ....) and paths (~, -).
+//   2. Update directory state via APC channel without subprocess spawn.
+//   3. Support ergonomic atomic directory creation and entry (take, mkcd).
+
+import "std/fs/process/env.oo";
+
+fn ansi_esc() -> String {
+    return bytes_to_str(bytes_push(bytes_new(), 27));
+}
+
+fn resolve_cd_target(line: String, cwd: String, home: String, oldpwd: String) -> String {
+    let raw_t: String = if line == ".." { ".." } else if line == "..." { "../.." } else if line == "...." { "../../.." } else if line == "-" { "-" } else if line == "cd" || line == "chdir" || line == "goto" || line == "jump" || line == "walk" { "~" } else if str_starts_with(line, "cd ") { str_slice(line, 3, chars_len(line)) } else if str_starts_with(line, "chdir ") { str_slice(line, 6, chars_len(line)) } else { str_slice(line, 5, chars_len(line)) };
+    let clean_t: String = str_trim(raw_t);
+    if clean_t == "~" || clean_t == "" { return home; }
+    if clean_t == "-" { return oldpwd; }
+    if str_starts_with(clean_t, "~/") { return home + str_slice(clean_t, 1, chars_len(clean_t)); }
+    return clean_t;
+}
+
+pub fn is_nav_cmd(line: String) -> Bool {
+    return line == ".." || line == "..." || line == "...." || line == "-" || line == "cd" || line == "chdir" || line == "goto" || line == "jump" || line == "walk" || str_starts_with(line, "cd ") || str_starts_with(line, "chdir ") || str_starts_with(line, "goto ") || str_starts_with(line, "jump ") || str_starts_with(line, "walk ");
+}
+
+pub fn is_take_cmd(line: String) -> Bool {
+    return str_starts_with(line, "take ") || str_starts_with(line, "mkcd ") || str_starts_with(line, "mcd ") || str_starts_with(line, "mdcd ");
+}
+
+pub fn dispatch_nav_cd(ffi: &FfiCap, env: &EnvCap, cwd: String, line: String) -> Result[String, String] {
+    let esc: String = ansi_esc();
+    let home: String = match env_get(env, "HOME") { Ok(h) => h, Err(_) => "" };
+    let oldpwd: String = match env_get(env, "OLDPWD") { Ok(o) => o, Err(_) => cwd };
+    let target_dir: String = resolve_cd_target(line, cwd, home, oldpwd);
+    let cd_res = oo_tui_write(ffi, esc + "_cd:" + target_dir);
+    if cd_res.is_err() {
+        println("oosh: cd: " + target_dir + ": No such file or directory");
+        return Err("not_found");
+    }
+    let resolved: String = match cd_res { Ok(d) => str_trim(d), Err(_) => cwd };
+    let _ = oo_tui_write(ffi, esc + "_set:OLDPWD=" + cwd);
+    return Ok(resolved);
+}
+
+pub fn dispatch_nav_take(ffi: &FfiCap, env: &EnvCap, cwd: String, line: String) -> Result[String, String] {
+    let esc: String = ansi_esc();
+    let clean_t: String = str_trim(str_slice(line, str_index_of(line, " ") + 1, chars_len(line)));
+    let home: String = match env_get(env, "HOME") { Ok(h) => h, Err(_) => "" };
+    let target_dir: String = if str_starts_with(clean_t, "~/") { home + str_slice(clean_t, 1, chars_len(clean_t)) } else { clean_t };
+    if oo_tui_write(ffi, esc + "_mkdir:" + target_dir).is_err() {
+        println("oosh: mkdir: cannot create directory '" + clean_t + "'");
+        return Err("mkdir_failed");
+    }
+    let resolved: String = match oo_tui_write(ffi, esc + "_cd:" + target_dir) { Ok(d) => str_trim(d), Err(_) => cwd };
+    let _ = oo_tui_write(ffi, esc + "_set:OLDPWD=" + cwd);
+    return Ok(resolved);
+}

@@ -9,11 +9,13 @@
 //   2. Re-export escape sequence reader and key events.
 //   3. Re-export in-memory line buffer editor.
 //   4. Re-export persistent command history storage.
+//   5. Re-export tab completion engine.
 
 import "raw.oo";
 import "read.oo";
 import "line.oo";
 import "history.oo";
+import "complete.oo";
 
 pub fn term_enable(ffi: &FfiCap) -> Result[String, String] {
     return term_enable_raw(ffi);
@@ -33,4 +35,8 @@ pub fn term_line_new() -> LineEditor {
 
 pub fn term_history_load(fs_r: &FsReadCap, env: &EnvCap) -> HistoryState {
     return history_load(fs_r, env);
+}
+
+pub fn term_complete(fs_r: &FsReadCap, cur_line: String, alias_names: List[String]) -> String {
+    return complete_token(fs_r, cur_line, alias_names);
 }

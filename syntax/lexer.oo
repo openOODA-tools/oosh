@@ -1,0 +1,178 @@
+// # Syntax Lexer and Tokenizer
+//
+// Logline: Quote-aware tokenization and operator splitting for commands, pipes, and redirects.
+//
+// Setup: Pure string manipulation tracking single, double, and backslash escape states.
+//
+// Beats:
+//   1. Track quotes and escapes to locate top-level compound operators (;, &&, ||).
+//   2. Locate unquoted pipe (|) and redirection (>, >>, <) splitters safely.
+//   3. Tokenize command arguments preserving quoted strings and escaping.
+
+pub type CompoundSplit = struct {
+    lhs: String,
+    op: String,
+    rhs: String
+};
+
+pub type RedirectSplit = struct {
+    lhs: String,
+    op: String,
+    target: String,
+    found: Bool
+};
+
+pub fn find_compound_split(cmd: String) -> CompoundSplit {
+    let n: Int = chars_len(cmd);
+    let mut in_s: Bool = false;
+    let mut in_d: Bool = false;
+    let mut esc: Bool = false;
+    let mut i: Int = 0;
+    while i < n {
+        let ch: String = char_at(cmd, i);
+        if esc { esc = false; }
+        else if ch == "\\" && !in_s { esc = true; }
+        else if ch == "'" && !in_d { in_s = !in_s; }
+        else if ch == "\"" && !in_s { in_d = !in_d; }
+        else if !in_s && !in_d {
+            if ch == ";" {
+                return CompoundSplit { lhs: str_trim(str_slice(cmd, 0, i)), op: ";", rhs: str_trim(str_slice(cmd, i + 1, n)) };
+            }
+            if i + 1 < n {
+                let nxt: String = char_at(cmd, i + 1);
+                if ch == "&" && nxt == "&" {
+                    return CompoundSplit { lhs: str_trim(str_slice(cmd, 0, i)), op: "&&", rhs: str_trim(str_slice(cmd, i + 2, n)) };
+                }
+                if ch == "|" && nxt == "|" {
+                    return CompoundSplit { lhs: str_trim(str_slice(cmd, 0, i)), op: "||", rhs: str_trim(str_slice(cmd, i + 2, n)) };
+                }
+            }
+        }
+        i = i + 1;
+    }
+    return CompoundSplit { lhs: cmd, op: "", rhs: "" };
+}
+
+pub fn find_unquoted_pipe(cmd: String) -> Int {
+    let n: Int = chars_len(cmd);
+    let mut in_s: Bool = false;
+    let mut in_d: Bool = false;
+    let mut esc: Bool = false;
+    let mut i: Int = 0;
+    while i < n {
+        let ch: String = char_at(cmd, i);
+        if esc { esc = false; }
+        else if ch == "\\" && !in_s { esc = true; }
+        else if ch == "'" && !in_d { in_s = !in_s; }
+        else if ch == "\"" && !in_s { in_d = !in_d; }
+        else if !in_s && !in_d {
+            if ch == "|" {
+                let is_double_prev: Bool = i > 0 && char_at(cmd, i - 1) == "|";
+                let is_double_next: Bool = i + 1 < n && char_at(cmd, i + 1) == "|";
+                if !is_double_prev && !is_double_next { return i; }
+            }
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+pub fn find_unquoted_redirect(cmd: String) -> RedirectSplit {
+    let n: Int = chars_len(cmd);
+    let mut in_s: Bool = false;
+    let mut in_d: Bool = false;
+    let mut esc: Bool = false;
+    let mut i: Int = 0;
+    while i < n {
+        let ch: String = char_at(cmd, i);
+        if esc { esc = false; }
+        else if ch == "\\" && !in_s { esc = true; }
+        else if ch == "'" && !in_d { in_s = !in_s; }
+        else if ch == "\"" && !in_s { in_d = !in_d; }
+        else if !in_s && !in_d {
+            if ch == ">" {
+                if i + 1 < n && char_at(cmd, i + 1) == ">" {
+                    let lhs: String = str_trim(str_slice(cmd, 0, i));
+                    let tgt: String = str_trim(str_slice(cmd, i + 2, n));
+                    return RedirectSplit { lhs: lhs, op: ">>", target: tgt, found: true };
+                }
+                let lhs: String = str_trim(str_slice(cmd, 0, i));
+                let tgt: String = str_trim(str_slice(cmd, i + 1, n));
+                return RedirectSplit { lhs: lhs, op: ">", target: tgt, found: true };
+            }
+            if ch == "<" {
+                let lhs: String = str_trim(str_slice(cmd, 0, i));
+                let tgt: String = str_trim(str_slice(cmd, i + 1, n));
+                return RedirectSplit { lhs: lhs, op: "<", target: tgt, found: true };
+            }
+        }
+        i = i + 1;
+    }
+    return RedirectSplit { lhs: cmd, op: "", target: "", found: false };
+}
+
+pub fn has_unquoted_background(cmd: String) -> Bool {
+    let t: String = str_trim(cmd);
+    let n: Int = chars_len(t);
+    if n == 0 { return false; }
+    let mut in_s: Bool = false;
+    let mut in_d: Bool = false;
+    let mut esc: Bool = false;
+    let mut last_amp: Int = -1;
+    let mut i: Int = 0;
+    while i < n {
+        let ch: String = char_at(t, i);
+        if esc { esc = false; }
+        else if ch == "\\" && !in_s { esc = true; }
+        else if ch == "'" && !in_d { in_s = !in_s; }
+        else if ch == "\"" && !in_s { in_d = !in_d; }
+        else if !in_s && !in_d && ch == "&" {
+            let is_double_prev: Bool = i > 0 && char_at(t, i - 1) == "&";
+            let is_double_next: Bool = i + 1 < n && char_at(t, i + 1) == "&";
+            if !is_double_prev && !is_double_next { last_amp = i; }
+        }
+        i = i + 1;
+    }
+    return last_amp == n - 1;
+}
+
+pub fn strip_unquoted_background(cmd: String) -> String {
+    let t: String = str_trim(cmd);
+    let n: Int = chars_len(t);
+    if n > 0 && str_ends_with(t, "&") {
+        return str_trim(str_slice(t, 0, n - 1));
+    }
+    return t;
+}
+
+pub fn split_cmd_tokens_quote_aware(cmd: String) -> List[String] {
+    let mut tokens: List[String] = list_new();
+    let n: Int = chars_len(cmd);
+    let mut cur: String = "";
+    let mut in_s: Bool = false;
+    let mut in_d: Bool = false;
+    let mut esc: Bool = false;
+    let mut had_quotes: Bool = false;
+    let mut i: Int = 0;
+    while i < n {
+        let ch: String = char_at(cmd, i);
+        if esc {
+            cur = cur + ch; esc = false;
+        } else if ch == "\\" && !in_s {
+            esc = true;
+        } else if ch == "'" && !in_d {
+            in_s = !in_s; had_quotes = true;
+        } else if ch == "\"" && !in_s {
+            in_d = !in_d; had_quotes = true;
+        } else if !in_s && !in_d && (ch == " " || ch == "\t") {
+            if cur != "" || had_quotes {
+                tokens = list_push(tokens, cur); cur = ""; had_quotes = false;
+            }
+        } else {
+            cur = cur + ch;
+        }
+        i = i + 1;
+    }
+    if cur != "" || had_quotes { tokens = list_push(tokens, cur); }
+    return tokens;
+}

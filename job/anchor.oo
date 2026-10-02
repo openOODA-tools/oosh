@@ -1,0 +1,17 @@
+// # Job Control Subsystem Anchor Shim
+//
+// Logline: Re-exports process group job table and backgrounding interfaces.
+//
+// Setup: Bridges job control state across openOODA shell modules.
+//
+// Beats:
+//   1. Re-export job table descriptors.
+//   2. Re-export background spawning routines.
+//   3. Re-export fg, bg, and jobs inspection primitives.
+
+import "table.oo";
+import "control.oo";
+
+pub fn job_anchor_probe() -> String {
+    return "job_ready";
+}

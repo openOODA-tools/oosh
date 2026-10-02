@@ -53,6 +53,7 @@ pub fn term_read_key(ffi: &FfiCap) -> KeyEvent {
     if b == 1 { return KeyEvent { action: "home", text: "" }; }
     if b == 5 { return KeyEvent { action: "end", text: "" }; }
     if b == 21 { return KeyEvent { action: "ctrl_u", text: "" }; }
+    if b == 18 { return KeyEvent { action: "ctrl_r", text: "" }; }
     if b >= 32 { return KeyEvent { action: "char", text: byte_val }; }
     return KeyEvent { action: "none", text: "" };
 }

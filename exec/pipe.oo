@@ -1,0 +1,36 @@
+// # Execution Pipeline and Secure Stream Router
+//
+// Logline: Routes builtin outputs directly to anonymous kernel pipes and file redirections.
+//
+// Setup: Eliminates insecure world-readable /tmp pipe files via in-process capability streams.
+//
+// Beats:
+//   1. Encode output stream for anonymous pipe2 execution via TUI host escape.
+//   2. Dispatch pipeline stream to downstream command without intermediate disk staging.
+//   3. Dispatch direct file redirections (> and >>) without disk files.
+
+fn ansi_esc() -> String {
+    return bytes_to_str(bytes_push(bytes_new(), 27));
+}
+
+pub fn route_builtin_pipeline(ffi: &FfiCap, out_str: String, rhs: String) -> Int {
+    let esc: String = ansi_esc();
+    let apc_cmd: String = esc + "_pipe:" + rhs + "\n" + out_str;
+    let res = oo_tui_write(ffi, apc_cmd);
+    if res.is_ok() {
+        let rc_str: String = match res { Ok(s) => s, Err(_) => "" };
+        let t: String = str_trim(rc_str);
+        return if t == "0" { 0 } else { 1 };
+    }
+    return 1;
+}
+
+pub fn route_builtin_redirection(fs_w: &FsWriteCap, out_str: String, cwd: String, target_file: String, is_append: Bool) -> Int {
+    let dest: String = if str_starts_with(target_file, "/") { target_file } else { cwd + "/" + target_file };
+    if is_append {
+        let _ = file_append_sync(fs_w, dest, out_str);
+    } else {
+        let _ = write_file(fs_w, dest, out_str);
+    }
+    return 0;
+}

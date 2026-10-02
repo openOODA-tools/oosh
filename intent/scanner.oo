@@ -5,7 +5,7 @@
 // Setup: Case folding, whitespace trimming, and 8-prefix query classification.
 //
 // Beats:
-//   1. Classify input line against ?, ??, and keyword prefixes (ai, ask, do, how, why, please).
+//   1. Classify input line against ?, ??, and keyword prefixes (ai, ask, how, why, please).
 //   2. Extract clean lowercase query and preserve raw casing for display.
 //   3. Disambiguate bare prefixes and provide interactive intent guidance.
 
@@ -80,7 +80,6 @@ pub fn scanner_is_intent_query(cmd: String) -> Bool {
     }
     return check_keyword_prefix(t, "ai") ||
            check_keyword_prefix(t, "ask") ||
-           check_keyword_prefix(t, "do") ||
            check_keyword_prefix(t, "how") ||
            check_keyword_prefix(t, "why") ||
            check_keyword_prefix(t, "please");
@@ -144,10 +143,6 @@ pub fn parse_intent_query(line: String) -> IntentQuery {
         let raw: String = str_trim(str_slice(t, 2, chars_len(t)));
         return IntentQuery { prefix: "ai", clean_query: to_lower_str(raw), raw_query: raw, is_deep: false, is_bare: (raw == "") };
     }
-    if check_keyword_prefix(t, "do") {
-        let raw: String = str_trim(str_slice(t, 2, chars_len(t)));
-        return IntentQuery { prefix: "do", clean_query: to_lower_str(raw), raw_query: raw, is_deep: false, is_bare: (raw == "") };
-    }
 
     return IntentQuery {
         prefix: "",
@@ -176,7 +171,7 @@ pub fn render_bare_keyword_guidance(kw: String) -> String {
     if kw == "ask" || kw == "how" {
         out = out + "     " + kw + " how to undo last commit\n";
         out = out + "     " + kw + " to inspect memory usage";
-    } else if kw == "do" || kw == "please" {
+    } else if kw == "please" {
         out = out + "     " + kw + " clean git repo\n";
         out = out + "     " + kw + " list large files";
     } else if kw == "ai" {

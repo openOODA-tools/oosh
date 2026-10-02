@@ -97,7 +97,7 @@ pub fn route_varlink_call(sys: &ProcessCap, cwd: String, rec: FlightRecord, raw_
 
     // Ping
     if method == "org.openooda.oosh.Control1.Ping" || method == "org.openooda.oosh.Ping" || method == "Ping" {
-        return varlink_ok("{\"pong\":true,\"version\":\"0.6.1\"}");
+        return varlink_ok("{\"pong\":true,\"version\":\"0.8.0\"}");
     }
 
     // 1. QueryPosture
@@ -108,8 +108,8 @@ pub fn route_varlink_call(sys: &ProcessCap, cwd: String, rec: FlightRecord, raw_
         let fail_s: String = rec.failed_count.to_string();
         let dur_s: String = rec.last_duration_ms.to_string();
         let safe_cwd: String = safe_json(cwd, 200);
-        let posture_obj: String = "{\"status\":\"" + posture_status + "\",\"cwd\":\"" + safe_cwd + "\",\"user\":\"sovereign\",\"capabilities\":[\"bind\",\"time\",\"fs_w\",\"sys\",\"env\",\"fs_r\"],\"version\":\"0.6.1\",\"total_commands\":" + tot_s + ",\"failed_count\":" + fail_s + ",\"has_failed\":" + has_f + ",\"last_duration_ms\":" + dur_s + "}";
-        let payload: String = "{\"posture\":" + posture_obj + ",\"status\":\"" + posture_status + "\",\"cwd\":\"" + safe_cwd + "\",\"user\":\"sovereign\",\"capabilities\":[\"bind\",\"time\",\"fs_w\",\"sys\",\"env\",\"fs_r\"],\"version\":\"0.6.1\"}";
+        let posture_obj: String = "{\"status\":\"" + posture_status + "\",\"cwd\":\"" + safe_cwd + "\",\"user\":\"sovereign\",\"capabilities\":[\"bind\",\"time\",\"fs_w\",\"sys\",\"env\",\"fs_r\"],\"version\":\"0.8.0\",\"total_commands\":" + tot_s + ",\"failed_count\":" + fail_s + ",\"has_failed\":" + has_f + ",\"last_duration_ms\":" + dur_s + "}";
+        let payload: String = "{\"posture\":" + posture_obj + ",\"status\":\"" + posture_status + "\",\"cwd\":\"" + safe_cwd + "\",\"user\":\"sovereign\",\"capabilities\":[\"bind\",\"time\",\"fs_w\",\"sys\",\"env\",\"fs_r\"],\"version\":\"0.8.0\"}";
         return varlink_ok(payload);
     }
 
@@ -175,7 +175,7 @@ pub fn route_varlink_call(sys: &ProcessCap, cwd: String, rec: FlightRecord, raw_
 
     // Introspection: GetInfo
     if method == "org.varlink.service.GetInfo" {
-        let payload: String = "{\"vendor\":\"openOODA\",\"product\":\"oosh\",\"version\":\"0.6.1\",\"url\":\"https://openooda.org\",\"interfaces\":[\"org.openooda.oosh.Control1\",\"org.varlink.service\"]}";
+        let payload: String = "{\"vendor\":\"openOODA\",\"product\":\"oosh\",\"version\":\"0.8.0\",\"url\":\"https://openooda.org\",\"interfaces\":[\"org.openooda.oosh.Control1\",\"org.varlink.service\"]}";
         return varlink_ok(payload);
     }
 

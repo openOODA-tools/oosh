@@ -71,19 +71,21 @@ curl -fsSL https://openooda-tools.github.io/oosh/install.sh | bash -s -- --unins
 
 ---
 
-## 4. Pure POSIX Bash Ergonomics (v0.6.1)
+## 4. Pure POSIX Bash Ergonomics & Full Control Flow (v0.8.0)
 
-`oosh v0.6.1` elevates the sovereign shell to full interactive ergonomics matching standard Bash while preserving openOODA capability security:
+`oosh v0.8.0` elevates the sovereign shell to full interactive ergonomics matching standard Bash while preserving openOODA capability security:
 - **Standard Bash PS1 Prompt**: Formats standard `user@hostname:dir$ ` (or `# ` for root) with clean tilde contraction (`~`) and support for custom `$PS1` environment overrides.
+- **Full POSIX Control Flow & Scripting**: Native `for` loops, `while` loops, `if`/`then`/`else` conditionals, `case ... in ... esac` branching, subshells `(...)`, and shell function definitions with positional arguments (`$1..$N`, `$@`, `$#`, `$0`).
+- **Quote-Aware Lexing & Expansion**: Robust quote-safe tokenization, wildcard glob expansion (`*`), subshell command substitution (`$(cmd)`), and parameter expansion.
+- **Secure Anonymous Pipelines**: Direct kernel stream piping and redirection without world-readable `/tmp` FIFOs, ensuring clean routing for both internal builtins and external binaries.
 - **Silent Normal Startup**: Clean, unobtrusive shell launch without promotional banners (banner displayed only on `-v`/`--version` or `version`).
 - **Unintercepted Host Binaries**: Direct execution of standard system tools (`whoami`, `stat`, `ping`, `ls`, `grep`) without conversational interception.
-- **Modular VT100 Line Editor (`term/`)**: Clean modular terminal handling with raw mode, arrow key cursor navigation, history browsing (`~/.oosh_history`), and standard shortcuts (Ctrl+A, Ctrl+E, Ctrl+U, Ctrl+D, Ctrl+C).
-- **Direct Process Spawning & Unbuffered I/O**: Direct process invocation via `sys_exec_wait` with stdio inheritance, running interactive TUIs (`vim`, `nano`, `htop`, `ssh`) and streaming utilities seamlessly.
+- **Modular VT100 Line Editor (`term/`)**: Clean modular terminal handling with raw mode, arrow key cursor navigation, history browsing (`~/.oosh_history`), multi-match tab completion with Longest Common Prefix (LCP), and standard shortcuts (Ctrl+A, Ctrl+E, Ctrl+U, Ctrl+D, Ctrl+C).
+- **Direct Process Spawning & Job Control**: Direct process invocation via `sys_exec_wait` with stdio inheritance, running interactive TUIs (`vim`, `nano`, `htop`, `ssh`) alongside asynchronous background execution (`&`) and job table inspection (`jobs`).
 - **Signal Handling & Process Groups**: Raw mode disabling before child execution and prompt reprint on Ctrl+C without killing the shell.
-- **Session State Persistence**: Full support for `export`, `unset`, `alias`, `unalias`, and automatic sourcing of `~/.ooshrc`.
-- **Pipelines & Redirection Plumbing**: Native support for tokenized pipes (`|`) and file redirections (`>`, `>>`) across builtins and system commands.
-- **Script & Shebang Execution**: Positional script execution (`oosh script.oosh [args...]`) with shebang support.
+- **Session State Persistence**: Full support for `export`, `unset`, bare variable assignments (`VAR=val`), `alias`, `unalias`, and automatic sourcing of `~/.ooshrc`.
 - **Clean Columnar Autopsy & Non-Intrusive Typo Remedy**: Diagnostic flight recording with clean columnar postmortem (`last`/`dmesg` style) and helpful command suggestions on exit code 127.
+- **Headless Varlink IPC Control Plane**: NUL-delimited JSON RPC interface on `/run/oosh/control.sock` for autonomous AI agents and sidecars (`syntropd`).
 
 ---
 

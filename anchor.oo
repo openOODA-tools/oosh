@@ -39,10 +39,10 @@ pub fn get_all_builtin_output(sys: &ProcessCap, env: &EnvCap, fs_r: &FsReadCap, 
         let git_r: Result[String, String] = process_exec(sys, "cd \"" + cwd + "\" && git rev-parse --abbrev-ref HEAD 2>/dev/null");
         let branch: String = match git_r { Ok(b) => str_trim(b), Err(_) => "" };
         let b_str: String = if branch != "" { "   Branch:    " + branch + "\n" } else { "   Context:   Host filesystem\n" };
-        return Ok("⚡ Location:  " + cwd + "\n" + b_str);
+        return Ok("* Location:  " + cwd + "\n" + b_str);
     }
     if is_rune_cmd(cmd) {
-        let top: String = ui_card_top("ᚱ", "RUNE AMBIENT AUDIT");
+        let top: String = ui_card_top("*", "RUNE AMBIENT AUDIT");
         let r1: String = ui_card_row("Hardware Enclave", "Online (Native Ring 0)");
         let r2: String = ui_card_row("Physical Token", "YubiKey / Nitrokey Present");
         let r3: String = ui_card_row("Authorization", "Full Hardware Signing Quorum");
@@ -50,7 +50,7 @@ pub fn get_all_builtin_output(sys: &ProcessCap, env: &EnvCap, fs_r: &FsReadCap, 
         return Ok(top + "\n" + r1 + "\n" + r2 + "\n" + r3 + "\n" + bot + "\n");
     }
     if is_scry_cmd(cmd) {
-        let top: String = ui_card_top("ᛈ", "SCRY AMBIENT TELEMETRY");
+        let top: String = ui_card_top("*", "SCRY AMBIENT TELEMETRY");
         let r1: String = ui_card_row("Execution Engine", "Native Machine Code (C/LLVM)");
         let r2: String = ui_card_row("Host Working Dir", cwd);
         let bot: String = ui_card_bottom("SCRY ACTIVE");

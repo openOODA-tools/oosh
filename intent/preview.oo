@@ -5,7 +5,7 @@
 // Setup: Uses FsReadCap and ProcessCap. Gated by ui_is_interactive to prevent hangs during automated pipes.
 //
 // Beats:
-//   1. Render 68-col double-lined preview card with Os rune (ᚩ) and neon safety badge.
+//   1. Render 68-col double-lined preview card with Os rune [OS] and neon safety badge.
 //   2. Format detailed reasoning audit card for the '?' prompt explanation channel.
 //   3. Gate non-interactive execution (test -t 0) to ensure automated test suites never block.
 //   4. Execute interactive [Y/n/e/?] loop: Y/Enter executes, n aborts, e edits, ? explains, and YES confirms high-risk.
@@ -85,7 +85,7 @@ pub fn render_intent_reasoning(raw_line: String, cwd: String, ctx: WorkspaceCont
         "Read-only query; zero persistent side effects"
     };
 
-    let top: String = card_top("ᚩ", "INTENT REASONING & SAFETY AUDIT");
+    let top: String = card_top("[INTENT]", "INTENT REASONING & SAFETY AUDIT");
     let sec1: String = card_section("SYNTHESIS HEURISTICS");
     let r_env: String = card_row("Query Envelope", "\"" + q.raw_query + "\"");
     let r_dom: String = card_row("Domain Category", domain);
@@ -132,17 +132,17 @@ pub fn prompt_intent_execution(fs_r: &FsReadCap, sys: &ProcessCap, raw_line: Str
         if choice == "y" || choice == "Y" || choice == "" {
             // High-risk safety gating: require explicit YES confirmation
             if tier == "HIGH_RISK" || tier == "DANGEROUS" {
-                print(red + "⚠️  DANGEROUS ACTION: Confirm execution by typing 'YES': " + rst);
+                print(red + "! DANGEROUS ACTION: Confirm execution by typing 'YES': " + rst);
                 let conf: String = read_prompt_line(fs_r);
                 if conf == "YES" {
                     return IntentPromptAction { should_execute: true, command_to_run: cmd, was_cancelled: false };
                 }
-                println(amber + "✦ Dangerous execution cancelled (confirmation was '" + conf + "', expected 'YES')." + rst);
+                println(amber + "* Dangerous execution cancelled (confirmation was '" + conf + "', expected 'YES')." + rst);
                 return IntentPromptAction { should_execute: false, command_to_run: "", was_cancelled: true };
             }
             return IntentPromptAction { should_execute: true, command_to_run: cmd, was_cancelled: false };
         } else if choice == "n" || choice == "N" {
-            println(amber + "✦ Execution cancelled by user." + rst);
+            println(amber + "* Execution cancelled by user." + rst);
             return IntentPromptAction { should_execute: false, command_to_run: "", was_cancelled: true };
         } else if choice == "e" || choice == "E" {
             print(cyan + "Edit command [" + cmd + "]: " + rst);
@@ -150,12 +150,12 @@ pub fn prompt_intent_execution(fs_r: &FsReadCap, sys: &ProcessCap, raw_line: Str
             let final_cmd: String = if edited == "" { cmd } else { edited };
             let edited_tier: String = classify_safety_tier(final_cmd);
             if edited_tier == "HIGH_RISK" || edited_tier == "DANGEROUS" {
-                print(red + "⚠️  DANGEROUS ACTION: Confirm execution by typing 'YES': " + rst);
+                print(red + "! DANGEROUS ACTION: Confirm execution by typing 'YES': " + rst);
                 let conf: String = read_prompt_line(fs_r);
                 if conf == "YES" {
                     return IntentPromptAction { should_execute: true, command_to_run: final_cmd, was_cancelled: false };
                 }
-                println(amber + "✦ Dangerous execution cancelled (confirmation was '" + conf + "', expected 'YES')." + rst);
+                println(amber + "* Dangerous execution cancelled (confirmation was '" + conf + "', expected 'YES')." + rst);
                 return IntentPromptAction { should_execute: false, command_to_run: "", was_cancelled: true };
             }
             return IntentPromptAction { should_execute: true, command_to_run: final_cmd, was_cancelled: false };
@@ -163,7 +163,7 @@ pub fn prompt_intent_execution(fs_r: &FsReadCap, sys: &ProcessCap, raw_line: Str
             println(render_intent_reasoning(raw_line, cwd, ctx));
             // Loop continues to re-prompt [Y/n/e/?]
         } else {
-            println(amber + "✦ Cancelled (unrecognized option '" + choice + "')." + rst);
+            println(amber + "* Cancelled (unrecognized option '" + choice + "')." + rst);
             return IntentPromptAction { should_execute: false, command_to_run: "", was_cancelled: true };
         }
     }

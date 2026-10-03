@@ -1,0 +1,36 @@
+// # Execution Host System Process Runner
+//
+// Logline: Executes external system processes with terminal arbitration and diagnostics.
+//
+// Setup: Invokes sys_exec_wait across ProcessCap and reports flight failures.
+//
+// Beats:
+//   1. Disable terminal raw mode during foreground process execution.
+//   2. Wait for process exit and normalize status codes.
+//   3. Match flight failure rules for command-not-found diagnostics.
+
+import "diagnostics/anchor.oo";
+
+pub fn exec_host_command(sys: &ProcessCap, ffi: &FfiCap, cwd: String, cmd: String, tokens: List[String]) -> Result[Int, String] {
+    let mut args: List[String] = list_new();
+    let num_tokens: Int = list_len(tokens);
+    let mut ti: Int = 1;
+    while ti < num_tokens {
+        args = list_push(args, list_get(tokens, ti));
+        ti = ti + 1;
+    }
+    let _ = oo_tui_disable_raw(ffi, "");
+    let exec_res = sys_exec_wait(sys, cmd, args);
+    if exec_res.is_ok() {
+        return Ok(match exec_res { Ok(c) => c, Err(_) => 0 });
+    }
+    let err_msg: String = match exec_res { Ok(_) => "", Err(m) => m };
+    let is_cnf: Bool = err_msg == "command not found";
+    let diag: DiagnosticResult = flight_rules_match(cmd, if is_cnf { 127 } else { 1 }, err_msg, cwd);
+    if is_cnf && diag.actionable_cmd != "" && !str_starts_with(diag.actionable_cmd, "which ") {
+        println("oosh: command not found: '" + cmd + "'. Did you mean '" + diag.actionable_cmd + "'?");
+    } else {
+        println("oosh: " + (if is_cnf { "command not found: '" + cmd + "'" } else { cmd + ": " + err_msg }));
+    }
+    return Err(err_msg);
+}

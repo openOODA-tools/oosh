@@ -80,3 +80,17 @@ pub fn job_table_remove(t: JobTable, id: Int) -> JobTable {
     }
     return JobTable { jobs: new_list, next_id: t.next_id };
 }
+
+pub fn job_table_purge_done(t: JobTable) -> JobTable {
+    let mut new_list: List[Job] = list_new();
+    let n: Int = list_len(t.jobs);
+    let mut i: Int = 0;
+    while i < n {
+        let j: Job = list_get(t.jobs, i);
+        if j.status != "Done" {
+            new_list = list_push(new_list, j);
+        }
+        i = i + 1;
+    }
+    return JobTable { jobs: new_list, next_id: t.next_id };
+}

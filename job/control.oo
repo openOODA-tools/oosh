@@ -102,16 +102,56 @@ pub fn is_job_cmd(line: String) -> Bool {
 pub fn dispatch_job_cmd(ffi: &FfiCap, line: String, t: JobTable) -> Result[JobTable, String] {
     if line == "jobs" {
         print(format_jobs_list(ffi, t));
-        return Ok(t);
+        let synced: JobTable = sync_job_table(ffi, t);
+        let cleaned: JobTable = job_table_purge_done(synced);
+        return Ok(cleaned);
     }
     if line == "fg" || str_starts_with(line, "fg ") {
         let spec: String = if line == "fg" { "" } else { str_trim(str_slice(line, 3, chars_len(line))) };
+        let target_id: Int = if spec == "" || spec == "%" || spec == "%+" {
+            let lr: Result[Job, String] = job_table_get_latest(t);
+            match lr { Ok(j) => j.id, Err(_) => -1 }
+        } else if str_starts_with(spec, "%") {
+            parse_int(str_slice(spec, 1, chars_len(spec)))
+        } else {
+            parse_int(spec)
+        };
         let rc: Int = resume_foreground(ffi, t, spec);
-        return if rc == 0 { Ok(t) } else { Err("foreground failed") };
+        let next_t: JobTable = if target_id > 0 { job_table_remove(t, target_id) } else { t };
+        return if rc == 0 { Ok(next_t) } else { Err("foreground failed") };
     }
     if line == "bg" || str_starts_with(line, "bg ") {
-        return Ok(sync_job_table(ffi, t));
+        let spec: String = if line == "bg" { "" } else { str_trim(str_slice(line, 3, chars_len(line))) };
+        let target_id: Int = if spec == "" || spec == "%" || spec == "%+" {
+            let lr: Result[Job, String] = job_table_get_latest(t);
+            match lr { Ok(j) => j.id, Err(_) => -1 }
+        } else if str_starts_with(spec, "%") {
+            parse_int(str_slice(spec, 1, chars_len(spec)))
+        } else {
+            parse_int(spec)
+        };
+        if target_id < 0 {
+            println("oosh: bg: current: no such job");
+            return Err("no such job");
+        }
+        let jr: Result[Job, String] = job_table_get(t, target_id);
+        if jr.is_err() {
+            println("oosh: bg: %" + target_id.to_string() + ": no such job");
+            return Err("no such job");
+        }
+        let j: Job = match jr { Ok(v) => v, Err(_) => Job { id: 0, pid: 0, cmd: "", status: "" } };
+        let esc: String = ansi_esc();
+        let _ = oo_tui_write(ffi, esc + "_job_bg:" + j.pid.to_string());
+        println("[" + j.id.to_string() + "]+ " + j.cmd + " &");
+        let updated: JobTable = job_table_update_status(t, j.id, "Running");
+        return Ok(updated);
     }
     return Err("job command failed");
+}
+
+pub fn job_table_poll_and_reap(ffi: &FfiCap, t: JobTable) -> JobTable {
+    if list_len(t.jobs) == 0 { return t; }
+    let synced: JobTable = sync_job_table(ffi, t);
+    return job_table_purge_done(synced);
 }
 

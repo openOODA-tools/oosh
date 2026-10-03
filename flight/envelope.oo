@@ -103,8 +103,8 @@ pub fn record_flight_success_full(rec: FlightRecord, cmd: String, duration_ms: I
     };
     let new_entries: List[FlightEntry] = push_ring_entry(rec.entries, entry, rec.capacity);
     return FlightRecord {
-        has_failed: rec.has_failed, last_failed_cmd: rec.last_failed_cmd,
-        last_exit_code: rec.last_exit_code, last_stderr: rec.last_stderr,
+        has_failed: false, last_failed_cmd: rec.last_failed_cmd,
+        last_exit_code: 0, last_stderr: "",
         last_duration_ms: duration_ms, total_commands: seq_num,
         failed_count: rec.failed_count, last_success_cmd: cmd,
         entries: new_entries, capacity: rec.capacity,
@@ -167,7 +167,7 @@ pub fn update_flight_duration(rec: FlightRecord, duration_ms: Int) -> FlightReco
 
 fn format_trace_entry(entry: FlightEntry) -> String {
     let seq_str: String = "#" + fmt_digits_2(entry.seq);
-    let status_str: String = if entry.exit_code == 0 { "✔ OK" } else { "✘ ERR " + entry.exit_code.to_string() };
+    let status_str: String = if entry.exit_code == 0 { "OK" } else { "ERR " + entry.exit_code.to_string() };
     let dur_str: String = entry.duration_ms.to_string() + "ms";
     let pid_str: String = if entry.pid > 0 { entry.pid.to_string() } else { "-" };
     let mem_str: String = if entry.peak_mem != "" { entry.peak_mem } else { "0.0MB" };

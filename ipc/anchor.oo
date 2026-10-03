@@ -59,7 +59,7 @@ pub fn render_link_card(sys: &ProcessCap, env: &EnvCap) -> String {
     let sock: String = prepare_socket_path(sys, env);
     let count: Int = syntrop_online_count(st);
 
-    let top: String = ui_card_top("⬡", "SYNTROPD IPC LINK COORDINATOR");
+    let top: String = ui_card_top("*", "SYNTROPD IPC LINK COORDINATOR");
     let r_wire: String = ui_card_row("Wire Framing", "Varlink NUL-delimited (\\0) JSON RPC");
     let r_sock: String = ui_card_row("Local Socket", sock);
     let sec_peers: String = ui_card_section("Syntropd Ecosystem Daemons");
@@ -87,7 +87,7 @@ pub fn ipc_dispatch_link(sys: &ProcessCap, env: &EnvCap, cwd: String, rec: Fligh
         return;
     }
     if line == "link test" || line == "link ping" || line == "connect test" || line == "connect ping" {
-        println(ui_card_top("⬡", "IPC SELF-TEST & PROBE"));
+        println(ui_card_top("*", "IPC SELF-TEST & PROBE"));
         let st: SyntropStatus = probe_syntrop(sys);
         let c_str: String = syntrop_online_count(st).to_string();
         println(ui_card_row("Syntrop Mesh", c_str + "/4 daemons responsive"));
@@ -98,7 +98,7 @@ pub fn ipc_dispatch_link(sys: &ProcessCap, env: &EnvCap, cwd: String, rec: Fligh
         return;
     }
     if line == "link endpoints" || line == "link peers" || line == "link sockets" || line == "connect endpoints" {
-        println(ui_card_top("⬡", "IPC ENDPOINT DIRECTORY"));
+        println(ui_card_top("*", "IPC ENDPOINT DIRECTORY"));
         println(ui_card_row("contextd", "/run/syntrop/io.syntrop.Context1"));
         println(ui_card_row("toold", "/run/syntrop/io.syntrop.Tool1"));
         println(ui_card_row("sentry", "/run/syntrop/sentry.sock"));

@@ -34,3 +34,28 @@ pub fn route_builtin_redirection(fs_w: &FsWriteCap, out_str: String, cwd: String
     }
     return 0;
 }
+
+pub fn route_direct_pipeline(ffi: &FfiCap, lhs: String, rhs: String) -> Int {
+    let esc: String = ansi_esc();
+    let apc_cmd: String = esc + "_pipe2:" + lhs + "\n" + rhs;
+    let res = oo_tui_write(ffi, apc_cmd);
+    if res.is_ok() {
+        let rc_str: String = match res { Ok(s) => s, Err(_) => "" };
+        let t: String = str_trim(rc_str);
+        return if t == "0" { 0 } else { 1 };
+    }
+    return 1;
+}
+
+pub fn route_direct_redirection(ffi: &FfiCap, op: String, target_file: String, cwd: String, cmd: String) -> Int {
+    let esc: String = ansi_esc();
+    let dest: String = if str_starts_with(target_file, "/") { target_file } else { cwd + "/" + target_file };
+    let apc_cmd: String = esc + "_redir:" + op + ":" + dest + "\n" + cmd;
+    let res = oo_tui_write(ffi, apc_cmd);
+    if res.is_ok() {
+        let rc_str: String = match res { Ok(s) => s, Err(_) => "" };
+        let t: String = str_trim(rc_str);
+        return if t == "0" { 0 } else { 1 };
+    }
+    return 1;
+}

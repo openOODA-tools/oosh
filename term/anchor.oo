@@ -48,3 +48,7 @@ pub fn term_complete_ghost(fs_r: &FsReadCap, cur_line: String, alias_names: List
 pub fn term_line_redraw_full(prompt: String, ed: LineEditor, ghost: String) {
     line_editor_redraw_full(prompt, ed, ghost);
 }
+
+pub fn term_get_cols(ffi: &FfiCap) -> Int {
+    return term_get_terminal_cols(ffi);
+}

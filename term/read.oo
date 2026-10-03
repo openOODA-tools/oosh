@@ -42,6 +42,10 @@ pub fn term_read_key(ffi: &FfiCap) -> KeyEvent {
                 let _ = oo_tui_read_byte(ffi, "");
                 return KeyEvent { action: "delete", text: "" };
             }
+        } else if s1 == "b" || s1 == "B" {
+            return KeyEvent { action: "word_left", text: "" };
+        } else if s1 == "f" || s1 == "F" {
+            return KeyEvent { action: "word_right", text: "" };
         }
         return KeyEvent { action: "none", text: "" };
     }
@@ -52,8 +56,26 @@ pub fn term_read_key(ffi: &FfiCap) -> KeyEvent {
     if b == 4 { return KeyEvent { action: "ctrl_d", text: "" }; }
     if b == 1 { return KeyEvent { action: "home", text: "" }; }
     if b == 5 { return KeyEvent { action: "end", text: "" }; }
+    if b == 11 { return KeyEvent { action: "ctrl_k", text: "" }; }
+    if b == 12 { return KeyEvent { action: "ctrl_l", text: "" }; }
     if b == 21 { return KeyEvent { action: "ctrl_u", text: "" }; }
+    if b == 23 { return KeyEvent { action: "ctrl_w", text: "" }; }
     if b == 18 { return KeyEvent { action: "ctrl_r", text: "" }; }
+    if b >= 192 && b <= 223 {
+        let b2 = match oo_tui_read_byte(ffi, "") { Ok(s) => s, Err(_) => "" };
+        return KeyEvent { action: "char", text: byte_val + b2 };
+    }
+    if b >= 224 && b <= 239 {
+        let b2 = match oo_tui_read_byte(ffi, "") { Ok(s) => s, Err(_) => "" };
+        let b3 = match oo_tui_read_byte(ffi, "") { Ok(s) => s, Err(_) => "" };
+        return KeyEvent { action: "char", text: byte_val + b2 + b3 };
+    }
+    if b >= 240 && b <= 247 {
+        let b2 = match oo_tui_read_byte(ffi, "") { Ok(s) => s, Err(_) => "" };
+        let b3 = match oo_tui_read_byte(ffi, "") { Ok(s) => s, Err(_) => "" };
+        let b4 = match oo_tui_read_byte(ffi, "") { Ok(s) => s, Err(_) => "" };
+        return KeyEvent { action: "char", text: byte_val + b2 + b3 + b4 };
+    }
     if b >= 32 { return KeyEvent { action: "char", text: byte_val }; }
     return KeyEvent { action: "none", text: "" };
 }

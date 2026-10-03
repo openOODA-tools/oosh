@@ -99,6 +99,13 @@ pub fn find_compound_split(cmd: String) -> CompoundSplit {
                         return CompoundSplit { lhs: str_trim(str_slice(cmd, 0, i)), op: "||", rhs: str_trim(str_slice(cmd, i + 2, n)) };
                     }
                 }
+                if ch == "&" {
+                    let prev_not_gt: Bool = i == 0 || char_at(cmd, i - 1) != ">";
+                    let next_not_gt: Bool = i + 1 >= n || char_at(cmd, i + 1) != ">";
+                    if prev_not_gt && next_not_gt {
+                        return CompoundSplit { lhs: str_trim(str_slice(cmd, 0, i)), op: "&", rhs: str_trim(str_slice(cmd, i + 1, n)) };
+                    }
+                }
             }
             i = i + 1;
         } else {
@@ -146,6 +153,11 @@ pub fn find_unquoted_redirect(cmd: String) -> RedirectSplit {
         else if ch == "\"" && !in_s { in_d = !in_d; }
         else if !in_s && !in_d {
             if ch == ">" {
+                if i > 0 && char_at(cmd, i - 1) == "2" && i + 2 < n && char_at(cmd, i + 1) == "&" && char_at(cmd, i + 2) == "1" {
+                    let lhs: String = str_trim(str_slice(cmd, 0, i - 1));
+                    let tgt: String = if i + 3 < n { str_trim(str_slice(cmd, i + 3, n)) } else { "" };
+                    return RedirectSplit { lhs: lhs, op: "2>&1", target: tgt, found: true };
+                }
                 if i + 1 < n && char_at(cmd, i + 1) == ">" {
                     let lhs: String = str_trim(str_slice(cmd, 0, i));
                     let tgt: String = str_trim(str_slice(cmd, i + 2, n));

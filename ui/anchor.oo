@@ -89,7 +89,7 @@ pub fn dispatch_ui(sys: &ProcessCap, cwd: String, cmd: String) -> Bool {
     if cmd == "whereami" {
         let git_r: Result[String, String] = process_exec(sys, "cd \"" + cwd + "\" && git rev-parse --abbrev-ref HEAD 2>/dev/null");
         let branch: String = match git_r { Ok(b) => str_trim(b), Err(_) => "" };
-        println(esc + "[1;33m⚡ Location:" + esc + "[0m  " + cwd);
+        println(esc + "[1;33m* Location:" + esc + "[0m  " + cwd);
         if branch != "" { println(esc + "[1;36m   Branch:" + esc + "[0m    " + branch); } else { println("   Context:   Host filesystem"); }
         return true;
     }

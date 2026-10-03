@@ -182,8 +182,8 @@ pub fn render_intent_card_ctx(raw_line: String, cwd: String, ctx: WorkspaceConte
     let exp: String = explain_command(cmd);
     let s_badge: String = render_safety_badge(cmd);
 
-    let title: String = if q.is_deep { "INTENT CHANNEL — DEEP REASONING" } else { "INTENT CHANNEL — SYNTHESIS ENGINE" };
-    let top: String = ui_card_top("ᚩ", title);
+    let title: String = if q.is_deep { "INTENT CHANNEL - DEEP REASONING" } else { "INTENT CHANNEL - SYNTHESIS ENGINE" };
+    let top: String = ui_card_top("[INTENT]", title);
     let sec1: String = ui_card_section("QUERY ENVELOPE");
     let r_p: String = ui_card_row("Query Prefix", q.prefix);
     let r_q: String = ui_card_row("Intent Channel", "\"" + q.raw_query + "\"");

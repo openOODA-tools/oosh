@@ -165,7 +165,7 @@ pub fn normalize_query(query: String) -> String {
 pub fn render_bare_keyword_guidance(kw: String) -> String {
     let esc: String = bytes_to_str(bytes_push(bytes_new(), 27));
     let mut out: String = "";
-    out = out + esc + "[1;33m⚡ oosh:" + esc + "[0m Intent keyword '" + esc + "[1;36m" + kw + esc + "[0m' requires query text.\n";
+    out = out + esc + "[1;33m* oosh:" + esc + "[0m Intent keyword '" + esc + "[1;36m" + kw + esc + "[0m' requires query text.\n";
     out = out + "   Usage: " + esc + "[1;35m" + kw + " <your natural language query>" + esc + "[0m\n";
     out = out + "   Examples:\n";
     if kw == "ask" || kw == "how" {

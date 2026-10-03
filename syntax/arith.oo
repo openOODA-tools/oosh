@@ -1,0 +1,189 @@
+// # Shell Arithmetic Expression Evaluation Engine
+//
+// Logline: Evaluates $(( ... )) arithmetic expressions natively with operator precedence and variable resolution.
+//
+// Setup: Tokenizes arithmetic syntax and parses recursive descent integer expressions using in-memory state.
+//
+// Beats:
+//   1. Tokenize integer literals, variable identifiers, operators, and grouping parentheses.
+//   2. Parse unary (+, -) and binary (*, /, %, +, -) expressions with correct POSIX precedence.
+//   3. Resolve variable values from EnvMap and ambient environment, defaulting to 0 for unset/null.
+
+import "std/fs/process/env.oo";
+import "param.oo";
+
+pub type ArithToken = struct {
+    kind: String,
+    val: Int
+};
+
+pub type EvalRes = struct {
+    val: Int,
+    pos: Int
+};
+
+fn parse_int_safe(s: String) -> Int {
+    let t: String = str_trim(s);
+    let n: Int = chars_len(t);
+    if n == 0 { return 0; }
+    let mut acc: Int = 0;
+    let mut i: Int = 0;
+    let mut neg: Bool = false;
+    let first: String = char_at(t, 0);
+    if first == "-" { neg = true; i = 1; }
+    else if first == "+" { i = 1; }
+    while i < n {
+        let ch: String = char_at(t, i);
+        let b: Int = byte_at(ch, 0);
+        if b >= 48 && b <= 57 {
+            acc = acc * 10 + (b - 48);
+        } else {
+            return if neg { 0 - acc } else { acc };
+        }
+        i = i + 1;
+    }
+    return if neg { 0 - acc } else { acc };
+}
+
+fn tokenize_arith(env: &EnvCap, env_map: EnvMap, expr: String) -> List[ArithToken] {
+    let mut toks: List[ArithToken] = list_new();
+    let n: Int = chars_len(expr);
+    let mut i: Int = 0;
+    while i < n {
+        let ch: String = char_at(expr, i);
+        if ch == " " || ch == "\t" || ch == "\n" || ch == "\r" {
+            i = i + 1;
+        } else if ch == "+" || ch == "-" || ch == "*" || ch == "/" || ch == "%" || ch == "(" || ch == ")" {
+            toks = list_push(toks, ArithToken { kind: ch, val: 0 });
+            i = i + 1;
+        } else {
+            let b: Int = byte_at(ch, 0);
+            if b >= 48 && b <= 57 {
+                let mut num: Int = 0;
+                while i < n {
+                    let c: String = char_at(expr, i);
+                    let cb: Int = byte_at(c, 0);
+                    if cb >= 48 && cb <= 57 {
+                        num = num * 10 + (cb - 48);
+                        i = i + 1;
+                    } else {
+                        i = i;
+                        break;
+                    }
+                }
+                toks = list_push(toks, ArithToken { kind: "num", val: num });
+            } else if (b >= 65 && b <= 90) || (b >= 97 && b <= 122) || b == 95 || ch == "$" {
+                let mut var_name: String = "";
+                if ch == "$" { i = i + 1; }
+                while i < n {
+                    let c: String = char_at(expr, i);
+                    let cb: Int = byte_at(c, 0);
+                    if (cb >= 65 && cb <= 90) || (cb >= 97 && cb <= 122) || (cb >= 48 && cb <= 57) || cb == 95 {
+                        var_name = var_name + c;
+                        i = i + 1;
+                    } else {
+                        break;
+                    }
+                }
+                let val_str: String = match env_map_get(env_map, var_name) {
+                    Ok(v) => v,
+                    Err(_) => match env_get(env, var_name) { Ok(ev) => ev, Err(_) => "0" }
+                };
+                let num_val: Int = parse_int_safe(val_str);
+                toks = list_push(toks, ArithToken { kind: "num", val: num_val });
+            } else {
+                i = i + 1;
+            }
+        }
+    }
+    return toks;
+}
+
+fn parse_primary(tokens: List[ArithToken], pos: Int) -> EvalRes {
+    let n: Int = list_len(tokens);
+    if pos >= n { return EvalRes { val: 0, pos: pos }; }
+    let tok: ArithToken = list_get(tokens, pos);
+    if tok.kind == "(" {
+        let inner: EvalRes = parse_expr(tokens, pos + 1);
+        let next_pos: Int = inner.pos;
+        if next_pos < n && list_get(tokens, next_pos).kind == ")" {
+            return EvalRes { val: inner.val, pos: next_pos + 1 };
+        }
+        return inner;
+    }
+    if tok.kind == "num" {
+        return EvalRes { val: tok.val, pos: pos + 1 };
+    }
+    return EvalRes { val: 0, pos: pos + 1 };
+}
+
+fn parse_unary(tokens: List[ArithToken], pos: Int) -> EvalRes {
+    let n: Int = list_len(tokens);
+    if pos >= n { return EvalRes { val: 0, pos: pos }; }
+    let tok: ArithToken = list_get(tokens, pos);
+    if tok.kind == "-" {
+        let res: EvalRes = parse_unary(tokens, pos + 1);
+        return EvalRes { val: 0 - res.val, pos: res.pos };
+    }
+    if tok.kind == "+" {
+        return parse_unary(tokens, pos + 1);
+    }
+    return parse_primary(tokens, pos);
+}
+
+fn parse_mul_div(tokens: List[ArithToken], pos: Int) -> EvalRes {
+    let left: EvalRes = parse_unary(tokens, pos);
+    let n: Int = list_len(tokens);
+    let mut cur_pos: Int = left.pos;
+    let mut cur_val: Int = left.val;
+    while cur_pos < n {
+        let op: String = list_get(tokens, cur_pos).kind;
+        if op == "*" || op == "/" || op == "%" {
+            let right: EvalRes = parse_unary(tokens, cur_pos + 1);
+            if op == "*" {
+                cur_val = cur_val * right.val;
+            } else if op == "/" {
+                cur_val = if right.val != 0 { cur_val / right.val } else { 0 };
+            } else {
+                cur_val = if right.val != 0 { cur_val % right.val } else { 0 };
+            }
+            cur_pos = right.pos;
+        } else {
+            return EvalRes { val: cur_val, pos: cur_pos };
+        }
+    }
+    return EvalRes { val: cur_val, pos: cur_pos };
+}
+
+fn parse_add_sub(tokens: List[ArithToken], pos: Int) -> EvalRes {
+    let left: EvalRes = parse_mul_div(tokens, pos);
+    let n: Int = list_len(tokens);
+    let mut cur_pos: Int = left.pos;
+    let mut cur_val: Int = left.val;
+    while cur_pos < n {
+        let op: String = list_get(tokens, cur_pos).kind;
+        if op == "+" || op == "-" {
+            let right: EvalRes = parse_mul_div(tokens, cur_pos + 1);
+            if op == "+" {
+                cur_val = cur_val + right.val;
+            } else {
+                cur_val = cur_val - right.val;
+            }
+            cur_pos = right.pos;
+        } else {
+            return EvalRes { val: cur_val, pos: cur_pos };
+        }
+    }
+    return EvalRes { val: cur_val, pos: cur_pos };
+}
+
+pub fn parse_expr(tokens: List[ArithToken], pos: Int) -> EvalRes {
+    return parse_add_sub(tokens, pos);
+}
+
+pub fn eval_arithmetic_expr(env: &EnvCap, env_map: EnvMap, expr: String) -> String {
+    let toks: List[ArithToken] = tokenize_arith(env, env_map, expr);
+    if list_len(toks) == 0 { return "0"; }
+    let res: EvalRes = parse_expr(toks, 0);
+    return res.val.to_string();
+}

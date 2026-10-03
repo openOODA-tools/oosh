@@ -10,6 +10,12 @@
 //   3. Support ergonomic atomic directory creation and entry (take, mkcd).
 
 import "std/fs/process/env.oo";
+import "syntax/param.oo";
+
+pub type NavResult = struct {
+    cwd: String,
+    env_map: EnvMap
+};
 
 fn ansi_esc() -> String {
     return bytes_to_str(bytes_push(bytes_new(), 27));
@@ -32,10 +38,13 @@ pub fn is_take_cmd(line: String) -> Bool {
     return str_starts_with(line, "take ") || str_starts_with(line, "mkcd ") || str_starts_with(line, "mcd ") || str_starts_with(line, "mdcd ");
 }
 
-pub fn dispatch_nav_cd(ffi: &FfiCap, env: &EnvCap, cwd: String, line: String) -> Result[String, String] {
+pub fn dispatch_nav_cd(ffi: &FfiCap, env: &EnvCap, cwd: String, env_map: EnvMap, line: String) -> Result[NavResult, String] {
     let esc: String = ansi_esc();
     let home: String = match env_get(env, "HOME") { Ok(h) => h, Err(_) => "" };
-    let oldpwd: String = match env_get(env, "OLDPWD") { Ok(o) => o, Err(_) => cwd };
+    let oldpwd: String = match env_map_get(env_map, "OLDPWD") {
+        Ok(o) => o,
+        Err(_) => match env_get(env, "OLDPWD") { Ok(eo) => eo, Err(_) => cwd }
+    };
     let target_dir: String = resolve_cd_target(line, cwd, home, oldpwd);
     let cd_res = oo_tui_write(ffi, esc + "_cd:" + target_dir);
     if cd_res.is_err() {
@@ -44,10 +53,12 @@ pub fn dispatch_nav_cd(ffi: &FfiCap, env: &EnvCap, cwd: String, line: String) ->
     }
     let resolved: String = match cd_res { Ok(d) => str_trim(d), Err(_) => cwd };
     let _ = oo_tui_write(ffi, esc + "_set:OLDPWD=" + cwd);
-    return Ok(resolved);
+    let mut next_em: EnvMap = env_map_set(env_map, "OLDPWD", cwd);
+    next_em = env_map_set(next_em, "PWD", resolved);
+    return Ok(NavResult { cwd: resolved, env_map: next_em });
 }
 
-pub fn dispatch_nav_take(ffi: &FfiCap, env: &EnvCap, cwd: String, line: String) -> Result[String, String] {
+pub fn dispatch_nav_take(ffi: &FfiCap, env: &EnvCap, cwd: String, env_map: EnvMap, line: String) -> Result[NavResult, String] {
     let esc: String = ansi_esc();
     let clean_t: String = str_trim(str_slice(line, str_index_of(line, " ") + 1, chars_len(line)));
     let home: String = match env_get(env, "HOME") { Ok(h) => h, Err(_) => "" };
@@ -58,5 +69,7 @@ pub fn dispatch_nav_take(ffi: &FfiCap, env: &EnvCap, cwd: String, line: String) 
     }
     let resolved: String = match oo_tui_write(ffi, esc + "_cd:" + target_dir) { Ok(d) => str_trim(d), Err(_) => cwd };
     let _ = oo_tui_write(ffi, esc + "_set:OLDPWD=" + cwd);
-    return Ok(resolved);
+    let mut next_em: EnvMap = env_map_set(env_map, "OLDPWD", cwd);
+    next_em = env_map_set(next_em, "PWD", resolved);
+    return Ok(NavResult { cwd: resolved, env_map: next_em });
 }

@@ -16,3 +16,25 @@ pub fn term_enable_raw(ffi: &FfiCap) -> Result[String, String] {
 pub fn term_disable_raw(ffi: &FfiCap) -> Result[String, String] {
     return oo_tui_disable_raw(ffi, "");
 }
+
+pub fn term_get_terminal_cols(ffi: &FfiCap) -> Int {
+    let r = oo_tui_get_size(ffi);
+    if r.is_ok() {
+        let s: String = match r { Ok(v) => v, Err(_) => "24:80" };
+        let colon: Int = str_index_of(s, ":");
+        if colon >= 0 {
+            let col_str: String = str_slice(s, colon + 1, chars_len(s));
+            let mut acc: Int = 0;
+            let n: Int = chars_len(col_str);
+            let mut i: Int = 0;
+            while i < n {
+                let c: String = char_at(col_str, i);
+                let b: Int = byte_at(c, 0);
+                if b >= 48 && b <= 57 { acc = acc * 10 + (b - 48); }
+                i = i + 1;
+            }
+            if acc > 0 { return acc; }
+        }
+    }
+    return 80;
+}

@@ -11,6 +11,7 @@
 
 import "pipe.oo";
 import "nav.oo";
+import "host.oo";
 
 pub fn exec_pipe_stream(ffi: &FfiCap, out_str: String, rhs: String) -> Int {
     return route_builtin_pipeline(ffi, out_str, rhs);

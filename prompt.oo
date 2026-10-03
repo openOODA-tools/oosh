@@ -40,11 +40,7 @@ pub fn format_prompt_path(env: &EnvCap, cwd: String) -> String {
 }
 
 pub fn render_grounded_symbol(has_failure: Bool) -> String {
-    let esc: String = ansi_esc();
-    if has_failure {
-        return esc + "[38;2;255;51;102m❯" + esc + "[0m ";
-    }
-    return esc + "[38;2;0;240;255m❯" + esc + "[0m ";
+    return if has_failure { "$ " } else { "$ " };
 }
 
 pub fn render_prompt_state(env: &EnvCap, cwd: String, has_failure: Bool) -> String {
@@ -53,8 +49,13 @@ pub fn render_prompt_state(env: &EnvCap, cwd: String, has_failure: Bool) -> Stri
         let ps1: String = match ps1_r { Ok(s) => s, Err(_) => "" };
         if ps1 != "" { return ps1; }
     }
-    // Grounded sovereign prompt posture
-    return render_grounded_symbol(has_failure);
+    let u_r: Result[String, String] = env_get(env, "USER");
+    let user: String = match u_r { Ok(u) => u, Err(_) => "user" };
+    let h_r: Result[String, String] = env_get(env, "HOSTNAME");
+    let host: String = match h_r { Ok(h) => h, Err(_) => "localhost" };
+    let p_path: String = format_prompt_path(env, cwd);
+    let sign: String = if user == "root" { "# " } else { "$ " };
+    return user + "@" + host + ":" + p_path + sign;
 }
 
 pub fn render_prompt(env: &EnvCap, cwd: String) -> String {

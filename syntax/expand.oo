@@ -11,59 +11,18 @@
 
 import "std/fs/process/env.oo";
 import "std/fs/process/process.oo";
+import "param.oo";
+import "arith.oo";
 
-pub type EnvMap = struct {
-    keys: List[String],
-    vals: List[String]
-};
-
-pub fn env_map_new() -> EnvMap {
-    let empty_k: List[String] = list_new();
-    let empty_v: List[String] = list_new();
-    return EnvMap { keys: empty_k, vals: empty_v };
-}
-
-pub fn env_map_get(m: EnvMap, key: String) -> Result[String, String] {
-    let n: Int = list_len(m.keys);
-    let mut i: Int = 0;
-    while i < n {
-        if list_get(m.keys, i) == key { return Ok(list_get(m.vals, i)); }
-        i = i + 1;
+fn strip_trailing_nl(s: String) -> String {
+    let mut t: String = s;
+    while str_ends_with(t, "\n") || str_ends_with(t, "\r") {
+        t = str_slice(t, 0, chars_len(t) - 1);
     }
-    return Err("not_found");
+    return t;
 }
 
-pub fn env_map_set(m: EnvMap, key: String, val: String) -> EnvMap {
-    let mut new_k: List[String] = list_new();
-    let mut new_v: List[String] = list_new();
-    let n: Int = list_len(m.keys);
-    let mut i: Int = 0;
-    while i < n {
-        if list_get(m.keys, i) != key {
-            new_k = list_push(new_k, list_get(m.keys, i));
-            new_v = list_push(new_v, list_get(m.vals, i));
-        }
-        i = i + 1;
-    }
-    return EnvMap { keys: list_push(new_k, key), vals: list_push(new_v, val) };
-}
-
-pub fn env_map_remove(m: EnvMap, key: String) -> EnvMap {
-    let mut new_k: List[String] = list_new();
-    let mut new_v: List[String] = list_new();
-    let n: Int = list_len(m.keys);
-    let mut i: Int = 0;
-    while i < n {
-        if list_get(m.keys, i) != key {
-            new_k = list_push(new_k, list_get(m.keys, i));
-            new_v = list_push(new_v, list_get(m.vals, i));
-        }
-        i = i + 1;
-    }
-    return EnvMap { keys: new_k, vals: new_v };
-}
-
-pub fn expand_subshell_captures(sys: &ProcessCap, line: String) -> String {
+pub fn expand_subshell_captures(sys: &ProcessCap, env: &EnvCap, env_map: EnvMap, line: String) -> String {
     let n: Int = chars_len(line);
     let mut out: String = "";
     let mut in_s: Bool = false;
@@ -81,49 +40,64 @@ pub fn expand_subshell_captures(sys: &ProcessCap, line: String) -> String {
         } else if ch == "\"" && !in_s {
             in_d = !in_d; out = out + ch; i = i + 1;
         } else if !in_s && ch == "$" && i + 1 < n && char_at(line, i + 1) == "(" {
-            let mut depth: Int = 1;
-            let mut ci: Int = i + 2;
-            let mut s_in_s: Bool = false;
-            let mut s_in_d: Bool = false;
-            let mut s_esc: Bool = false;
-            while ci < n && depth > 0 {
-                let cch: String = char_at(line, ci);
-                if s_esc { s_esc = false; }
-                else if cch == "\\" && !s_in_s { s_esc = true; }
-                else if cch == "'" && !s_in_d { s_in_s = !s_in_s; }
-                else if cch == "\"" && !s_in_s { s_in_d = !s_in_d; }
-                else if !s_in_s && !s_in_d {
+            if i + 2 < n && char_at(line, i + 2) == "(" {
+                let mut depth: Int = 2;
+                let mut ci: Int = i + 3;
+                while ci < n && depth > 0 {
+                    let cch: String = char_at(line, ci);
                     if cch == "(" { depth = depth + 1; }
                     else if cch == ")" { depth = depth - 1; }
+                    ci = ci + 1;
                 }
-                if depth > 0 { ci = ci + 1; }
-            }
-            if depth == 0 {
-                let inner_cmd: String = str_slice(line, i + 2, ci);
-                let rec_cmd: String = expand_subshell_captures(sys, inner_cmd);
-                let r: Result[String, String] = process_exec(sys, rec_cmd);
-                let mut captured: String = match r { Ok(s) => s, Err(_) => "" };
-                while str_ends_with(captured, "\n") || str_ends_with(captured, "\r") {
-                    captured = str_slice(captured, 0, chars_len(captured) - 1);
+                if depth == 0 {
+                    let inner_expr: String = str_slice(line, i + 3, ci - 2);
+                    let rec_expr: String = expand_subshell_captures(sys, env, env_map, inner_expr);
+                    let arith_val: String = eval_arithmetic_expr(env, env_map, rec_expr);
+                    out = out + arith_val;
+                    i = ci;
+                } else {
+                    out = out + "$((";
+                    i = i + 3;
                 }
-                out = out + captured;
-                i = ci + 1;
             } else {
-                out = out + "$(";
-                i = i + 2;
+                let mut depth: Int = 1;
+                let mut ci: Int = i + 2;
+                let mut s_in_s: Bool = false;
+                let mut s_in_d: Bool = false;
+                let mut s_esc: Bool = false;
+                while ci < n && depth > 0 {
+                    let cch: String = char_at(line, ci);
+                    if s_esc { s_esc = false; }
+                    else if cch == "\\" && !s_in_s { s_esc = true; }
+                    else if cch == "'" && !s_in_d { s_in_s = !s_in_s; }
+                    else if cch == "\"" && !s_in_s { s_in_d = !s_in_d; }
+                    else if !s_in_s && !s_in_d {
+                        if cch == "(" { depth = depth + 1; }
+                        else if cch == ")" { depth = depth - 1; }
+                    }
+                    if depth > 0 { ci = ci + 1; }
+                }
+                if depth == 0 {
+                    let inner_cmd: String = str_slice(line, i + 2, ci);
+                    let rec_cmd: String = expand_subshell_captures(sys, env, env_map, inner_cmd);
+                    let r: Result[String, String] = process_exec(sys, rec_cmd);
+                    let captured: String = match r { Ok(s) => s, Err(_) => "" };
+                    out = out + strip_trailing_nl(captured);
+                    i = ci + 1;
+                } else {
+                    out = out + "$(";
+                    i = i + 2;
+                }
             }
         } else if !in_s && ch == "`" {
             let mut ci: Int = i + 1;
             while ci < n && char_at(line, ci) != "`" { ci = ci + 1; }
             if ci < n {
                 let inner_cmd: String = str_slice(line, i + 1, ci);
-                let rec_cmd: String = expand_subshell_captures(sys, inner_cmd);
+                let rec_cmd: String = expand_subshell_captures(sys, env, env_map, inner_cmd);
                 let r: Result[String, String] = process_exec(sys, rec_cmd);
-                let mut captured: String = match r { Ok(s) => s, Err(_) => "" };
-                while str_ends_with(captured, "\n") || str_ends_with(captured, "\r") {
-                    captured = str_slice(captured, 0, chars_len(captured) - 1);
-                }
-                out = out + captured;
+                let captured: String = match r { Ok(s) => s, Err(_) => "" };
+                out = out + strip_trailing_nl(captured);
                 i = ci + 1;
             } else {
                 out = out + "`";
@@ -136,6 +110,7 @@ pub fn expand_subshell_captures(sys: &ProcessCap, line: String) -> String {
     }
     return out;
 }
+
 
 pub fn expand_variables_safe(env: &EnvCap, env_map: EnvMap, last_rc: Int, line: String) -> String {
     let n: Int = chars_len(line);
@@ -175,11 +150,7 @@ pub fn expand_variables_safe(env: &EnvCap, env_map: EnvMap, last_rc: Int, line: 
                 }
                 if close_idx >= 0 {
                     let k: String = str_slice(line, i + 2, close_idx);
-                    let val: String = match env_map_get(env_map, k) {
-                        Ok(v) => v,
-                        Err(_) => match env_get(env, k) { Ok(ev) => ev, Err(_) => "" }
-                    };
-                    out = out + val;
+                    out = out + resolve_param_expansion(env, env_map, k);
                     i = close_idx + 1;
                 } else { out = out + "${"; i = i + 2; }
             } else {
@@ -189,8 +160,7 @@ pub fn expand_variables_safe(env: &EnvCap, env_map: EnvMap, last_rc: Int, line: 
                     let vc: String = char_at(line, vi);
                     let vb: Int = byte_at(vc, 0);
                     if (vb >= 65 && vb <= 90) || (vb >= 97 && vb <= 122) || (vb >= 48 && vb <= 57) || vb == 95 {
-                        var_name = var_name + vc;
-                        vi = vi + 1;
+                        var_name = var_name + vc; vi = vi + 1;
                     } else { vi = n; }
                 }
                 if chars_len(var_name) > 0 {
@@ -208,6 +178,6 @@ pub fn expand_variables_safe(env: &EnvCap, env_map: EnvMap, last_rc: Int, line: 
 }
 
 pub fn expand_command_line(sys: &ProcessCap, env: &EnvCap, env_map: EnvMap, last_rc: Int, line: String) -> String {
-    let sub: String = expand_subshell_captures(sys, line);
+    let sub: String = expand_subshell_captures(sys, env, env_map, line);
     return expand_variables_safe(env, env_map, last_rc, sub);
 }

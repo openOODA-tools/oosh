@@ -99,7 +99,7 @@ pub fn execute_varlink_single(sys: &ProcessCap, cwd: String, rec: FlightRecord, 
 }
 
 pub fn render_daemon_banner(sock_path: String) -> String {
-    let top: String = ui_card_top("⬡", "VARLINK IPC CONTROL PLANE");
+    let top: String = ui_card_top("*", "VARLINK IPC CONTROL PLANE");
     let r1: String = ui_card_row("Daemon State", "Headless IPC Active");
     let r2: String = ui_card_row("Control Socket", sock_path);
     let r3: String = ui_card_row("Wire Framing", "NUL-delimited (\\0) JSON");

@@ -71,17 +71,115 @@ pub fn line_editor_end(ed: LineEditor) -> LineEditor {
     return LineEditor { buf: ed.buf, cursor: chars_len(ed.buf) };
 }
 
-pub fn line_editor_redraw_full(prompt: String, ed: LineEditor, ghost: String) {
+pub fn line_editor_kill_to_start(ed: LineEditor) -> LineEditor {
+    if ed.cursor <= 0 { return ed; }
+    let clen: Int = chars_len(ed.buf);
+    let tail: String = str_slice(ed.buf, ed.cursor, clen);
+    return LineEditor { buf: tail, cursor: 0 };
+}
+
+pub fn line_editor_kill_to_end(ed: LineEditor) -> LineEditor {
+    let clen: Int = chars_len(ed.buf);
+    if ed.cursor >= clen { return ed; }
+    let head: String = str_slice(ed.buf, 0, ed.cursor);
+    return LineEditor { buf: head, cursor: ed.cursor };
+}
+
+pub fn line_editor_kill_word_backward(ed: LineEditor) -> LineEditor {
+    if ed.cursor <= 0 { return ed; }
+    let mut idx: Int = ed.cursor;
+    while idx > 0 && char_at(ed.buf, idx - 1) == " " {
+        idx = idx - 1;
+    }
+    while idx > 0 && char_at(ed.buf, idx - 1) != " " {
+        idx = idx - 1;
+    }
+    let head: String = str_slice(ed.buf, 0, idx);
+    let tail: String = str_slice(ed.buf, ed.cursor, chars_len(ed.buf));
+    return LineEditor { buf: head + tail, cursor: idx };
+}
+
+pub fn line_editor_word_left(ed: LineEditor) -> LineEditor {
+    if ed.cursor <= 0 { return ed; }
+    let mut idx: Int = ed.cursor;
+    while idx > 0 && char_at(ed.buf, idx - 1) == " " {
+        idx = idx - 1;
+    }
+    while idx > 0 && char_at(ed.buf, idx - 1) != " " {
+        idx = idx - 1;
+    }
+    return LineEditor { buf: ed.buf, cursor: idx };
+}
+
+pub fn line_editor_word_right(ed: LineEditor) -> LineEditor {
+    let clen: Int = chars_len(ed.buf);
+    if ed.cursor >= clen { return ed; }
+    let mut idx: Int = ed.cursor;
+    while idx < clen && char_at(ed.buf, idx) != " " {
+        idx = idx + 1;
+    }
+    while idx < clen && char_at(ed.buf, idx) == " " {
+        idx = idx + 1;
+    }
+    return LineEditor { buf: ed.buf, cursor: idx };
+}
+
+fn visible_prompt_len(s: String) -> Int {
+    let n: Int = chars_len(s);
+    let mut count: Int = 0;
+    let mut in_esc: Bool = false;
+    let mut i: Int = 0;
+    while i < n {
+        let ch: String = char_at(s, i);
+        if ch == "\x1b" {
+            in_esc = true;
+        } else if in_esc {
+            let b: Int = byte_at(ch, 0);
+            if (b >= 64 && b <= 126) && ch != "[" {
+                in_esc = false;
+            }
+        } else {
+            count = count + 1;
+        }
+        i = i + 1;
+    }
+    return count;
+}
+
+pub fn line_editor_redraw_full_cols(prompt: String, ed: LineEditor, ghost: String, term_cols: Int) {
     let esc: String = ansi_esc();
     let clen: Int = chars_len(ed.buf);
     let glen: Int = chars_len(ghost);
     let colored_buf: String = if ed.buf != "" { ui_accent_tokens(ed.buf) } else { "" };
     let ghost_disp: String = if ghost != "" { cyber_dim() + ghost + cyber_reset() } else { "" };
-    print("\r" + prompt + colored_buf + ghost_disp + esc + "[K");
-    let diff: Int = (clen - ed.cursor) + glen;
-    if diff > 0 {
-        print(esc + "[" + diff.to_string() + "D");
+    let p_vis: Int = visible_prompt_len(prompt);
+    let cols: Int = if term_cols > 0 { term_cols } else { 80 };
+    let total_len: Int = p_vis + clen + glen;
+    if total_len < cols {
+        print("\r" + prompt + colored_buf + ghost_disp + esc + "[K");
+        let diff: Int = (clen - ed.cursor) + glen;
+        if diff > 0 {
+            print(esc + "[" + diff.to_string() + "D");
+        }
+    } else {
+        print("\r" + esc + "[J" + prompt + colored_buf + ghost_disp);
+        let cur_target: Int = p_vis + ed.cursor;
+        let end_row: Int = total_len / cols;
+        let target_row: Int = cur_target / cols;
+        let target_col: Int = cur_target - (target_row * cols);
+        let row_up: Int = end_row - target_row;
+        if row_up > 0 {
+            print(esc + "[" + row_up.to_string() + "A");
+        }
+        print("\r");
+        if target_col > 0 {
+            print(esc + "[" + target_col.to_string() + "C");
+        }
     }
+}
+
+pub fn line_editor_redraw_full(prompt: String, ed: LineEditor, ghost: String) {
+    line_editor_redraw_full_cols(prompt, ed, ghost, 80);
 }
 
 pub fn line_editor_redraw(prompt: String, ed: LineEditor) {

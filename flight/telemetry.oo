@@ -135,15 +135,15 @@ pub fn render_telemetry_badge_full(duration_ms: Int, exit_code: Int, mem_str: St
 
     let dur_str: String = duration_ms.to_string() + "ms";
     let status_part: String = if exit_code == 0 {
-        green + "✔" + rst
+        green + "OK" + rst
     } else {
-        red + "✘ " + exit_code.to_string() + rst
+        red + "ERR " + exit_code.to_string() + rst
     };
     let pid_str: String = if pid > 0 { "PID " + pid.to_string() } else { "PID -" };
 
-    let badge: String = gray + "[ " + cyan + "⏱ " + dur_str + gray + " │ " +
-                        status_part + gray + " │ " +
-                        cyan + pid_str + gray + " │ " +
+    let badge: String = gray + "[ " + cyan + dur_str + gray + " | " +
+                        status_part + gray + " | " +
+                        cyan + pid_str + gray + " | " +
                         cyan + mem_str + gray + " ]" + rst;
     return badge;
 }

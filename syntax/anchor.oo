@@ -15,6 +15,7 @@ import "param.oo";
 import "glob.oo";
 import "control.oo";
 import "arith.oo";
+import "list.oo";
 
 pub fn syntax_anchor_probe() -> String {
     return "syntax_ready";

@@ -26,7 +26,7 @@ SRC := main.oo version.oo anchor.oo prompt.oo dispatch.oo engine.oo manual.oo al
        intent/anchor.oo intent/scanner.oo intent/context.oo intent/safety.oo intent/synthesize.oo intent/preview.oo \
        ipc/anchor.oo ipc/varlink.oo ipc/daemon.oo \
        term/anchor.oo term/raw.oo term/read.oo term/line.oo term/history.oo term/complete.oo \
-       syntax/anchor.oo syntax/lexer.oo syntax/expand.oo syntax/param.oo syntax/arith.oo syntax/glob.oo syntax/control.oo \
+       syntax/anchor.oo syntax/lexer.oo syntax/expand.oo syntax/param.oo syntax/arith.oo syntax/glob.oo syntax/control.oo syntax/list.oo \
        exec/anchor.oo exec/pipe.oo exec/nav.oo exec/host.oo \
        job/anchor.oo job/table.oo job/control.oo
 

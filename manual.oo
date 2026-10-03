@@ -27,7 +27,7 @@ pub fn get_help_guide() -> String {
         "    status, info, health         node posture and runtime telemetry\n" +
         "    caps, perms, tokens          audit active openOODA capability tokens\n" +
         "    version, ver, about          display shell banner and version\n" +
-        "    rune, token, talisman        query hardware ambient token enclave\n" +
+        "    rune, token, key             query hardware ambient token enclave\n" +
         "    autopsy, bb, blackbox        examine flight recorder / crash telemetry\n" +
         "    link [sock], connect         connect or probe syntropd IPC daemon\n" +
         "    scry [target], oosh inspect  deep-scan process or system diagnostics\n" +
@@ -194,7 +194,7 @@ pub fn is_caps_cmd(cmd: String) -> Bool {
 }
 
 pub fn is_rune_cmd(cmd: String) -> Bool {
-    return cmd == "rune" || cmd == "token" || cmd == "talisman" || cmd == "dongle" || cmd == "key" || cmd == "staff" || cmd == "haptic";
+    return cmd == "rune" || cmd == "token" || cmd == "key" || cmd == "haptic";
 }
 
 pub fn is_scry_cmd(cmd: String) -> Bool {

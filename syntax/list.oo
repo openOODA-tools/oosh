@@ -1,0 +1,202 @@
+// # Syntax Command List and Sequence Evaluation
+//
+// Logline: Parses compound command chains (&&, ||, ;, &) and temporary prefix assignments.
+//
+// Setup: Bridges token-level sequence execution and environment isolation.
+//
+// Beats:
+//   1. Split compound command strings into left-associative sequence tokens.
+//   2. Parse prefix environment assignments (VAR=val cmd).
+
+import "lexer.oo";
+
+pub type CommandList = struct {
+    cmds: List[String],
+    ops: List[String]
+};
+
+pub type PrefixAssignResult = struct {
+    assignments: List[String],
+    remaining_cmd: String,
+    has_cmd: Bool
+};
+
+pub fn next_compound_split(cmd: String) -> CompoundSplit {
+    let n: Int = chars_len(cmd);
+    let mut in_s: Bool = false;
+    let mut in_d: Bool = false;
+    let mut esc: Bool = false;
+    let mut in_c: Bool = false;
+    let mut brace_d: Int = 0;
+    let mut paren_d: Int = 0;
+    let mut ctrl_d: Int = 0;
+    let mut in_hdr: Bool = false;
+    let mut in_case_hdr: Bool = false;
+    let mut i: Int = 0;
+    while i < n {
+        let ch: String = char_at(cmd, i);
+        if in_c {
+            if ch == "\n" {
+                in_c = false;
+                if !in_hdr && !in_case_hdr && brace_d == 0 && paren_d == 0 && ctrl_d == 0 {
+                    return CompoundSplit { lhs: str_trim(str_slice(cmd, 0, i)), op: ";", rhs: str_trim(str_slice(cmd, i + 1, n)) };
+                }
+            }
+            i = i + 1;
+        } else if esc {
+            esc = false; i = i + 1;
+        } else if ch == "\\" && !in_s {
+            esc = true; i = i + 1;
+        } else if ch == "'" && !in_d {
+            in_s = !in_s; i = i + 1;
+        } else if ch == "\"" && !in_s {
+            in_d = !in_d; i = i + 1;
+        } else if !in_s && !in_d {
+            let prev_sep: Bool = i == 0 || char_at(cmd, i - 1) == " " || char_at(cmd, i - 1) == "\t" || char_at(cmd, i - 1) == ";" || char_at(cmd, i - 1) == "\n";
+            if ch == "#" && prev_sep {
+                in_c = true;
+            } else if ch == "{" {
+                brace_d = brace_d + 1;
+            } else if ch == "}" && brace_d > 0 {
+                brace_d = brace_d - 1;
+            } else if ch == "(" {
+                paren_d = paren_d + 1;
+            } else if ch == ")" && paren_d > 0 {
+                paren_d = paren_d - 1;
+            } else {
+                if prev_sep {
+                    let sub: String = str_slice(cmd, i, n);
+                    if str_starts_with(sub, "for ") || str_starts_with(sub, "while ") || str_starts_with(sub, "if ") {
+                        in_hdr = true;
+                    } else if str_starts_with(sub, "case ") {
+                        in_case_hdr = true;
+                    } else if in_case_hdr && (str_starts_with(sub, "in ") || str_starts_with(sub, "in;") || str_starts_with(sub, "in\n") || (sub == "in")) {
+                        in_case_hdr = false; ctrl_d = ctrl_d + 1;
+                    } else if str_starts_with(sub, "do ") || str_starts_with(sub, "do;") || str_starts_with(sub, "do\n") || (sub == "do") {
+                        in_hdr = false; ctrl_d = ctrl_d + 1;
+                    } else if str_starts_with(sub, "then ") || str_starts_with(sub, "then;") || str_starts_with(sub, "then\n") || (sub == "then") {
+                        in_hdr = false; ctrl_d = ctrl_d + 1;
+                    } else if str_starts_with(sub, "done ") || str_starts_with(sub, "done;") || str_starts_with(sub, "done\n") || (sub == "done") {
+                        if ctrl_d > 0 { ctrl_d = ctrl_d - 1; }
+                    } else if str_starts_with(sub, "fi ") || str_starts_with(sub, "fi;") || str_starts_with(sub, "fi\n") || (sub == "fi") {
+                        if ctrl_d > 0 { ctrl_d = ctrl_d - 1; }
+                    } else if str_starts_with(sub, "esac ") || str_starts_with(sub, "esac;") || str_starts_with(sub, "esac\n") || (sub == "esac") {
+                        if ctrl_d > 0 { ctrl_d = ctrl_d - 1; }
+                    }
+                }
+            }
+            if !in_c && !in_hdr && !in_case_hdr && brace_d == 0 && paren_d == 0 && ctrl_d == 0 {
+                if ch == ";" || ch == "\n" {
+                    return CompoundSplit { lhs: str_trim(str_slice(cmd, 0, i)), op: ";", rhs: str_trim(str_slice(cmd, i + 1, n)) };
+                }
+                if i + 1 < n {
+                    let nxt: String = char_at(cmd, i + 1);
+                    if ch == "&" && nxt == "&" {
+                        return CompoundSplit { lhs: str_trim(str_slice(cmd, 0, i)), op: "&&", rhs: str_trim(str_slice(cmd, i + 2, n)) };
+                    }
+                    if ch == "|" && nxt == "|" {
+                        return CompoundSplit { lhs: str_trim(str_slice(cmd, 0, i)), op: "||", rhs: str_trim(str_slice(cmd, i + 2, n)) };
+                    }
+                }
+                if ch == "&" {
+                    let prev_not_gt: Bool = i == 0 || char_at(cmd, i - 1) != ">";
+                    let next_not_gt: Bool = i + 1 >= n || char_at(cmd, i + 1) != ">";
+                    if prev_not_gt && next_not_gt {
+                        return CompoundSplit { lhs: str_trim(str_slice(cmd, 0, i)), op: "&", rhs: str_trim(str_slice(cmd, i + 1, n)) };
+                    }
+                }
+            }
+            i = i + 1;
+        } else {
+            i = i + 1;
+        }
+    }
+    return CompoundSplit { lhs: cmd, op: "", rhs: "" };
+}
+
+pub fn split_compound_list(cmd: String) -> CommandList {
+    let mut cmds: List[String] = list_new();
+    let mut ops: List[String] = list_new();
+    let mut cur: String = str_trim(cmd);
+    while cur != "" {
+        let sp: CompoundSplit = next_compound_split(cur);
+        if sp.op == "" {
+            cmds = list_push(cmds, str_trim(cur));
+            ops = list_push(ops, "");
+            cur = "";
+        } else {
+            cmds = list_push(cmds, str_trim(sp.lhs));
+            ops = list_push(ops, sp.op);
+            cur = str_trim(sp.rhs);
+        }
+    }
+    return CommandList { cmds: cmds, ops: ops };
+}
+
+fn is_ident_start(b: Int) -> Bool {
+    return (b >= 65 && b <= 90) || (b >= 97 && b <= 122) || b == 95;
+}
+
+fn is_ident_char(b: Int) -> Bool {
+    return (b >= 65 && b <= 90) || (b >= 97 && b <= 122) || (b >= 48 && b <= 57) || b == 95;
+}
+
+pub fn parse_prefix_assignments(line: String) -> PrefixAssignResult {
+    let mut assigns: List[String] = list_new();
+    let mut cur: String = str_trim(line);
+    while cur != "" {
+        let n: Int = chars_len(cur);
+        let fb: Int = byte_at(char_at(cur, 0), 0);
+        if !is_ident_start(fb) {
+            return PrefixAssignResult { assignments: assigns, remaining_cmd: cur, has_cmd: list_len(assigns) > 0 };
+        }
+        let mut eq_pos: Int = -1;
+        let mut i: Int = 1;
+        while i < n {
+            let c: String = char_at(cur, i);
+            if c == "=" { eq_pos = i; i = n; }
+            else if !is_ident_char(byte_at(c, 0)) { i = n; }
+            else { i = i + 1; }
+        }
+        if eq_pos <= 0 {
+            return PrefixAssignResult { assignments: assigns, remaining_cmd: cur, has_cmd: list_len(assigns) > 0 };
+        }
+        let var_name: String = str_slice(cur, 0, eq_pos);
+        let mut val_end: Int = n;
+        let mut raw_val: String = "";
+        let val_start: Int = eq_pos + 1;
+        if val_start < n {
+            let q_char: String = char_at(cur, val_start);
+            if q_char == "'" || q_char == "\"" {
+                let mut qi: Int = val_start + 1;
+                while qi < n {
+                    if char_at(cur, qi) == q_char {
+                        val_end = qi + 1;
+                        raw_val = str_slice(cur, val_start + 1, qi);
+                        qi = n;
+                    } else {
+                        qi = qi + 1;
+                    }
+                }
+            } else {
+                let mut si: Int = val_start;
+                while si < n {
+                    let sc: String = char_at(cur, si);
+                    if sc == " " || sc == "\t" || sc == "\n" {
+                        val_end = si;
+                        raw_val = str_slice(cur, val_start, si);
+                        si = n;
+                    } else {
+                        si = si + 1;
+                    }
+                }
+                if raw_val == "" && val_start < n && val_end == n {
+                    raw_val = str_slice(cur, val_start, n);
+                }
+            }
+        }
+        assigns = list_push(assigns, var_name + "=" + raw_val);
+        cur = if val_end < n { str_trim(str_slice(cur, val_end, n)) } else { "" };
+    }
+    return PrefixAssignResult { assignments: assigns, remaining_cmd: "", has_cmd: false };
+}

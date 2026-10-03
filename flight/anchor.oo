@@ -81,7 +81,7 @@ pub fn flight_anchor_probe() -> String {
 
 pub fn is_autopsy_cmd(cmd: String) -> Bool {
     let t: String = str_trim(cmd);
-    return t == "autopsy" || t == "bb" || t == "blackbox" || t == "flight" || t == "crash" || t == "postmortem" || t == "triage" || t == "coroner" || str_starts_with(t, "autopsy ") || str_starts_with(t, "bb ") || str_starts_with(t, "blackbox ");
+    return t == "autopsy" || t == "bb" || t == "blackbox" || t == "flight" || t == "crash" || t == "postmortem" || t == "triage" || str_starts_with(t, "autopsy ") || str_starts_with(t, "bb ") || str_starts_with(t, "blackbox ");
 }
 
 pub fn is_remedy_cmd(cmd: String) -> Bool {

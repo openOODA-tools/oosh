@@ -10,6 +10,49 @@
 //   3. Match flight failure rules for command-not-found diagnostics.
 
 import "diagnostics/anchor.oo";
+import "syntax/anchor.oo";
+
+fn ansi_esc() -> String { return bytes_to_str(bytes_push(bytes_new(), 27)); }
+
+pub fn exec_subshell(sys: &ProcessCap, ffi: &FfiCap, body: String) -> Int {
+    let mut s_args: List[String] = list_push(list_push(list_push(list_new(), "--no-banner"), "-c"), body);
+    let _ = oo_tui_disable_raw(ffi, "");
+    let s_res = sys_exec_wait(sys, "/proc/self/exe", s_args);
+    return match s_res { Ok(c) => c, Err(_) => 1 };
+}
+
+pub fn apply_prefix_env(ffi: &FfiCap, em: EnvMap, assignments: List[String]) -> EnvMap {
+    let pn: Int = list_len(assignments); let mut pi: Int = 0; let esc: String = ansi_esc();
+    let mut cur: EnvMap = em;
+    while pi < pn {
+        let asgn: String = list_get(assignments, pi); let eq: Int = str_index_of(asgn, "=");
+        let k: String = str_slice(asgn, 0, eq); let v: String = str_slice(asgn, eq + 1, chars_len(asgn));
+        cur = env_map_set(cur, k, v);
+        let _ = oo_tui_write(ffi, esc + "_set:" + k + "=" + v);
+        pi = pi + 1;
+    }
+    return cur;
+}
+
+pub fn restore_prefix_env(ffi: &FfiCap, cur_em: EnvMap, old_em: EnvMap, assignments: List[String]) -> EnvMap {
+    let pn: Int = list_len(assignments); let mut pi: Int = 0; let esc: String = ansi_esc();
+    let mut res: EnvMap = cur_em;
+    while pi < pn {
+        let asgn: String = list_get(assignments, pi); let eq: Int = str_index_of(asgn, "=");
+        let k: String = str_slice(asgn, 0, eq);
+        let pr: Result[String, String] = env_map_get(old_em, k);
+        if pr.is_ok() {
+            let ov: String = match pr { Ok(s) => s, Err(_) => "" };
+            res = env_map_set(res, k, ov);
+            let _ = oo_tui_write(ffi, esc + "_set:" + k + "=" + ov);
+        } else {
+            res = env_map_remove(res, k);
+            let _ = oo_tui_write(ffi, esc + "_unset:" + k);
+        }
+        pi = pi + 1;
+    }
+    return res;
+}
 
 pub fn exec_host_command(sys: &ProcessCap, ffi: &FfiCap, cwd: String, cmd: String, tokens: List[String]) -> Result[Int, String] {
     let mut args: List[String] = list_new();
@@ -33,4 +76,10 @@ pub fn exec_host_command(sys: &ProcessCap, ffi: &FfiCap, cwd: String, cmd: Strin
         println("oosh: " + (if is_cnf { "command not found: '" + cmd + "'" } else { cmd + ": " + err_msg }));
     }
     return Err(err_msg);
+}
+
+pub fn join_tokens_from(tokens: List[String], start: Int) -> String {
+    let mut out: String = ""; let n: Int = list_len(tokens); let mut i: Int = start;
+    while i < n { out = if out == "" { list_get(tokens, i) } else { out + " " + list_get(tokens, i) }; i = i + 1; }
+    return out;
 }

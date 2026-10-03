@@ -22,7 +22,7 @@ pub type EvalRes = struct {
     pos: Int
 };
 
-fn parse_int_safe(s: String) -> Int {
+pub fn parse_int_safe(s: String) -> Int {
     let t: String = str_trim(s);
     let n: Int = chars_len(t);
     if n == 0 { return 0; }

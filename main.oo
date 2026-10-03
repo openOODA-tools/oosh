@@ -100,36 +100,54 @@ fn run_script_file(fs_r: &FsReadCap, fs_w: &FsWriteCap, sys: &ProcessCap, env: &
     return res.exit_code;
 }
 
-fn extract_startup_ps1(fs_r: &FsReadCap, env: &EnvCap) -> String {
-    let r_proc: Result[String, String] = read_file(fs_r, "/proc/self/environ");
-    if r_proc.is_ok() {
-        let env_blob: String = match r_proc { Ok(s) => s, Err(_) => "" };
-        let nul_sep: String = bytes_to_str(bytes_push(bytes_new(), 0));
-        let entries: List[String] = str_split(env_blob, nul_sep);
+fn ansi_esc() -> String { return bytes_to_str(bytes_push(bytes_new(), 27)); }
+
+fn load_startup_environ(ffi: &FfiCap, fs_r: &FsReadCap, env: &EnvCap) -> EnvMap {
+    let mut em: EnvMap = env_map_new();
+    let r_wire: Result[String, String] = oo_tui_write(ffi, ansi_esc() + "_env");
+    let wire_blob: String = if r_wire.is_ok() { match r_wire { Ok(s) => s, Err(_) => "" } } else { "" };
+    if wire_blob != "" {
+        let entries: List[String] = str_split(wire_blob, "\n");
         let n: Int = list_len(entries);
         let mut i: Int = 0;
         while i < n {
             let entry: String = list_get(entries, i);
-            if str_starts_with(entry, "PS1=") {
-                let v: String = str_slice(entry, 4, chars_len(entry));
-                if v != "" {
-                    return v;
-                }
+            let eq_pos: Int = str_index_of(entry, "=");
+            if eq_pos > 0 {
+                em = env_map_set(em, str_slice(entry, 0, eq_pos), str_slice(entry, eq_pos + 1, chars_len(entry)));
             }
             i = i + 1;
         }
+    } else {
+        let r_proc: Result[String, String] = read_file(fs_r, "/proc/self/environ");
+        if r_proc.is_ok() {
+            let env_blob: String = match r_proc { Ok(s) => s, Err(_) => "" };
+            let nul_sep: String = bytes_to_str(bytes_push(bytes_new(), 0));
+            let entries: List[String] = str_split(env_blob, nul_sep);
+            let n: Int = list_len(entries);
+            let mut i: Int = 0;
+            while i < n {
+                let entry: String = list_get(entries, i);
+                let eq_pos: Int = str_index_of(entry, "=");
+                if eq_pos > 0 {
+                    em = env_map_set(em, str_slice(entry, 0, eq_pos), str_slice(entry, eq_pos + 1, chars_len(entry)));
+                }
+                i = i + 1;
+            }
+        }
     }
-    let r_oo: Result[String, String] = env_get(env, "OO_PS1");
-    let oo_val: String = match r_oo { Ok(s) => s, Err(_) => "" };
-    if oo_val != "" {
-        return oo_val;
+    let cur_ps1: Result[String, String] = env_map_get(em, "PS1");
+    if cur_ps1.is_err() || (match cur_ps1 { Ok(s) => s, Err(_) => "" }) == "" {
+        let r_oo: Result[String, String] = env_get(env, "OO_PS1");
+        let oo_val: String = match r_oo { Ok(s) => s, Err(_) => "" };
+        if oo_val != "" { em = env_map_set(em, "PS1", oo_val); }
+        else {
+            let r_ooda: Result[String, String] = env_get(env, "OODA_PS1");
+            let ooda_val: String = match r_ooda { Ok(s) => s, Err(_) => "" };
+            if ooda_val != "" { em = env_map_set(em, "PS1", ooda_val); }
+        }
     }
-    let r_ooda: Result[String, String] = env_get(env, "OODA_PS1");
-    let ooda_val: String = match r_ooda { Ok(s) => s, Err(_) => "" };
-    if ooda_val != "" {
-        return ooda_val;
-    }
-    return "";
+    return em;
 }
 
 pub fn main(bind: &BindCap, fs_r: &FsReadCap, sys: &ProcessCap, sys_cap: &SysCap, env: &EnvCap, time: &TimeCap, fs_w: &FsWriteCap, alloc: &AllocCap, thread: &ThreadCap, ffi: &FfiCap, args: List[String]) -> Result[Int, String] {
@@ -179,11 +197,7 @@ pub fn main(bind: &BindCap, fs_r: &FsReadCap, sys: &ProcessCap, sys_cap: &SysCap
     let pr: Result[String, String] = env_get(env, "PWD");
     let cwd: String = match pr { Ok(s) => s, Err(_) => "." };
     let rec: FlightRecord = flight_init();
-    let mut session: SessionState = session_state_new(cwd, alias_map_new());
-    let parent_ps1: String = extract_startup_ps1(fs_r, env);
-    if parent_ps1 != "" {
-        session = SessionState { cwd: session.cwd, env_map: env_map_set(session.env_map, "PS1", parent_ps1), alias_map: session.alias_map, job_table: session.job_table, func_map: session.func_map };
-    }
+    let mut session: SessionState = SessionState { cwd: cwd, env_map: load_startup_environ(ffi, fs_r, env), alias_map: alias_map_new(), job_table: job_table_new(), func_map: func_map_new() };
 
     if has_varlink_call {
         let reply: String = ipc_route(sys, cwd, rec, varlink_payload);

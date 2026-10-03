@@ -67,37 +67,22 @@ pub fn find_compound_split(cmd: String) -> CompoundSplit {
             } else {
                 if prev_sep {
                     let sub: String = str_slice(cmd, i, n);
-                    if str_starts_with(sub, "for ") || str_starts_with(sub, "while ") || str_starts_with(sub, "if ") {
-                        in_hdr = true;
-                    } else if str_starts_with(sub, "case ") {
-                        in_case_hdr = true;
-                    } else if in_case_hdr && (str_starts_with(sub, "in ") || str_starts_with(sub, "in;") || str_starts_with(sub, "in\n") || (sub == "in")) {
-                        in_case_hdr = false; ctrl_d = ctrl_d + 1;
-                    } else if str_starts_with(sub, "do ") || str_starts_with(sub, "do;") || str_starts_with(sub, "do\n") || (sub == "do") {
-                        in_hdr = false; ctrl_d = ctrl_d + 1;
-                    } else if str_starts_with(sub, "then ") || str_starts_with(sub, "then;") || str_starts_with(sub, "then\n") || (sub == "then") {
-                        in_hdr = false; ctrl_d = ctrl_d + 1;
-                    } else if str_starts_with(sub, "done ") || str_starts_with(sub, "done;") || str_starts_with(sub, "done\n") || (sub == "done") {
-                        if ctrl_d > 0 { ctrl_d = ctrl_d - 1; }
-                    } else if str_starts_with(sub, "fi ") || str_starts_with(sub, "fi;") || str_starts_with(sub, "fi\n") || (sub == "fi") {
-                        if ctrl_d > 0 { ctrl_d = ctrl_d - 1; }
-                    } else if str_starts_with(sub, "esac ") || str_starts_with(sub, "esac;") || str_starts_with(sub, "esac\n") || (sub == "esac") {
-                        if ctrl_d > 0 { ctrl_d = ctrl_d - 1; }
-                    }
+                    if str_starts_with(sub, "for ") || str_starts_with(sub, "while ") || str_starts_with(sub, "if ") { in_hdr = true; }
+                    else if str_starts_with(sub, "case ") { in_case_hdr = true; }
+                    else if in_case_hdr && (str_starts_with(sub, "in ") || str_starts_with(sub, "in;") || str_starts_with(sub, "in\n") || sub == "in") { in_case_hdr = false; ctrl_d = ctrl_d + 1; }
+                    else if str_starts_with(sub, "do ") || str_starts_with(sub, "do;") || str_starts_with(sub, "do\n") || sub == "do" { in_hdr = false; ctrl_d = ctrl_d + 1; }
+                    else if str_starts_with(sub, "then ") || str_starts_with(sub, "then;") || str_starts_with(sub, "then\n") || sub == "then" { in_hdr = false; ctrl_d = ctrl_d + 1; }
+                    else if str_starts_with(sub, "done ") || str_starts_with(sub, "done;") || str_starts_with(sub, "done\n") || sub == "done" { if ctrl_d > 0 { ctrl_d = ctrl_d - 1; } }
+                    else if str_starts_with(sub, "fi ") || str_starts_with(sub, "fi;") || str_starts_with(sub, "fi\n") || sub == "fi" { if ctrl_d > 0 { ctrl_d = ctrl_d - 1; } }
+                    else if str_starts_with(sub, "esac ") || str_starts_with(sub, "esac;") || str_starts_with(sub, "esac\n") || sub == "esac" { if ctrl_d > 0 { ctrl_d = ctrl_d - 1; } }
                 }
             }
             if !in_c && !in_hdr && !in_case_hdr && brace_d == 0 && paren_d == 0 && ctrl_d == 0 {
-                if ch == ";" || ch == "\n" {
-                    return CompoundSplit { lhs: str_trim(str_slice(cmd, 0, i)), op: ";", rhs: str_trim(str_slice(cmd, i + 1, n)) };
-                }
+                if ch == ";" || ch == "\n" { return CompoundSplit { lhs: str_trim(str_slice(cmd, 0, i)), op: ";", rhs: str_trim(str_slice(cmd, i + 1, n)) }; }
                 if i + 1 < n {
                     let nxt: String = char_at(cmd, i + 1);
-                    if ch == "&" && nxt == "&" {
-                        return CompoundSplit { lhs: str_trim(str_slice(cmd, 0, i)), op: "&&", rhs: str_trim(str_slice(cmd, i + 2, n)) };
-                    }
-                    if ch == "|" && nxt == "|" {
-                        return CompoundSplit { lhs: str_trim(str_slice(cmd, 0, i)), op: "||", rhs: str_trim(str_slice(cmd, i + 2, n)) };
-                    }
+                    if ch == "&" && nxt == "&" { return CompoundSplit { lhs: str_trim(str_slice(cmd, 0, i)), op: "&&", rhs: str_trim(str_slice(cmd, i + 2, n)) }; }
+                    if ch == "|" && nxt == "|" { return CompoundSplit { lhs: str_trim(str_slice(cmd, 0, i)), op: "||", rhs: str_trim(str_slice(cmd, i + 2, n)) }; }
                 }
                 if ch == "&" {
                     let prev_not_gt: Bool = i == 0 || char_at(cmd, i - 1) != ">";
@@ -139,6 +124,37 @@ pub fn find_unquoted_pipe(cmd: String) -> Int {
     return -1;
 }
 
+fn extract_redir_word(cmd: String, start_pos: Int) -> CompoundSplit {
+    let t: String = str_trim(str_slice(cmd, start_pos, chars_len(cmd)));
+    let n: Int = chars_len(t);
+    let mut in_s: Bool = false;
+    let mut in_d: Bool = false;
+    let mut i: Int = 0;
+    while i < n {
+        let c: String = char_at(t, i);
+        if c == "'" && !in_d { in_s = !in_s; }
+        else if c == "\"" && !in_s { in_d = !in_d; }
+        else if !in_s && !in_d && (c == " " || c == "\t" || c == "\n") {
+            let tgt: String = str_trim(str_slice(t, 0, i));
+            let rem: String = str_trim(str_slice(t, i, n));
+            let rlen: Int = chars_len(tgt);
+            let cln: String = if rlen >= 2 && ((str_starts_with(tgt, "\"") && str_ends_with(tgt, "\"")) || (str_starts_with(tgt, "'") && str_ends_with(tgt, "'"))) { str_slice(tgt, 1, rlen - 1) } else { tgt };
+            return CompoundSplit { lhs: cln, op: "", rhs: rem };
+        }
+        i = i + 1;
+    }
+    let rlen: Int = chars_len(t);
+    let cln: String = if rlen >= 2 && ((str_starts_with(t, "\"") && str_ends_with(t, "\"")) || (str_starts_with(t, "'") && str_ends_with(t, "'"))) { str_slice(t, 1, rlen - 1) } else { t };
+    return CompoundSplit { lhs: cln, op: "", rhs: "" };
+}
+
+fn make_redir(cmd: String, lhs_end: Int, skip: Int, op: String) -> RedirectSplit {
+    let lhs_p: String = str_trim(str_slice(cmd, 0, lhs_end));
+    let w: CompoundSplit = extract_redir_word(cmd, skip);
+    let rem: String = if w.rhs == "" { "" } else { " " + w.rhs };
+    return RedirectSplit { lhs: str_trim(lhs_p + rem), op: op, target: w.lhs, found: true };
+}
+
 pub fn find_unquoted_redirect(cmd: String) -> RedirectSplit {
     let n: Int = chars_len(cmd);
     let mut in_s: Bool = false;
@@ -153,25 +169,21 @@ pub fn find_unquoted_redirect(cmd: String) -> RedirectSplit {
         else if ch == "\"" && !in_s { in_d = !in_d; }
         else if !in_s && !in_d {
             if ch == ">" {
-                if i > 0 && char_at(cmd, i - 1) == "2" && i + 2 < n && char_at(cmd, i + 1) == "&" && char_at(cmd, i + 2) == "1" {
-                    let lhs: String = str_trim(str_slice(cmd, 0, i - 1));
-                    let tgt: String = if i + 3 < n { str_trim(str_slice(cmd, i + 3, n)) } else { "" };
-                    return RedirectSplit { lhs: lhs, op: "2>&1", target: tgt, found: true };
+                let is_fd2: Bool = i > 0 && char_at(cmd, i - 1) == "2" && (i == 1 || char_at(cmd, i - 2) == " " || char_at(cmd, i - 2) == "\t");
+                let is_amp: Bool = i > 0 && char_at(cmd, i - 1) == "&" && (i == 1 || char_at(cmd, i - 2) != "&");
+                if is_fd2 && i + 2 < n && char_at(cmd, i + 1) == "&" && char_at(cmd, i + 2) == "1" {
+                    let lhs_p: String = str_trim(str_slice(cmd, 0, i - 1));
+                    let w: CompoundSplit = extract_redir_word(cmd, i + 3);
+                    let rem: String = if w.rhs == "" { (if w.lhs == "" { "" } else { " " + w.lhs }) } else { " " + w.lhs + " " + w.rhs };
+                    return RedirectSplit { lhs: str_trim(lhs_p + rem), op: "2>&1", target: "", found: true };
                 }
-                if i + 1 < n && char_at(cmd, i + 1) == ">" {
-                    let lhs: String = str_trim(str_slice(cmd, 0, i));
-                    let tgt: String = str_trim(str_slice(cmd, i + 2, n));
-                    return RedirectSplit { lhs: lhs, op: ">>", target: tgt, found: true };
-                }
-                let lhs: String = str_trim(str_slice(cmd, 0, i));
-                let tgt: String = str_trim(str_slice(cmd, i + 1, n));
-                return RedirectSplit { lhs: lhs, op: ">", target: tgt, found: true };
+                if is_fd2 && i + 1 < n && char_at(cmd, i + 1) == ">" { return make_redir(cmd, i - 1, i + 2, "2>>"); }
+                if is_fd2 { return make_redir(cmd, i - 1, i + 1, "2>"); }
+                if is_amp { return make_redir(cmd, i - 1, i + 1, "&>"); }
+                if i + 1 < n && char_at(cmd, i + 1) == ">" { return make_redir(cmd, i, i + 2, ">>"); }
+                return make_redir(cmd, i, i + 1, ">");
             }
-            if ch == "<" {
-                let lhs: String = str_trim(str_slice(cmd, 0, i));
-                let tgt: String = str_trim(str_slice(cmd, i + 1, n));
-                return RedirectSplit { lhs: lhs, op: "<", target: tgt, found: true };
-            }
+            if ch == "<" { return make_redir(cmd, i, i + 1, "<"); }
         }
         i = i + 1;
     }
@@ -205,11 +217,7 @@ pub fn has_unquoted_background(cmd: String) -> Bool {
 
 pub fn strip_unquoted_background(cmd: String) -> String {
     let t: String = str_trim(cmd);
-    let n: Int = chars_len(t);
-    if n > 0 && str_ends_with(t, "&") {
-        return str_trim(str_slice(t, 0, n - 1));
-    }
-    return t;
+    return if chars_len(t) > 0 && str_ends_with(t, "&") { str_trim(str_slice(t, 0, chars_len(t) - 1)) } else { t };
 }
 
 pub fn split_cmd_tokens_quote_aware(cmd: String) -> List[String] {

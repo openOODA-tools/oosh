@@ -1,0 +1,72 @@
+// # Test Lexer Suite - Unit Verification for Shell Lexer
+//
+// Logline: Verify quote-aware tokenization and compound operator splitting in-process.
+//
+// Setup: Pure algorithmic test suite using TestRunner and syntax/lexer.oo.
+//
+// Beats:
+//   1. Test compound operator splitting (&&, ||, ;).
+//   2. Test unquoted pipe and redirection detection.
+//   3. Test quote-aware command tokenization and background operator detection.
+
+import "std/meta/test/runner.oo";
+import "syntax/lexer.oo";
+
+pub fn run_test_lexer(r: TestRunner) -> TestRunner {
+    let mut tr: TestRunner = r;
+
+    // Compound splitting
+    let s1: CompoundSplit = find_compound_split("echo a && echo b");
+    tr = test_assert_eq_str(tr, "lexer: compound split && lhs", s1.lhs, "echo a");
+    tr = test_assert_eq_str(tr, "lexer: compound split && op", s1.op, "&&");
+    tr = test_assert_eq_str(tr, "lexer: compound split && rhs", s1.rhs, "echo b");
+
+    let s2: CompoundSplit = find_compound_split("cat file || exit 1");
+    tr = test_assert_eq_str(tr, "lexer: compound split || op", s2.op, "||");
+    tr = test_assert_eq_str(tr, "lexer: compound split || lhs", s2.lhs, "cat file");
+    tr = test_assert_eq_str(tr, "lexer: compound split || rhs", s2.rhs, "exit 1");
+
+    let s3: CompoundSplit = find_compound_split("cmd1 ; cmd2");
+    tr = test_assert_eq_str(tr, "lexer: compound split ; op", s3.op, ";");
+
+    // Quoted operator preservation
+    let s4: CompoundSplit = find_compound_split("echo 'a && b'");
+    tr = test_assert_eq_str(tr, "lexer: quoted && not split", s4.op, "");
+
+    // Pipe finding
+    let p1: Int = find_unquoted_pipe("cmd1 | cmd2");
+    tr = test_assert(tr, "lexer: unquoted pipe found", p1 > 0);
+
+    let p2: Int = find_unquoted_pipe("cmd1 '|' cmd2");
+    tr = test_assert_eq_int(tr, "lexer: quoted pipe ignored", p2, 0 - 1);
+
+    // Redirection
+    let rd1: RedirectSplit = find_unquoted_redirect("echo hello > out.txt");
+    tr = test_assert(tr, "lexer: redirect > found", rd1.found);
+    tr = test_assert_eq_str(tr, "lexer: redirect > op", rd1.op, ">");
+    tr = test_assert_eq_str(tr, "lexer: redirect > target", rd1.target, "out.txt");
+
+    let rd2: RedirectSplit = find_unquoted_redirect("echo 'hello > out.txt'");
+    tr = test_assert(tr, "lexer: quoted redirect ignored", !rd2.found);
+
+    let rd3: RedirectSplit = find_unquoted_redirect("echo append >> log.txt");
+    tr = test_assert(tr, "lexer: redirect >> found", rd3.found);
+    tr = test_assert_eq_str(tr, "lexer: redirect >> op", rd3.op, ">>");
+    tr = test_assert_eq_str(tr, "lexer: redirect >> target", rd3.target, "log.txt");
+
+    // Background operator
+    tr = test_assert(tr, "lexer: background & detected", has_unquoted_background("sleep 10 &"));
+    tr = test_assert_eq_str(tr, "lexer: background & stripped", strip_unquoted_background("sleep 10 &"), "sleep 10");
+    tr = test_assert(tr, "lexer: background quoted & ignored", !has_unquoted_background("echo '&'"));
+
+    // Quote-aware token splitting
+    let toks: List[String] = split_cmd_tokens_quote_aware("echo \"foo bar\" baz");
+    tr = test_assert_eq_int(tr, "lexer: token count 3", list_len(toks), 3);
+    if list_len(toks) >= 3 {
+        tr = test_assert_eq_str(tr, "lexer: token 0", list_get(toks, 0), "echo");
+        tr = test_assert_eq_str(tr, "lexer: token 1 quoted", list_get(toks, 1), "foo bar");
+        tr = test_assert_eq_str(tr, "lexer: token 2", list_get(toks, 2), "baz");
+    }
+
+    return tr;
+}

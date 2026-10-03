@@ -1,0 +1,62 @@
+// # Test Arith Suite - Unit Verification for Arithmetic Evaluator
+//
+// Logline: Verify integer parsing, operator precedence, unary minus, and zero division safety.
+//
+// Setup: Pure algorithmic test suite using TestRunner and syntax/arith.oo.
+//
+// Beats:
+//   1. Test integer string parsing with positive, negative, and padded values.
+//   2. Test operator precedence (multiplication before addition).
+//   3. Test parentheses grouping, unary minus, and division by zero protection.
+
+import "std/meta/test/runner.oo";
+import "syntax/arith.oo";
+import "syntax/param.oo";
+
+pub fn run_test_arith(env: &EnvCap, r: TestRunner) -> TestRunner {
+    let mut tr: TestRunner = r;
+
+    // parse_int_safe tests
+    tr = test_assert_eq_int(tr, "arith: parse positive int", parse_int_safe("42"), 42);
+    tr = test_assert_eq_int(tr, "arith: parse negative int", parse_int_safe("-17"), 0 - 17);
+    tr = test_assert_eq_int(tr, "arith: parse zero", parse_int_safe("0"), 0);
+    tr = test_assert_eq_int(tr, "arith: parse padded int", parse_int_safe("   100  "), 100);
+    tr = test_assert_eq_int(tr, "arith: parse empty string", parse_int_safe(""), 0);
+    tr = test_assert_eq_int(tr, "arith: parse invalid string", parse_int_safe("abc"), 0);
+
+    // eval_arithmetic_expr precedence tests
+    let mut em: EnvMap = env_map_new();
+    let res1: String = eval_arithmetic_expr(env, em, "2 + 3 * 4");
+    tr = test_assert_eq_str(tr, "arith: precedence 2 + 3 * 4 = 14", res1, "14");
+
+    let res2: String = eval_arithmetic_expr(env, em, "(2 + 3) * 4");
+    tr = test_assert_eq_str(tr, "arith: grouping (2 + 3) * 4 = 20", res2, "20");
+
+    let res3: String = eval_arithmetic_expr(env, em, "10 - 4 - 2");
+    tr = test_assert_eq_str(tr, "arith: left assoc 10 - 4 - 2 = 4", res3, "4");
+
+    // Division and modulo
+    let res4: String = eval_arithmetic_expr(env, em, "20 / 4");
+    tr = test_assert_eq_str(tr, "arith: division 20 / 4 = 5", res4, "5");
+
+    let res5: String = eval_arithmetic_expr(env, em, "17 % 5");
+    tr = test_assert_eq_str(tr, "arith: modulo 17 % 5 = 2", res5, "2");
+
+    // Division by zero protection
+    let res6: String = eval_arithmetic_expr(env, em, "10 / 0");
+    tr = test_assert_eq_str(tr, "arith: division by zero returns 0", res6, "0");
+
+    let res7: String = eval_arithmetic_expr(env, em, "10 % 0");
+    tr = test_assert_eq_str(tr, "arith: modulo by zero returns 0", res7, "0");
+
+    // Unary minus
+    let res8: String = eval_arithmetic_expr(env, em, "-5 + 10");
+    tr = test_assert_eq_str(tr, "arith: unary minus -5 + 10 = 5", res8, "5");
+
+    // Variable resolution
+    em = env_map_set(em, "X", "7");
+    let res9: String = eval_arithmetic_expr(env, em, "X * 3");
+    tr = test_assert_eq_str(tr, "arith: variable resolution X * 3 = 21", res9, "21");
+
+    return tr;
+}

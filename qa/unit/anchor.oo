@@ -1,0 +1,25 @@
+// # Unit Tests Anchor - Export Unit Test Modules
+//
+// Logline: Re-export unit test suites for lexer, arith, control, and remedy diagnostics.
+//
+// Setup: Bridges unit test modules into a single importable facade.
+//
+// Beats:
+//   1. Import test_lexer, test_arith, test_control, and test_remedy suites.
+//   2. Re-export test execution functions.
+//   3. Provide unified run_all_unit_tests entry point.
+
+import "std/meta/test/runner.oo";
+import "test_lexer.oo";
+import "test_arith.oo";
+import "test_control.oo";
+import "test_remedy.oo";
+
+pub fn run_all_unit_tests(env: &EnvCap, r: TestRunner) -> TestRunner {
+    let mut tr: TestRunner = r;
+    tr = run_test_lexer(tr);
+    tr = run_test_arith(env, tr);
+    tr = run_test_control(tr);
+    tr = run_test_remedy(tr);
+    return tr;
+}

@@ -1,0 +1,53 @@
+// # Test Remedy Suite - Unit Verification for Failure Diagnostics Rules
+//
+// Logline: Verify failure diagnostic heuristic classification and remediation synthesis.
+//
+// Setup: Pure algorithmic test suite using TestRunner and flight/rules.oo without subprocesses.
+//
+// Beats:
+//   1. Test command not found diagnostic classification and package install suggestion.
+//   2. Test missing directory and missing file path remediation.
+//   3. Test permission denied, git conflict, and build failure diagnostics.
+
+import "std/meta/test/runner.oo";
+import "flight/rules.oo";
+
+pub fn run_test_remedy(r: TestRunner) -> TestRunner {
+    let mut tr: TestRunner = r;
+
+    // Command not found heuristic
+    let d1: DiagnosticResult = match_failure_rules("unknown_bin_xyz", 127, "command not found", "/tmp");
+    tr = test_assert_eq_str(tr, "remedy: category command not found", d1.category, "COMMAND_NOT_FOUND");
+    tr = test_assert_eq_str(tr, "remedy: actionable which or apt install", d1.actionable_cmd, "which unknown_bin_xyz || sudo apt install -y unknown_bin_xyz");
+
+    // Missing directory heuristic
+    let d2: DiagnosticResult = match_failure_rules("cd /missing/dir/target", 1, "No such file or directory", "/tmp");
+    tr = test_assert_eq_str(tr, "remedy: category missing path directory", d2.category, "MISSING_PATH");
+    tr = test_assert_eq_str(tr, "remedy: actionable suggests take directory", d2.actionable_cmd, "take /missing/dir/target");
+
+    // Missing file heuristic
+    let d3: DiagnosticResult = match_failure_rules("cat /missing/doc.txt", 1, "No such file or directory", "/tmp");
+    tr = test_assert_eq_str(tr, "remedy: category missing path file", d3.category, "MISSING_PATH");
+    tr = test_assert_eq_str(tr, "remedy: actionable suggests touch file", d3.actionable_cmd, "touch /missing/doc.txt && cat /missing/doc.txt");
+
+    // Permission denied heuristic
+    let d4: DiagnosticResult = match_failure_rules("touch /etc/shadow", 126, "Permission denied", "/tmp");
+    tr = test_assert_eq_str(tr, "remedy: category permission denied", d4.category, "PERMISSION_DENIED");
+    tr = test_assert_eq_str(tr, "remedy: actionable suggests sudo", d4.actionable_cmd, "sudo touch /etc/shadow");
+
+    // Git failure heuristic
+    let d5: DiagnosticResult = match_failure_rules("git merge feature", 1, "CONFLICT (content): Merge conflict in main.oo", "/tmp");
+    tr = test_assert_eq_str(tr, "remedy: category git conflict", d5.category, "GIT_CONFLICT");
+    tr = test_assert_eq_str(tr, "remedy: actionable suggests git status", d5.actionable_cmd, "git diff --check || git status");
+
+    // Build failure heuristic
+    let d6: DiagnosticResult = match_failure_rules("make broken", 2, "make: *** [Makefile:10: broken] Error 1", "/tmp");
+    tr = test_assert_eq_str(tr, "remedy: category build failure", d6.category, "BUILD_FAILURE");
+    tr = test_assert_eq_str(tr, "remedy: actionable suggests clean build", d6.actionable_cmd, "make clean && make");
+
+    // Generic fault heuristic
+    let d7: DiagnosticResult = match_failure_rules("false", 1, "", "/tmp");
+    tr = test_assert_eq_str(tr, "remedy: category generic fault", d7.category, "GENERIC_FAULT");
+
+    return tr;
+}

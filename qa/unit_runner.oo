@@ -1,0 +1,24 @@
+// # OOSH Native Unit Test Runner
+//
+// Logline: Execute in-process algorithmic unit test suites for lexer, arith, control, and remedy.
+//
+// Setup: Import std/meta/test/runner.oo and unit test suites; invoke runner sequentially.
+//
+// Beats:
+//   1. Initialize TestRunner state.
+//   2. Run test_lexer, test_arith, test_control, and test_remedy suites.
+//   3. Print summary and exit with status 0 on pass or 1 on fail.
+
+import "std/meta/test/runner.oo";
+import "unit/anchor.oo";
+
+pub fn main(sys: &ProcessCap, env: &EnvCap, args: List[String]) -> Result[Int, String] {
+    println("=== Running OOSH Native Unit Tests ===");
+    let mut r: TestRunner = test_runner_new();
+    r = run_all_unit_tests(env, r);
+    test_summary(r);
+    if r.failed > 0 {
+        return Err("Unit tests failed");
+    }
+    return Ok(0);
+}

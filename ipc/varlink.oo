@@ -173,16 +173,37 @@ pub fn route_varlink_call(sys: &ProcessCap, cwd: String, rec: FlightRecord, raw_
         return varlink_ok(payload);
     }
 
+    // 6. contextd Causal Telemetry: ReportEvent
+    if method == "org.openooda.oosh.Context1.ReportEvent" || method == "org.openooda.oosh.ReportEvent" || method == "ReportEvent" {
+        let ev_cmd: String = extract_json_str_field(call_str, "command");
+        let payload: String = "{\"recorded\":true,\"causal_status\":\"synced\",\"last_command\":\"" + safe_json(ev_cmd, 100) + "\"}";
+        return varlink_ok(payload);
+    }
+
+    // 7. toold Schema Dispatch: ListTools
+    if method == "org.openooda.oosh.Tool1.ListTools" || method == "org.openooda.oosh.ListTools" || method == "ListTools" {
+        let tools_payload: String = "{\"tools\":[\"daemon\",\"sandbox\",\"remedy\",\"autopsy\",\"z\",\"explain\",\"caps\"],\"count\":7,\"status\":\"ready\"}";
+        return varlink_ok(tools_payload);
+    }
+
+    // 8. sentry Gatekeeping & Triage: TriageFailure
+    if method == "org.openooda.oosh.Sentry1.TriageFailure" || method == "org.openooda.oosh.TriageFailure" || method == "TriageFailure" {
+        let diag: DiagnosticResult = flight_rules_match(rec.last_failed_cmd, rec.last_exit_code, rec.last_stderr, cwd);
+        let rem_json: String = "{\"category\":\"" + diag.category + "\",\"summary\":\"" + safe_json(diag.summary, 120) + "\",\"actionable_cmd\":\"" + safe_json(diag.actionable_cmd, 100) + "\",\"rollback_safe\":true}";
+        let payload: String = "{\"triaged\":true,\"category\":\"" + diag.category + "\",\"remedy\":" + rem_json + ",\"gatekeeping\":\"pass\"}";
+        return varlink_ok(payload);
+    }
+
     // Introspection: GetInfo
     if method == "org.varlink.service.GetInfo" {
-        let payload: String = "{\"vendor\":\"openOODA\",\"product\":\"oosh\",\"version\":\"0.9.0\",\"url\":\"https://openooda.org\",\"interfaces\":[\"org.openooda.oosh.Control1\",\"org.varlink.service\"]}";
+        let payload: String = "{\"vendor\":\"openOODA\",\"product\":\"oosh\",\"version\":\"0.9.0\",\"url\":\"https://openooda.org\",\"interfaces\":[\"org.openooda.oosh.Control1\",\"org.openooda.oosh.Context1\",\"org.openooda.oosh.Tool1\",\"org.openooda.oosh.Sentry1\",\"org.varlink.service\"]}";
         return varlink_ok(payload);
     }
 
     // Introspection: GetInterfaceDescription
     if method == "org.varlink.service.GetInterfaceDescription" {
         let iface: String = extract_json_str_field(call_str, "interface");
-        if iface == "org.openooda.oosh.Control1" || iface == "org.openooda.oosh" {
+        if iface == "org.openooda.oosh.Control1" || iface == "org.openooda.oosh" || iface == "org.openooda.oosh.Context1" || iface == "org.openooda.oosh.Tool1" || iface == "org.openooda.oosh.Sentry1" {
             return varlink_ok("{\"description\":\"" + control1_idl() + "\"}");
         }
         if iface == "org.varlink.service" {

@@ -68,5 +68,43 @@ pub fn run_test_control(r: TestRunner) -> TestRunner {
     let g2: Result[String, String] = func_map_get(fm, "nonexistent");
     tr = test_assert(tr, "control: function map get missing", g2.is_err());
 
+    // command grouping
+    tr = test_assert(tr, "control: is group stmt { echo a; }", is_group_stmt("{ echo a; }"));
+    tr = test_assert(tr, "control: not group stmt echo a", !is_group_stmt("echo a"));
+    tr = test_assert_eq_str(tr, "control: extract group body", extract_group_body("{ echo group_ok; }"), "echo group_ok;");
+
+    // incomplete line detection
+    tr = test_assert(tr, "control: incomplete unclosed single quote", is_line_incomplete("echo 'hello"));
+    tr = test_assert(tr, "control: incomplete unclosed double quote", is_line_incomplete("echo \"hello"));
+    tr = test_assert(tr, "control: incomplete trailing backslash", is_line_incomplete("echo hello \\"));
+    tr = test_assert(tr, "control: incomplete trailing pipe", is_line_incomplete("cat foo |"));
+    tr = test_assert(tr, "control: incomplete for loop", is_line_incomplete("for x in 1 2; do"));
+    tr = test_assert(tr, "control: incomplete for without do", is_line_incomplete("for x in 1 2 3"));
+    tr = test_assert(tr, "control: incomplete while without do", is_line_incomplete("while true"));
+    tr = test_assert(tr, "control: incomplete if block", is_line_incomplete("if true; then"));
+    tr = test_assert(tr, "control: complete statement", !is_line_incomplete("echo hello"));
+
+    // case statement parsing and pattern matching
+    tr = test_assert(tr, "control: pattern match exact", pattern_matches_word("foo", "foo"));
+    tr = test_assert(tr, "control: pattern match wildcard", pattern_matches_word("*", "anything"));
+    tr = test_assert(tr, "control: pattern match alternation", pattern_matches_word("a|b|c", "b"));
+    tr = test_assert(tr, "control: pattern match prefix", pattern_matches_word("foo*", "foobar"));
+    tr = test_assert(tr, "control: pattern match suffix", pattern_matches_word("*.txt", "readme.txt"));
+    tr = test_assert(tr, "control: pattern match quoted", pattern_matches_word("\"foo\"", "foo"));
+    tr = test_assert(tr, "control: pattern match single quoted", pattern_matches_word("'bar'", "bar"));
+    tr = test_assert(tr, "control: pattern match question mark", pattern_matches_word("fo?", "foo"));
+    let cs_res: Result[CaseStmtDef, String] = parse_case_stmt_word("case bar in foo) echo 1 ;; bar) echo 2 ;; esac", "bar");
+    tr = test_assert(tr, "control: parse case stmt word", cs_res.is_ok());
+    if cs_res.is_ok() {
+        let cs_def: CaseStmtDef = match cs_res { Ok(d) => d, Err(_) => CaseStmtDef { matched_body: "" } };
+        tr = test_assert_eq_str(tr, "control: case matched body", cs_def.matched_body, "echo 2");
+    }
+    let cs_q: Result[CaseStmtDef, String] = parse_case_stmt("case \"bar\" in (foo) echo 1 ;; (bar) echo 2 ;; esac");
+    tr = test_assert(tr, "control: parse case quoted with parens", cs_q.is_ok());
+    if cs_q.is_ok() {
+        let cd_q: CaseStmtDef = match cs_q { Ok(d) => d, Err(_) => CaseStmtDef { matched_body: "" } };
+        tr = test_assert_eq_str(tr, "control: case matched body quoted", cd_q.matched_body, "echo 2");
+    }
+
     return tr;
 }

@@ -1,28 +1,21 @@
 // # Shell Parameter Default Expansion Subsystem
 //
-// Logline: Evaluates POSIX parameter expansion defaults, alternates, lengths, and null fallbacks.
+// Logline: Evaluates POSIX parameter expansion defaults, alternates, lengths, patterns, and slices.
 //
 // Setup: Pure string analysis over EnvMap and ambient environment capabilities.
 //
 // Beats:
-//   1. Resolve ${#VAR} string length parameter expressions.
-//   2. Resolve ${VAR:-default} and ${VAR-default} fallback expressions.
-//   3. Resolve ${VAR:+alternate} conditional replacement expressions.
+//   1. Resolve ${#VAR} string length and ${VAR/pat/rep} pattern replacement expressions.
+//   2. Resolve ${VAR#pat} prefix and ${VAR%pat} suffix stripping expressions.
+//   3. Resolve ${VAR:-default}, ${VAR-default}, and ${VAR:+alternate} fallbacks.
 
 import "std/fs/process/env.oo";
 
-pub type EnvMap = struct {
-    keys: List[String],
-    vals: List[String]
-};
-
-pub fn env_map_new() -> EnvMap {
-    return EnvMap { keys: list_new(), vals: list_new() };
-}
+pub type EnvMap = struct { keys: List[String], vals: List[String] };
+pub fn env_map_new() -> EnvMap { return EnvMap { keys: list_new(), vals: list_new() }; }
 
 pub fn env_map_get(m: EnvMap, key: String) -> Result[String, String] {
-    let n: Int = list_len(m.keys);
-    let mut i: Int = 0;
+    let n: Int = list_len(m.keys); let mut i: Int = 0;
     while i < n {
         if list_get(m.keys, i) == key { return Ok(list_get(m.vals, i)); }
         i = i + 1;
@@ -31,86 +24,77 @@ pub fn env_map_get(m: EnvMap, key: String) -> Result[String, String] {
 }
 
 pub fn env_map_set(m: EnvMap, key: String, val: String) -> EnvMap {
-    let mut new_k: List[String] = list_new();
-    let mut new_v: List[String] = list_new();
-    let n: Int = list_len(m.keys);
-    let mut i: Int = 0;
+    let mut new_k: List[String] = list_new(); let mut new_v: List[String] = list_new();
+    let n: Int = list_len(m.keys); let mut i: Int = 0;
     while i < n {
-        if list_get(m.keys, i) != key {
-            new_k = list_push(new_k, list_get(m.keys, i));
-            new_v = list_push(new_v, list_get(m.vals, i));
-        }
+        if list_get(m.keys, i) != key { new_k = list_push(new_k, list_get(m.keys, i)); new_v = list_push(new_v, list_get(m.vals, i)); }
         i = i + 1;
     }
     return EnvMap { keys: list_push(new_k, key), vals: list_push(new_v, val) };
 }
 
 pub fn env_map_remove(m: EnvMap, key: String) -> EnvMap {
-    let mut new_k: List[String] = list_new();
-    let mut new_v: List[String] = list_new();
-    let n: Int = list_len(m.keys);
-    let mut i: Int = 0;
+    let mut new_k: List[String] = list_new(); let mut new_v: List[String] = list_new();
+    let n: Int = list_len(m.keys); let mut i: Int = 0;
     while i < n {
-        if list_get(m.keys, i) != key {
-            new_k = list_push(new_k, list_get(m.keys, i));
-            new_v = list_push(new_v, list_get(m.vals, i));
-        }
+        if list_get(m.keys, i) != key { new_k = list_push(new_k, list_get(m.keys, i)); new_v = list_push(new_v, list_get(m.vals, i)); }
         i = i + 1;
     }
     return EnvMap { keys: new_k, vals: new_v };
 }
 
 fn parse_int_str(s: String) -> Int {
-    let t: String = str_trim(s);
-    let n: Int = chars_len(t);
-    let mut acc: Int = 0;
-    let mut i: Int = 0;
+    let t: String = str_trim(s); let n: Int = chars_len(t);
+    let mut acc: Int = 0; let mut i: Int = 0;
     while i < n {
-        let c: String = char_at(t, i);
-        let b: Int = byte_at(c, 0);
-        if b >= 48 && b <= 57 { acc = acc * 10 + (b - 48); }
-        else { return acc; }
+        let b: Int = byte_at(char_at(t, i), 0);
+        if b >= 48 && b <= 57 { acc = acc * 10 + (b - 48); } else { return acc; }
         i = i + 1;
     }
     return acc;
 }
 
+fn get_var_val(env: &EnvCap, env_map: EnvMap, k: String) -> String {
+    let r_map: Result[String, String] = env_map_get(env_map, k);
+    if r_map.is_ok() { return match r_map { Ok(v) => v, Err(_) => "" }; }
+    let r_env: Result[String, String] = env_get(env, k);
+    return match r_env { Ok(v) => v, Err(_) => "" };
+}
+
+fn replace_all_str(s: String, old: String, rep: String) -> String {
+    let olen: Int = chars_len(old); if olen == 0 { return s; }
+    let mut out: String = ""; let mut cur: String = s;
+    while true {
+        let idx: Int = str_index_of(cur, old);
+        if idx < 0 { out = out + cur; break; }
+        out = out + str_slice(cur, 0, idx) + rep;
+        cur = str_slice(cur, idx + olen, chars_len(cur));
+    }
+    return out;
+}
+
 fn expand_simple_vars(env: &EnvCap, env_map: EnvMap, s: String) -> String {
-    let n: Int = chars_len(s);
-    if str_index_of(s, "$") < 0 { return s; }
-    let mut out: String = "";
-    let mut i: Int = 0;
+    let n: Int = chars_len(s); if str_index_of(s, "$") < 0 { return s; }
+    let mut out: String = ""; let mut i: Int = 0;
     while i < n {
         let ch: String = char_at(s, i);
         if ch == "$" && i + 1 < n {
             if char_at(s, i + 1) == "{" {
                 let close_idx: Int = str_index_of(str_slice(s, i + 2, n), "}");
                 if close_idx >= 0 {
-                    let k: String = str_slice(s, i + 2, i + 2 + close_idx);
-                    let val: String = match env_map_get(env_map, k) {
-                        Ok(v) => v,
-                        Err(_) => match env_get(env, k) { Ok(ev) => ev, Err(_) => "" }
-                    };
-                    out = out + val;
+                    out = out + get_var_val(env, env_map, str_slice(s, i + 2, i + 2 + close_idx));
                     i = i + 2 + close_idx + 1;
                 } else { out = out + "${"; i = i + 2; }
             } else {
-                let mut vi: Int = i + 1;
-                let mut var_name: String = "";
+                let mut vi: Int = i + 1; let mut var_name: String = "";
                 while vi < n {
-                    let vc: String = char_at(s, vi);
-                    let vb: Int = byte_at(vc, 0);
+                    let vb: Int = byte_at(char_at(s, vi), 0);
                     if (vb >= 65 && vb <= 90) || (vb >= 97 && vb <= 122) || (vb >= 48 && vb <= 57) || vb == 95 {
-                        var_name = var_name + vc; vi = vi + 1;
+                        var_name = var_name + char_at(s, vi); vi = vi + 1;
                     } else { vi = n; }
                 }
                 if chars_len(var_name) > 0 {
-                    let val: String = match env_map_get(env_map, var_name) {
-                        Ok(v) => v,
-                        Err(_) => match env_get(env, var_name) { Ok(ev) => ev, Err(_) => "" }
-                    };
-                    out = out + val;
-                    i = i + 1 + chars_len(var_name);
+                    out = out + get_var_val(env, env_map, var_name); i = i + 1 + chars_len(var_name);
                 } else { out = out + "$"; i = i + 1; }
             }
         } else { out = out + ch; i = i + 1; }
@@ -118,80 +102,125 @@ fn expand_simple_vars(env: &EnvCap, env_map: EnvMap, s: String) -> String {
     return out;
 }
 
+pub fn expand_param_pattern(val: String, pat: String, rep: String, is_all: Bool) -> String {
+    if pat == "" { return val; }
+    if is_all { return replace_all_str(val, pat, rep); }
+    let p_idx: Int = str_index_of(val, pat);
+    if p_idx >= 0 { return str_slice(val, 0, p_idx) + rep + str_slice(val, p_idx + chars_len(pat), chars_len(val)); }
+    return val;
+}
+
+pub fn strip_param_prefix(val: String, pat: String, is_long: Bool) -> String {
+    if pat == "" { return val; }
+    if str_starts_with(pat, "*") {
+        let sfx: String = str_slice(pat, 1, chars_len(pat));
+        if !is_long {
+            let idx: Int = str_index_of(val, sfx);
+            if idx >= 0 { return str_slice(val, idx + chars_len(sfx), chars_len(val)); }
+        } else {
+            let mut idx: Int = -1; let mut cur_pos: Int = 0;
+            while cur_pos < chars_len(val) {
+                let ni: Int = str_index_of(str_slice(val, cur_pos, chars_len(val)), sfx);
+                if ni >= 0 { idx = cur_pos + ni; cur_pos = idx + 1; } else { cur_pos = chars_len(val); }
+            }
+            if idx >= 0 { return str_slice(val, idx + chars_len(sfx), chars_len(val)); }
+        }
+        return val;
+    }
+    if str_starts_with(val, pat) { return str_slice(val, chars_len(pat), chars_len(val)); }
+    return val;
+}
+
+pub fn strip_param_suffix(val: String, pat: String, is_long: Bool) -> String {
+    if pat == "" { return val; }
+    if str_ends_with(pat, "*") {
+        let pfx: String = str_slice(pat, 0, chars_len(pat) - 1);
+        if !is_long {
+            let mut idx: Int = -1; let mut cur_pos: Int = 0;
+            while cur_pos < chars_len(val) {
+                let ni: Int = str_index_of(str_slice(val, cur_pos, chars_len(val)), pfx);
+                if ni >= 0 { idx = cur_pos + ni; cur_pos = idx + 1; } else { cur_pos = chars_len(val); }
+            }
+            if idx >= 0 { return str_slice(val, 0, idx); }
+        } else {
+            let idx: Int = str_index_of(val, pfx);
+            if idx >= 0 { return str_slice(val, 0, idx); }
+        }
+        return val;
+    }
+    if str_ends_with(val, pat) { return str_slice(val, 0, chars_len(val) - chars_len(pat)); }
+    return val;
+}
+
 pub fn resolve_param_expansion(env: &EnvCap, env_map: EnvMap, k: String) -> String {
     if str_starts_with(k, "#") && chars_len(k) > 1 {
-        let v_name: String = str_slice(k, 1, chars_len(k));
-        let val: String = match env_map_get(env_map, v_name) {
-            Ok(v) => v,
-            Err(_) => match env_get(env, v_name) { Ok(ev) => ev, Err(_) => "" }
-        };
-        return chars_len(val).to_string();
+        return chars_len(get_var_val(env, env_map, str_slice(k, 1, chars_len(k)))).to_string();
     }
-    let colon_dash: Int = str_index_of(k, ":-");
-    if colon_dash >= 0 {
-        let v_name: String = str_slice(k, 0, colon_dash);
-        let def_val: String = str_slice(k, colon_dash + 2, chars_len(k));
-        let val: String = match env_map_get(env_map, v_name) {
-            Ok(v) => v,
-            Err(_) => match env_get(env, v_name) { Ok(ev) => ev, Err(_) => "" }
-        };
-        return if val == "" { expand_simple_vars(env, env_map, def_val) } else { val };
+    let n: Int = chars_len(k);
+    let mut op_pos: Int = -1; let mut i: Int = 0;
+    while i < n {
+        let b: Int = byte_at(char_at(k, i), 0);
+        if !((b >= 65 && b <= 90) || (b >= 97 && b <= 122) || (b >= 48 && b <= 57) || b == 95) {
+            op_pos = i; i = n;
+        } else { i = i + 1; }
     }
-    let colon_plus: Int = str_index_of(k, ":+");
-    if colon_plus >= 0 {
-        let v_name: String = str_slice(k, 0, colon_plus);
-        let alt_val: String = str_slice(k, colon_plus + 2, chars_len(k));
-        let val: String = match env_map_get(env_map, v_name) {
-            Ok(v) => v,
-            Err(_) => match env_get(env, v_name) { Ok(ev) => ev, Err(_) => "" }
-        };
-        return if val != "" { expand_simple_vars(env, env_map, alt_val) } else { "" };
+    if op_pos < 0 { return get_var_val(env, env_map, k); }
+    let v_name: String = str_slice(k, 0, op_pos);
+    let op_c: String = char_at(k, op_pos);
+    let val: String = get_var_val(env, env_map, v_name);
+
+    if op_c == "/" {
+        let is_all: Bool = op_pos + 1 < n && char_at(k, op_pos + 1) == "/";
+        let rem: String = str_slice(k, if is_all { op_pos + 2 } else { op_pos + 1 }, n);
+        let rn: Int = chars_len(rem);
+        let mut slash2: Int = -1; let mut ri: Int = 0; let mut r_esc: Bool = false;
+        while ri < rn {
+            let rc: String = char_at(rem, ri);
+            if r_esc { r_esc = false; } else if rc == "\\" { r_esc = true; }
+            else if rc == "/" { slash2 = ri; ri = rn; }
+            ri = ri + 1;
+        }
+        let raw_pat: String = if slash2 >= 0 { str_slice(rem, 0, slash2) } else { rem };
+        let pat: String = replace_all_str(raw_pat, "\\/", "/");
+        let rep: String = if slash2 >= 0 { str_slice(rem, slash2 + 1, rn) } else { "" };
+        return expand_param_pattern(val, pat, rep, is_all);
     }
-    let dash_idx: Int = str_index_of(k, "-");
-    if dash_idx >= 0 {
-        let v_name: String = str_slice(k, 0, dash_idx);
-        let def_val: String = str_slice(k, dash_idx + 1, chars_len(k));
+    if op_c == "#" {
+        let is_long: Bool = op_pos + 1 < n && char_at(k, op_pos + 1) == "#";
+        return strip_param_prefix(val, str_slice(k, if is_long { op_pos + 2 } else { op_pos + 1 }, n), is_long);
+    }
+    if op_c == "%" {
+        let is_long: Bool = op_pos + 1 < n && char_at(k, op_pos + 1) == "%";
+        return strip_param_suffix(val, str_slice(k, if is_long { op_pos + 2 } else { op_pos + 1 }, n), is_long);
+    }
+    if op_c == ":" {
+        if op_pos + 1 < n && char_at(k, op_pos + 1) == "-" { return if val == "" { expand_simple_vars(env, env_map, str_slice(k, op_pos + 2, n)) } else { val }; }
+        if op_pos + 1 < n && char_at(k, op_pos + 1) == "+" { return if val != "" { expand_simple_vars(env, env_map, str_slice(k, op_pos + 2, n)) } else { "" }; }
+    }
+    if op_c == "-" {
         let r_map: Result[String, String] = env_map_get(env_map, v_name);
         if r_map.is_ok() { return match r_map { Ok(v) => v, Err(_) => "" }; }
         let r_env: Result[String, String] = env_get(env, v_name);
         if r_env.is_ok() { return match r_env { Ok(v) => v, Err(_) => "" }; }
-        return expand_simple_vars(env, env_map, def_val);
+        return expand_simple_vars(env, env_map, str_slice(k, op_pos + 1, n));
     }
-    return match env_map_get(env_map, k) {
-        Ok(v) => v,
-        Err(_) => match env_get(env, k) { Ok(ev) => ev, Err(_) => "" }
-    };
+    return val;
 }
 
 pub fn restore_fn_env(ret_em: EnvMap, orig_em: EnvMap, fn_argc: Int) -> EnvMap {
     let mut em: EnvMap = ret_em;
-    em = env_map_remove(em, "0");
-    em = env_map_remove(em, "#");
-    em = env_map_remove(em, "@");
-    em = env_map_remove(em, "*");
-    let mut i: Int = 1;
-    while i <= fn_argc {
-        em = env_map_remove(em, i.to_string());
-        i = i + 1;
-    }
+    em = env_map_remove(em, "0"); em = env_map_remove(em, "#"); em = env_map_remove(em, "@"); em = env_map_remove(em, "*");
+    let mut i: Int = 1; while i <= fn_argc { em = env_map_remove(em, i.to_string()); i = i + 1; }
     let r0: Result[String, String] = env_map_get(orig_em, "0");
     if r0.is_ok() { em = env_map_set(em, "0", match r0 { Ok(v) => v, Err(_) => "" }); }
     let r_hash: Result[String, String] = env_map_get(orig_em, "#");
     if r_hash.is_ok() {
         let h_val: String = match r_hash { Ok(v) => v, Err(_) => "0" };
-        let orig_argc: Int = parse_int_str(h_val);
-        em = env_map_set(em, "#", h_val);
-        let mut j: Int = 1;
-        while j <= orig_argc {
-            let rj: Result[String, String] = env_map_get(orig_em, j.to_string());
-            if rj.is_ok() { em = env_map_set(em, j.to_string(), match rj { Ok(v) => v, Err(_) => "" }); }
-            j = j + 1;
-        }
+        let orig_argc: Int = parse_int_str(h_val); em = env_map_set(em, "#", h_val);
+        let mut j: Int = 1; while j <= orig_argc { let rj = env_map_get(orig_em, j.to_string()); if rj.is_ok() { em = env_map_set(em, j.to_string(), match rj { Ok(v) => v, Err(_) => "" }); } j = j + 1; }
     }
-    let r_at: Result[String, String] = env_map_get(orig_em, "@");
-    if r_at.is_ok() { em = env_map_set(em, "@", match r_at { Ok(v) => v, Err(_) => "" }); }
-    let r_star: Result[String, String] = env_map_get(orig_em, "*");
-    if r_star.is_ok() { em = env_map_set(em, "*", match r_star { Ok(v) => v, Err(_) => "" }); }
+    let r_at: Result[String, String] = env_map_get(orig_em, "@"); if r_at.is_ok() { em = env_map_set(em, "@", match r_at { Ok(v) => v, Err(_) => "" }); }
+    let r_star: Result[String, String] = env_map_get(orig_em, "*"); if r_star.is_ok() { em = env_map_set(em, "*", match r_star { Ok(v) => v, Err(_) => "" }); }
     return em;
 }
 
@@ -199,46 +228,22 @@ pub fn build_fn_env(orig_em: EnvMap, cmd: String, tokens: List[String]) -> EnvMa
     let mut fn_em: EnvMap = orig_em;
     let r_orig_hash: Result[String, String] = env_map_get(orig_em, "#");
     let orig_argc: Int = parse_int_str(match r_orig_hash { Ok(v) => v, Err(_) => "0" });
-    let mut ci: Int = 1;
-    while ci <= orig_argc {
-        fn_em = env_map_remove(fn_em, ci.to_string());
-        ci = ci + 1;
-    }
-    let mut all_fn_args: String = "";
-    let num_tokens: Int = list_len(tokens);
+    let mut ci: Int = 1; while ci <= orig_argc { fn_em = env_map_remove(fn_em, ci.to_string()); ci = ci + 1; }
+    let mut all_fn_args: String = ""; let num_tokens: Int = list_len(tokens);
     let mut ai: Int = 1;
-    while ai < num_tokens {
-        let a_val: String = list_get(tokens, ai);
-        fn_em = env_map_set(fn_em, ai.to_string(), a_val);
-        all_fn_args = if all_fn_args == "" { a_val } else { all_fn_args + " " + a_val };
-        ai = ai + 1;
-    }
-    fn_em = env_map_set(fn_em, "#", (num_tokens - 1).to_string());
-    fn_em = env_map_set(fn_em, "@", all_fn_args);
-    fn_em = env_map_set(fn_em, "*", all_fn_args);
-    fn_em = env_map_set(fn_em, "0", cmd);
+    while ai < num_tokens { let a_val: String = list_get(tokens, ai); fn_em = env_map_set(fn_em, ai.to_string(), a_val); all_fn_args = if all_fn_args == "" { a_val } else { all_fn_args + " " + a_val }; ai = ai + 1; }
+    fn_em = env_map_set(fn_em, "#", (num_tokens - 1).to_string()); fn_em = env_map_set(fn_em, "@", all_fn_args); fn_em = env_map_set(fn_em, "*", all_fn_args); fn_em = env_map_set(fn_em, "0", cmd);
     return fn_em;
 }
 
 pub fn parse_return_code(line: String, def_rc: Int) -> Int {
-    let t: String = str_trim(line);
-    if t == "return" { return def_rc; }
-    if str_starts_with(t, "return ") {
-        let arg: String = str_trim(str_slice(t, 7, chars_len(t)));
-        let n: Int = chars_len(arg);
-        if n == 0 { return def_rc; }
-        return parse_int_str(arg);
-    }
+    let t: String = str_trim(line); if t == "return" { return def_rc; }
+    if str_starts_with(t, "return ") { let a: String = str_trim(str_slice(t, 7, chars_len(t))); return if a == "" { def_rc } else { parse_int_str(a) }; }
     return def_rc;
 }
 
 pub fn parse_exit_code(line: String, def_rc: Int) -> Int {
     let t: String = str_trim(line);
-    if str_starts_with(t, "exit ") {
-        let arg: String = str_trim(str_slice(t, 5, chars_len(t)));
-        let n: Int = chars_len(arg);
-        if n == 0 { return def_rc; }
-        return parse_int_str(arg);
-    }
+    if str_starts_with(t, "exit ") { let a: String = str_trim(str_slice(t, 5, chars_len(t))); return if a == "" { def_rc } else { parse_int_str(a) }; }
     return def_rc;
 }

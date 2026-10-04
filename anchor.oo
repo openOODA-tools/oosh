@@ -57,8 +57,8 @@ pub fn get_all_builtin_output(sys: &ProcessCap, env: &EnvCap, fs_r: &FsReadCap, 
         return Ok(top + "\n" + r1 + "\n" + r2 + "\n" + bot + "\n");
     }
     if cmd == "history" || cmd == "hist" || cmd == "past" || cmd == "recall" {
-        let home: String = match env_get(env, "HOME") { Ok(h) => h, Err(_) => "" };
-        return match read_file(fs_r, home + "/.oosh_history") { Ok(s) => Ok(s), Err(_) => Ok("No history available\n") };
+        let home: String = match env_map_get(session.env_map, "HOME") { Ok(h) => h, Err(_) => match env_get(env, "HOME") { Ok(h2) => h2, Err(_) => "" } };
+        return match read_file(fs_r, (if home != "" { home } else { "." }) + "/.oosh_history") { Ok(s) => Ok(s), Err(_) => Ok("No history available\n") };
     }
     if cmd == "alias" { return Ok(format_aliases(session.alias_map)); }
     if cmd == "echo" { return Ok("\n"); }

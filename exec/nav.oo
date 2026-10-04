@@ -1,12 +1,12 @@
 // # Execution Navigation Controller
 //
-// Logline: Mutates working directory and handles cd, chdir, and atomic take workflows.
+// Logline: Mutates working directory and handles cd, chdir, z-jump, and atomic take workflows.
 //
 // Setup: Requires FfiCap and EnvCap to update process working directory and environment.
 //
 // Beats:
 //   1. Resolve target directory from bare shortcuts (.., ..., ....) and paths (~, -).
-//   2. Update directory state via APC channel without subprocess spawn.
+//   2. Rank and jump to frecent directory paths via history scoring (z, jump).
 //   3. Support ergonomic atomic directory creation and entry (take, mkcd).
 
 import "std/fs/process/env.oo";
@@ -22,7 +22,7 @@ fn ansi_esc() -> String {
 }
 
 fn resolve_cd_target(line: String, cwd: String, home: String, oldpwd: String) -> String {
-    let raw_t: String = if line == ".." { ".." } else if line == "..." { "../.." } else if line == "...." { "../../.." } else if line == "-" { "-" } else if line == "cd" || line == "chdir" || line == "goto" || line == "jump" || line == "walk" { "~" } else if str_starts_with(line, "cd ") { str_slice(line, 3, chars_len(line)) } else if str_starts_with(line, "chdir ") { str_slice(line, 6, chars_len(line)) } else { str_slice(line, 5, chars_len(line)) };
+    let raw_t: String = if line == ".." { ".." } else if line == "..." { "../.." } else if line == "...." { "../../.." } else if line == "-" { "-" } else if line == "cd" || line == "chdir" || line == "goto" || line == "walk" { "~" } else if str_starts_with(line, "cd ") { str_slice(line, 3, chars_len(line)) } else if str_starts_with(line, "chdir ") { str_slice(line, 6, chars_len(line)) } else { str_slice(line, 5, chars_len(line)) };
     let clean_t: String = str_trim(raw_t);
     if clean_t == "~" || clean_t == "" { return home; }
     if clean_t == "-" { return oldpwd; }
@@ -31,7 +31,12 @@ fn resolve_cd_target(line: String, cwd: String, home: String, oldpwd: String) ->
 }
 
 pub fn is_nav_cmd(line: String) -> Bool {
-    return line == ".." || line == "..." || line == "...." || line == "-" || line == "cd" || line == "chdir" || line == "goto" || line == "jump" || line == "walk" || str_starts_with(line, "cd ") || str_starts_with(line, "chdir ") || str_starts_with(line, "goto ") || str_starts_with(line, "jump ") || str_starts_with(line, "walk ");
+    return line == ".." || line == "..." || line == "...." || line == "-" || line == "cd" || line == "chdir" || line == "goto" || line == "walk" || str_starts_with(line, "cd ") || str_starts_with(line, "chdir ") || str_starts_with(line, "goto ") || str_starts_with(line, "walk ");
+}
+
+pub fn is_z_cmd(line: String) -> Bool {
+    let t: String = str_trim(line);
+    return t == "z" || str_starts_with(t, "z ") || t == "jump" || str_starts_with(t, "jump ");
 }
 
 pub fn is_take_cmd(line: String) -> Bool {
@@ -40,7 +45,7 @@ pub fn is_take_cmd(line: String) -> Bool {
 
 pub fn dispatch_nav_cd(ffi: &FfiCap, env: &EnvCap, cwd: String, env_map: EnvMap, line: String) -> Result[NavResult, String] {
     let esc: String = ansi_esc();
-    let home: String = match env_get(env, "HOME") { Ok(h) => h, Err(_) => "" };
+    let home: String = match env_map_get(env_map, "HOME") { Ok(h) => h, Err(_) => match env_get(env, "HOME") { Ok(h2) => h2, Err(_) => "" } };
     let oldpwd: String = match env_map_get(env_map, "OLDPWD") {
         Ok(o) => o,
         Err(_) => match env_get(env, "OLDPWD") { Ok(eo) => eo, Err(_) => cwd }
@@ -58,10 +63,61 @@ pub fn dispatch_nav_cd(ffi: &FfiCap, env: &EnvCap, cwd: String, env_map: EnvMap,
     return Ok(NavResult { cwd: resolved, env_map: next_em });
 }
 
+pub fn dispatch_nav_z(ffi: &FfiCap, env: &EnvCap, cwd: String, env_map: EnvMap, line: String, hist_entries: List[String]) -> Result[NavResult, String] {
+    let t: String = str_trim(line);
+    let query: String = if str_starts_with(t, "z ") { str_trim(str_slice(t, 2, chars_len(t))) } else if str_starts_with(t, "jump ") { str_trim(str_slice(t, 5, chars_len(t))) } else { "" };
+    let home: String = match env_map_get(env_map, "HOME") { Ok(h) => h, Err(_) => match env_get(env, "HOME") { Ok(h2) => h2, Err(_) => "" } };
+    if query == "" || query == "~" {
+        return dispatch_nav_cd(ffi, env, cwd, env_map, "cd " + home);
+    }
+    if query == "-" {
+        return dispatch_nav_cd(ffi, env, cwd, env_map, "cd -");
+    }
+
+    let n: Int = list_len(hist_entries);
+    let mut best_target: String = "";
+    let mut best_score: Int = -1;
+    let mut i: Int = n - 1;
+    while i >= 0 {
+        let entry: String = list_get(hist_entries, i);
+        let raw_cand: String = if str_starts_with(entry, "cd ") {
+            str_trim(str_slice(entry, 3, chars_len(entry)))
+        } else if str_starts_with(entry, "take ") || str_starts_with(entry, "z ") || str_starts_with(entry, "jump ") {
+            str_trim(str_slice(entry, str_index_of(entry, " ") + 1, chars_len(entry)))
+        } else { "" };
+        let clen: Int = chars_len(raw_cand);
+        let path_cand: String = if clen >= 2 && ((str_starts_with(raw_cand, "\"") && str_ends_with(raw_cand, "\"")) || (str_starts_with(raw_cand, "'") && str_ends_with(raw_cand, "'"))) { str_slice(raw_cand, 1, clen - 1) } else { raw_cand };
+
+        if path_cand != "" && str_contains(path_cand, query) {
+            let mut freq: Int = 0;
+            let mut j: Int = 0;
+            while j < n {
+                let ej: String = list_get(hist_entries, j);
+                if str_contains(ej, path_cand) { freq = freq + 1; }
+                j = j + 1;
+            }
+            let score: Int = (freq * 100) + i;
+            if score > best_score {
+                best_score = score;
+                best_target = path_cand;
+            }
+        }
+        i = i - 1;
+    }
+
+    let target: String = if best_target != "" { best_target } else { query };
+    let nav_res = dispatch_nav_cd(ffi, env, cwd, env_map, "cd " + target);
+    if nav_res.is_ok() && best_target != "" {
+        let nr: NavResult = match nav_res { Ok(r) => r, Err(_) => NavResult { cwd: cwd, env_map: env_map } };
+        println(nr.cwd);
+    }
+    return nav_res;
+}
+
 pub fn dispatch_nav_take(ffi: &FfiCap, env: &EnvCap, cwd: String, env_map: EnvMap, line: String) -> Result[NavResult, String] {
     let esc: String = ansi_esc();
     let clean_t: String = str_trim(str_slice(line, str_index_of(line, " ") + 1, chars_len(line)));
-    let home: String = match env_get(env, "HOME") { Ok(h) => h, Err(_) => "" };
+    let home: String = match env_map_get(env_map, "HOME") { Ok(h) => h, Err(_) => match env_get(env, "HOME") { Ok(h2) => h2, Err(_) => "" } };
     let target_dir: String = if str_starts_with(clean_t, "~/") { home + str_slice(clean_t, 1, chars_len(clean_t)) } else { clean_t };
     if oo_tui_write(ffi, esc + "_mkdir:" + target_dir).is_err() {
         println("oosh: mkdir: cannot create directory '" + clean_t + "'");

@@ -1,0 +1,100 @@
+// # Command and Flag Explanation Engine
+//
+// Logline: Analyzes shell commands and flags to render contextual syntax breakdowns.
+//
+// Setup: Parses command line tokens and maps standard flags to human-readable explanations.
+//
+// Beats:
+//   1. Parse target command name and decomposed argument flags.
+//   2. Match commands and flags against sovereign command catalog.
+//   3. Render cyberpunk-styled explanation card with flag breakdowns.
+
+import "ui/anchor.oo";
+import "syntax/lexer.oo";
+
+pub fn is_explain_cmd(cmd: String) -> Bool {
+    let t: String = str_trim(cmd);
+    return t == "explain" || str_starts_with(t, "explain ") || t == "whatis" || str_starts_with(t, "whatis ");
+}
+
+fn describe_base_cmd(cmd: String) -> String {
+    if cmd == "ls" { return "List directory contents and metadata."; }
+    if cmd == "tar" { return "Archive utility for packing and extracting file bundles."; }
+    if cmd == "grep" { return "Search files or standard input for pattern matches."; }
+    if cmd == "curl" { return "Transfer data to or from a network server over HTTP/HTTPS."; }
+    if cmd == "rm" { return "Remove files or directory hierarchies."; }
+    if cmd == "find" { return "Search for files in a directory hierarchy matching criteria."; }
+    if cmd == "git" { return "Fast distributed version control system."; }
+    if cmd == "systemctl" { return "Control and inspect systemd units and services."; }
+    if cmd == "systemd-run" { return "Run programs in transient systemd service or scope units."; }
+    if cmd == "daemon" { return "Launch transient systemd user service in app.slice per GEMINI.md."; }
+    if cmd == "sandbox" { return "Execute command within isolated capability sandbox."; }
+    if cmd == "remedy" || cmd == "fix" { return "Diagnose previous command failure and synthesize recovery command."; }
+    if cmd == "autopsy" || cmd == "bb" { return "Inspect flight recorder execution timeline and crash diagnostics."; }
+    if cmd == "z" || cmd == "jump" { return "Context-aware frecent directory jumper."; }
+    if cmd == "ps" { return "Report snapshot of current running processes."; }
+    return "Execute host command or binary.";
+}
+
+fn describe_flag(cmd: String, flag: String) -> String {
+    if flag == "-l" { return "Use long listing format showing permissions, owner, size, and date."; }
+    if flag == "-a" || flag == "--all" { return "Include hidden entries starting with '.' in the listing."; }
+    if flag == "-h" || flag == "--human-readable" { return "Print sizes in human-readable units (e.g. 1K, 234M, 2G)."; }
+    if flag == "-r" || flag == "-R" || flag == "--recursive" { return "Operate recursively through directory subtrees."; }
+    if flag == "-f" || flag == "--force" { return "Force execution without interactive confirmation prompts."; }
+    if flag == "-v" || flag == "--verbose" { return "Verbosely list each file or action processed."; }
+    if flag == "-z" || flag == "--gzip" { return "Filter archive stream through gzip compression."; }
+    if flag == "-c" || flag == "--create" { return "Create a new archive bundle."; }
+    if flag == "-x" || flag == "--extract" { return "Extract files from an archive bundle."; }
+    if flag == "-s" || flag == "--silent" { return "Silent mode; suppress progress meter and informational output."; }
+    if flag == "-S" || flag == "--show-error" { return "Display error message even when running in silent mode."; }
+    if flag == "-L" || flag == "--location" { return "Follow HTTP 3xx redirects to the target destination."; }
+    if flag == "-O" || flag == "--remote-name" { return "Write output to local file named matching remote URL resource."; }
+    if flag == "-n" || flag == "--line-number" { return "Prefix each matching line of output with its line number."; }
+    if flag == "-i" || flag == "--ignore-case" { return "Ignore case distinctions in pattern matching."; }
+    if flag == "-m" { return "Specify commit or operational message directly."; }
+    if flag == "--no-net" { return "Isolate network capabilities (no external network access)."; }
+    if flag == "--apply" { return "Immediately execute proposed remedy or action."; }
+    if flag == "--user" { return "Operate on calling user's systemd manager instance."; }
+    return "Command option modifier or flag parameter.";
+}
+
+pub fn explain_syntax_breakdown(line: String) -> String {
+    let t: String = str_trim(line);
+    let raw_args: String = if str_starts_with(t, "explain ") { str_trim(str_slice(t, 8, chars_len(t))) } else if str_starts_with(t, "whatis ") { str_trim(str_slice(t, 7, chars_len(t))) } else { "" };
+    if raw_args == "" {
+        return ui_card_top("?", "EXPLAIN COMMAND USAGE") + "\n" + ui_card_row("Usage", "explain <command> [flags]") + "\n" + ui_card_row("Example", "explain ls -la  |  explain tar -czvf foo.tar.gz .") + "\n" + ui_card_bottom("ENTER A COMMAND TO ANALYZE");
+    }
+    let toks: List[String] = split_cmd_tokens_quote_aware(raw_args);
+    let n: Int = list_len(toks);
+    if n == 0 { return "No command specified to explain."; }
+    let base_cmd: String = list_get(toks, 0);
+    let mut card: String = ui_card_top("*", "EXPLAIN: " + raw_args) + "\n";
+    card = card + ui_card_row(base_cmd, describe_base_cmd(base_cmd)) + "\n";
+    if n > 1 {
+        card = card + ui_card_section("Decomposed Options & Flags") + "\n";
+        let mut i: Int = 1;
+        while i < n {
+            let tok: String = list_get(toks, i);
+            if str_starts_with(tok, "--") {
+                card = card + ui_card_row(tok, describe_flag(base_cmd, tok)) + "\n";
+            } else if str_starts_with(tok, "-") && chars_len(tok) > 1 {
+                if chars_len(tok) == 2 {
+                    card = card + ui_card_row(tok, describe_flag(base_cmd, tok)) + "\n";
+                } else {
+                    let mut ci: Int = 1;
+                    while ci < chars_len(tok) {
+                        let single_f: String = "-" + char_at(tok, ci);
+                        card = card + ui_card_row(single_f, describe_flag(base_cmd, single_f)) + "\n";
+                        ci = ci + 1;
+                    }
+                }
+            } else {
+                card = card + ui_card_row("arg", tok) + "\n";
+            }
+            i = i + 1;
+        }
+    }
+    card = card + ui_card_bottom("EXPLANATION COMPLETE");
+    return card;
+}

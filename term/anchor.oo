@@ -45,6 +45,10 @@ pub fn term_complete_ghost(fs_r: &FsReadCap, cur_line: String, alias_names: List
     return complete_ghost(fs_r, cur_line, alias_names);
 }
 
+pub fn term_history_suggest(hist: HistoryState, cur_prefix: String) -> String {
+    return history_suggest(hist, cur_prefix);
+}
+
 pub fn term_line_redraw_full(prompt: String, ed: LineEditor, ghost: String) {
     line_editor_redraw_full(prompt, ed, ghost);
 }

@@ -1,0 +1,236 @@
+// # Execution Structured Stream Engine
+//
+// Logline: Evaluates native .field property access and in-memory object filtering on streams.
+//
+// Setup: Parses structured JSON records, JSONL, and tabular process records without jq.
+//
+// Beats:
+//   1. Identify pipeline property access (.key, .items[0]) and filter clauses (where .field > val).
+//   2. Extract targeted properties from JSON payloads and collections.
+//   3. Filter tabular and object streams matching conditional criteria in-memory.
+
+pub fn is_property_access(cmd: String) -> Bool {
+    let t: String = str_trim(cmd);
+    return str_starts_with(t, ".") && chars_len(t) > 1 && !str_starts_with(t, "./") && !str_starts_with(t, "..") && t != ".";
+}
+
+pub fn is_where_filter(cmd: String) -> Bool {
+    let t: String = str_trim(cmd);
+    return str_starts_with(t, "where ") || t == "where";
+}
+
+fn parse_int_val(s: String) -> Int {
+    let t: String = str_trim(s); let n: Int = chars_len(t);
+    let mut acc: Int = 0; let mut neg: Bool = false; let mut i: Int = 0;
+    if n > 0 && char_at(t, 0) == "-" { neg = true; i = 1; }
+    while i < n {
+        let b: Int = byte_at(char_at(t, i), 0);
+        if b >= 48 && b <= 57 { acc = acc * 10 + (b - 48); } else { break; }
+        i = i + 1;
+    }
+    return if neg { 0 - acc } else { acc };
+}
+
+fn json_extract_key(json_str: String, key: String) -> String {
+    let key_pat: String = "\"" + key + "\"";
+    let kpos: Int = str_index_of(json_str, key_pat);
+    if kpos < 0 { return ""; }
+    let after_k: Int = kpos + chars_len(key_pat);
+    let rem: String = str_slice(json_str, after_k, chars_len(json_str));
+    let colon_pos: Int = str_index_of(rem, ":");
+    if colon_pos < 0 { return ""; }
+    let val_part: String = str_trim(str_slice(rem, colon_pos + 1, chars_len(rem)));
+    let vn: Int = chars_len(val_part);
+    if vn == 0 { return ""; }
+    let c0: String = char_at(val_part, 0);
+    if c0 == "\"" {
+        let mut i: Int = 1; let mut esc: Bool = false;
+        while i < vn {
+            let c: String = char_at(val_part, i);
+            if esc { esc = false; } else if c == "\\" { esc = true; }
+            else if c == "\"" { return str_slice(val_part, 1, i); }
+            i = i + 1;
+        }
+        return str_slice(val_part, 1, vn);
+    }
+    if c0 == "[" || c0 == "{" {
+        let close_ch: String = if c0 == "[" { "]" } else { "}" };
+        let mut depth: Int = 0; let mut i: Int = 0;
+        while i < vn {
+            let c: String = char_at(val_part, i);
+            if c == c0 { depth = depth + 1; }
+            else if c == close_ch { depth = depth - 1; if depth == 0 { return str_slice(val_part, 0, i + 1); } }
+            i = i + 1;
+        }
+    }
+    let mut i: Int = 0;
+    while i < vn {
+        let c: String = char_at(val_part, i);
+        if c == "," || c == "}" || c == "]" || c == "\n" || c == " " || c == "\r" { return str_trim(str_slice(val_part, 0, i)); }
+        i = i + 1;
+    }
+    return str_trim(val_part);
+}
+
+fn array_extract_index(arr_str: String, idx: Int) -> String {
+    let t: String = str_trim(arr_str);
+    let inner: String = if str_starts_with(t, "[") && str_ends_with(t, "]") { str_trim(str_slice(t, 1, chars_len(t) - 1)) } else { t };
+    let n: Int = chars_len(inner);
+    let mut cur_idx: Int = 0; let mut start: Int = 0; let mut depth: Int = 0;
+    let mut in_s: Bool = false; let mut i: Int = 0;
+    while i <= n {
+        let c: String = if i < n { char_at(inner, i) } else { "," };
+        if c == "\"" { in_s = !in_s; }
+        else if !in_s && (c == "[" || c == "{") { depth = depth + 1; }
+        else if !in_s && (c == "]" || c == "}") { depth = depth - 1; }
+        else if !in_s && depth == 0 && c == "," {
+            if cur_idx == idx {
+                let item: String = str_trim(str_slice(inner, start, i));
+                let ilen: Int = chars_len(item);
+                return if ilen >= 2 && str_starts_with(item, "\"") && str_ends_with(item, "\"") { str_slice(item, 1, ilen - 1) } else { item };
+            }
+            cur_idx = cur_idx + 1;
+            start = i + 1;
+        }
+        i = i + 1;
+    }
+    return "";
+}
+
+pub fn exec_property_access(input_str: String, query: String) -> String {
+    let mut cur_val: String = input_str;
+    let mut q: String = str_trim(query);
+    while q != "" {
+        if str_starts_with(q, ".") {
+            q = str_slice(q, 1, chars_len(q));
+        } else if str_starts_with(q, "[") {
+            let b_close: Int = str_index_of(q, "]");
+            if b_close > 1 {
+                let idx: Int = parse_int_val(str_slice(q, 1, b_close));
+                cur_val = array_extract_index(cur_val, idx);
+                q = str_slice(q, b_close + 1, chars_len(q));
+            } else { q = ""; }
+        } else {
+            let qn: Int = chars_len(q);
+            let mut next_sep: Int = -1;
+            let mut i: Int = 0;
+            while i < qn {
+                let c: String = char_at(q, i);
+                if c == "." || c == "[" { next_sep = i; i = qn; } else { i = i + 1; }
+            }
+            let key: String = if next_sep >= 0 { str_slice(q, 0, next_sep) } else { q };
+            cur_val = json_extract_key(cur_val, key);
+            q = if next_sep >= 0 { str_slice(q, next_sep, qn) } else { "" };
+        }
+    }
+    return cur_val;
+}
+
+fn compare_vals(actual: String, op: String, expected: String) -> Bool {
+    let act_trim: String = str_trim(actual);
+    let mut exp_trim: String = str_trim(expected);
+    let elen: Int = chars_len(exp_trim);
+    if elen >= 2 && ((str_starts_with(exp_trim, "\"") && str_ends_with(exp_trim, "\"")) || (str_starts_with(exp_trim, "'") && str_ends_with(exp_trim, "'"))) {
+        exp_trim = str_slice(exp_trim, 1, elen - 1);
+    }
+    let is_num: Bool = (chars_len(act_trim) > 0 && byte_at(char_at(act_trim, 0), 0) >= 48 && byte_at(char_at(act_trim, 0), 0) <= 57) || (chars_len(act_trim) > 1 && char_at(act_trim, 0) == "-");
+    if is_num {
+        let a_num: Int = parse_int_val(act_trim);
+        let e_num: Int = parse_int_val(exp_trim);
+        if op == ">" { return a_num > e_num; } if op == ">=" { return a_num >= e_num; }
+        if op == "<" { return a_num < e_num; } if op == "<=" { return a_num <= e_num; }
+        if op == "==" || op == "=" { return a_num == e_num; }
+        if op == "!=" { return a_num != e_num; }
+    }
+    if op == "==" || op == "=" { return act_trim == exp_trim; }
+    if op == "!=" { return act_trim != exp_trim; }
+    return false;
+}
+
+fn split_row_words(row: String) -> List[String] {
+    let mut words: List[String] = list_new();
+    let n: Int = chars_len(row);
+    let mut cur: String = ""; let mut i: Int = 0;
+    while i < n {
+        let c: String = char_at(row, i);
+        if c == " " || c == "\t" {
+            if cur != "" { words = list_push(words, cur); cur = ""; }
+        } else { cur = cur + c; }
+        i = i + 1;
+    }
+    if cur != "" { words = list_push(words, cur); }
+    return words;
+}
+
+fn char_upper(c: String) -> String {
+    let b: Int = if chars_len(c) > 0 { byte_at(c, 0) } else { 0 };
+    if b >= 97 && b <= 122 {
+        let lowers: String = "abcdefghijklmnopqrstuvwxyz";
+        let uppers: String = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        let idx: Int = str_index_of(lowers, c);
+        if idx >= 0 { return char_at(uppers, idx); }
+    }
+    return c;
+}
+
+fn to_upper_ascii(s: String) -> String {
+    let mut res: String = "";
+    let n: Int = chars_len(s);
+    let mut i: Int = 0;
+    while i < n {
+        res = res + char_upper(char_at(s, i));
+        i = i + 1;
+    }
+    return res;
+}
+
+pub fn exec_where_filter(input_text: String, filter_expr: String) -> String {
+    let raw_f: String = str_trim(filter_expr);
+    let expr: String = if str_starts_with(raw_f, "where ") { str_trim(str_slice(raw_f, 6, chars_len(raw_f))) } else { raw_f };
+    let parts: List[String] = split_row_words(expr);
+    if list_len(parts) < 3 { return input_text; }
+    let raw_field: String = list_get(parts, 0);
+    let field: String = if str_starts_with(raw_field, ".") { str_slice(raw_field, 1, chars_len(raw_field)) } else { raw_field };
+    let op: String = list_get(parts, 1);
+    let expected: String = list_get(parts, 2);
+
+    let mut lines: List[String] = list_new();
+    let n: Int = chars_len(input_text);
+    let mut cur_l: String = ""; let mut i: Int = 0;
+    while i < n {
+        let c: String = char_at(input_text, i);
+        if c == "\n" { lines = list_push(lines, cur_l); cur_l = ""; }
+        else if c != "\r" { cur_l = cur_l + c; }
+        i = i + 1;
+    }
+    if cur_l != "" { lines = list_push(lines, cur_l); }
+    let line_cnt: Int = list_len(lines);
+    if line_cnt == 0 { return ""; }
+
+    let hdr: String = list_get(lines, 0);
+    let hdr_cols: List[String] = split_row_words(hdr);
+    let mut col_idx: Int = -1; let mut ci: Int = 0;
+    while ci < list_len(hdr_cols) {
+        let hc: String = list_get(hdr_cols, ci);
+        if hc == field || hc == "%" + field || hc == to_upper_ascii(field) || hc == "%" + to_upper_ascii(field) {
+            col_idx = ci; ci = list_len(hdr_cols);
+        } else { ci = ci + 1; }
+    }
+
+    let mut out: String = hdr + "\n";
+    let mut li: Int = 1;
+    while li < line_cnt {
+        let row: String = list_get(lines, li);
+        let is_json: Bool = str_starts_with(str_trim(row), "{");
+        let matched: Bool = if is_json {
+            let actual_val: String = exec_property_access(row, raw_field);
+            compare_vals(actual_val, op, expected)
+        } else if col_idx >= 0 {
+            let row_cols: List[String] = split_row_words(row);
+            if col_idx < list_len(row_cols) { compare_vals(list_get(row_cols, col_idx), op, expected) } else { false }
+        } else { false };
+        if matched { out = out + row + "\n"; }
+        li = li + 1;
+    }
+    return out;
+}

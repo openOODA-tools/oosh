@@ -11,8 +11,37 @@
 
 import "diagnostics/anchor.oo";
 import "syntax/anchor.oo";
+import "std/fs/process/process.oo";
 
 fn ansi_esc() -> String { return bytes_to_str(bytes_push(bytes_new(), 27)); }
+
+pub fn is_exit_cmd(cmd: String) -> Bool {
+    let t: String = str_trim(cmd);
+    return t == "exit" || str_starts_with(t, "exit ") || t == "quit" || t == "q" || t == ":q" || t == ":q!" || t == ":x" || t == "bye" || t == "logout";
+}
+
+pub fn is_daemon_cmd(cmd: String) -> Bool {
+    return str_starts_with(str_trim(cmd), "daemon ");
+}
+
+pub fn exec_daemon(sys: &ProcessCap, line: String) -> Result[String, String] {
+    let t: String = str_trim(line);
+    let d_cmd: String = str_trim(str_slice(t, 7, chars_len(t)));
+    let sys_cmd: String = "XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)} DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS:-unix:path=/run/user/$(id -u)/bus} systemd-run --user --slice=app.slice -p StandardOutput=journal -p StandardError=journal " + d_cmd;
+    return process_exec(sys, sys_cmd);
+}
+
+pub fn is_sandbox_cmd(cmd: String) -> Bool {
+    return str_starts_with(str_trim(cmd), "sandbox ");
+}
+
+pub fn resolve_sandbox_cmd(line: String) -> String {
+    let t: String = str_trim(line);
+    let s_rest: String = str_trim(str_slice(t, 8, chars_len(t)));
+    let is_nonet: Bool = str_starts_with(s_rest, "--no-net");
+    let act_cmd: String = if is_nonet { str_trim(str_slice(s_rest, 8, chars_len(s_rest))) } else { s_rest };
+    return (if is_nonet { "bwrap --dev-bind / / --unshare-net " } else { "bwrap --dev-bind / / " }) + act_cmd;
+}
 
 pub fn exec_subshell(sys: &ProcessCap, ffi: &FfiCap, body: String) -> Int {
     let mut s_args: List[String] = list_push(list_push(list_push(list_new(), "--no-banner"), "-c"), body);

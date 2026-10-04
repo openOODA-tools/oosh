@@ -12,6 +12,8 @@
 import "pipe.oo";
 import "nav.oo";
 import "host.oo";
+import "explain.oo";
+import "stream.oo";
 
 pub fn exec_pipe_stream(ffi: &FfiCap, out_str: String, rhs: String) -> Int {
     return route_builtin_pipeline(ffi, out_str, rhs);
@@ -20,3 +22,15 @@ pub fn exec_pipe_stream(ffi: &FfiCap, out_str: String, rhs: String) -> Int {
 pub fn exec_pipe_redirect(fs_w: &FsWriteCap, out_str: String, cwd: String, target_file: String, is_append: Bool) -> Int {
     return route_builtin_redirection(fs_w, out_str, cwd, target_file, is_append);
 }
+
+pub fn exec_is_explain(cmd: String) -> Bool { return is_explain_cmd(cmd); }
+pub fn exec_explain(line: String) -> String { return explain_syntax_breakdown(line); }
+pub fn exec_is_property_access(cmd: String) -> Bool { return is_property_access(cmd); }
+pub fn exec_property_access_run(input_str: String, query: String) -> String { return exec_property_access(input_str, query); }
+pub fn exec_is_where_filter(cmd: String) -> Bool { return is_where_filter(cmd); }
+pub fn exec_where_filter_run(input_str: String, filter_expr: String) -> String { return exec_where_filter(input_str, filter_expr); }
+pub fn exec_is_exit(cmd: String) -> Bool { return is_exit_cmd(cmd); }
+pub fn exec_is_daemon(cmd: String) -> Bool { return is_daemon_cmd(cmd); }
+pub fn exec_daemon_run(sys: &ProcessCap, line: String) -> Result[String, String] { return exec_daemon(sys, line); }
+pub fn exec_is_sandbox(cmd: String) -> Bool { return is_sandbox_cmd(cmd); }
+pub fn exec_sandbox_resolve(line: String) -> String { return resolve_sandbox_cmd(line); }

@@ -1,0 +1,78 @@
+// # Test Stream Suite - Property Access and Filtering
+//
+// Logline: Verify JSON property extraction, tabular filtering, and parameter pattern operators.
+//
+// Setup: Pure algorithmic test suite using TestRunner, exec/stream.oo, and syntax/param.oo.
+//
+// Beats:
+//   1. Test .field and .[idx] property extraction from JSON.
+//   2. Test where filtering on tabular and JSON streams.
+//   3. Test parameter expansion operators for pattern substitution and prefix/suffix stripping.
+
+import "std/meta/test/runner.oo";
+import "exec/stream.oo";
+import "syntax/param.oo";
+
+pub fn run_test_stream(r: TestRunner) -> TestRunner {
+    let mut tr: TestRunner = r;
+
+    // Property access detection
+    tr = test_assert(tr, "stream: is property access .field", is_property_access(".field"));
+    tr = test_assert(tr, "stream: is property access .[0]", is_property_access(".[0]"));
+    tr = test_assert(tr, "stream: not property access ./path", !is_property_access("./path"));
+    tr = test_assert(tr, "stream: not property access ..", !is_property_access(".."));
+    tr = test_assert(tr, "stream: not property access bare .", !is_property_access("."));
+
+    // JSON property access extraction
+    let j1: String = "{\"name\":\"oosh\",\"version\":\"0.9.0\",\"port\":8080}";
+    tr = test_assert_eq_str(tr, "stream: extract string field", exec_property_access(j1, ".name"), "oosh");
+    tr = test_assert_eq_str(tr, "stream: extract numeric field", exec_property_access(j1, ".port"), "8080");
+
+    let j2: String = "{\"items\":[\"alpha\",\"beta\",\"gamma\"]}";
+    tr = test_assert_eq_str(tr, "stream: extract array element 0", exec_property_access(j2, ".items[0]"), "alpha");
+    tr = test_assert_eq_str(tr, "stream: extract array element 1", exec_property_access(j2, ".items[1]"), "beta");
+    tr = test_assert_eq_str(tr, "stream: extract array element 2", exec_property_access(j2, ".items[2]"), "gamma");
+
+    // Chained nested property access
+    let j3: String = "{\"user\":{\"name\":\"alice\",\"profile\":{\"city\":\"Honolulu\"}}}";
+    tr = test_assert_eq_str(tr, "stream: chained object access", exec_property_access(j3, ".user.name"), "alice");
+    tr = test_assert_eq_str(tr, "stream: deep nested object access", exec_property_access(j3, ".user.profile.city"), "Honolulu");
+
+    let j4: String = "{\"items\":[{\"id\":101,\"tag\":\"prod\"},{\"id\":102,\"tag\":\"dev\"}]}";
+    tr = test_assert_eq_str(tr, "stream: array element object field", exec_property_access(j4, ".items[0].tag"), "prod");
+    tr = test_assert_eq_str(tr, "stream: array element object id", exec_property_access(j4, ".items[1].id"), "102");
+
+    // Where filter detection
+    tr = test_assert(tr, "stream: is where filter", is_where_filter("where .pid > 100"));
+    tr = test_assert(tr, "stream: not where filter", !is_where_filter("ps aux"));
+
+    // Tabular filtering
+    let tab: String = "PID %CPU COMMAND\n10 0.1 init\n200 5.0 oosh\n300 12.5 oodac";
+    let filtered: String = exec_where_filter(tab, "where .PID > 150");
+    tr = test_assert(tr, "stream: filter keeps header", str_contains(filtered, "PID %CPU COMMAND"));
+    tr = test_assert(tr, "stream: filter excludes PID 10", !str_contains(filtered, "init"));
+    tr = test_assert(tr, "stream: filter includes PID 200", str_contains(filtered, "oosh"));
+    tr = test_assert(tr, "stream: filter includes PID 300", str_contains(filtered, "oodac"));
+
+    // JSON where filtering with string comparison
+    let j_stream: String = "HDR\n{\"name\":\"alice\",\"role\":\"admin\"}\n{\"name\":\"bob\",\"role\":\"user\"}";
+    let j_filtered: String = exec_where_filter(j_stream, "where .role == \"admin\"");
+    tr = test_assert(tr, "stream: json where filter includes alice", str_contains(j_filtered, "alice"));
+    tr = test_assert(tr, "stream: json where filter excludes bob", !str_contains(j_filtered, "bob"));
+
+    // Parameter expansion pattern replacement
+    let v1: String = "hello_world_world";
+    tr = test_assert_eq_str(tr, "param: replace first pattern", expand_param_pattern(v1, "world", "sovereign", false), "hello_sovereign_world");
+    tr = test_assert_eq_str(tr, "param: replace all pattern", expand_param_pattern(v1, "world", "sovereign", true), "hello_sovereign_sovereign");
+
+    // Parameter expansion prefix stripping
+    let v2: String = "foo/bar/baz.txt";
+    tr = test_assert_eq_str(tr, "param: strip shortest prefix", strip_param_prefix(v2, "*/", false), "bar/baz.txt");
+    tr = test_assert_eq_str(tr, "param: strip longest prefix", strip_param_prefix(v2, "*/", true), "baz.txt");
+
+    // Parameter expansion suffix stripping
+    tr = test_assert_eq_str(tr, "param: strip shortest suffix", strip_param_suffix(v2, "/*", false), "foo/bar");
+    tr = test_assert_eq_str(tr, "param: strip longest suffix", strip_param_suffix(v2, "/*", true), "foo");
+
+    return tr;
+}

@@ -54,6 +54,7 @@ pub fn term_read_key(ffi: &FfiCap) -> KeyEvent {
     if b == 9 { return KeyEvent { action: "tab", text: "" }; }
     if b == 3 { return KeyEvent { action: "ctrl_c", text: "" }; }
     if b == 4 { return KeyEvent { action: "ctrl_d", text: "" }; }
+    if b == 6 { return KeyEvent { action: "ctrl_f", text: "" }; }
     if b == 1 { return KeyEvent { action: "home", text: "" }; }
     if b == 5 { return KeyEvent { action: "end", text: "" }; }
     if b == 11 { return KeyEvent { action: "ctrl_k", text: "" }; }

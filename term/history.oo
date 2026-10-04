@@ -35,10 +35,31 @@ fn parse_history_lines(s: String) -> List[String] {
     return entries;
 }
 
-pub fn history_load(fs_r: &FsReadCap, env: &EnvCap) -> HistoryState {
+fn get_home_dir(fs_r: &FsReadCap, env: &EnvCap) -> String {
     let hr: Result[String, String] = env_get(env, "HOME");
-    let home: String = match hr { Ok(h) => h, Err(_) => "" };
-    let path: String = home + "/.oosh_history";
+    let h: String = match hr { Ok(s) => s, Err(_) => "" };
+    if h != "" { return h; }
+    let r_proc: Result[String, String] = read_file(fs_r, "/proc/self/environ");
+    if r_proc.is_ok() {
+        let env_blob: String = match r_proc { Ok(s) => s, Err(_) => "" };
+        let nul_sep: String = bytes_to_str(bytes_push(bytes_new(), 0));
+        let entries: List[String] = str_split(env_blob, nul_sep);
+        let n: Int = list_len(entries);
+        let mut i: Int = 0;
+        while i < n {
+            let entry: String = list_get(entries, i);
+            if str_starts_with(entry, "HOME=") {
+                return str_slice(entry, 5, chars_len(entry));
+            }
+            i = i + 1;
+        }
+    }
+    return "";
+}
+
+pub fn history_load(fs_r: &FsReadCap, env: &EnvCap) -> HistoryState {
+    let home: String = get_home_dir(fs_r, env);
+    let path: String = (if home != "" { home } else { "." }) + "/.oosh_history";
     let mut entries: List[String] = list_new();
     let r: Result[String, String] = read_file(fs_r, path);
     if r.is_ok() {
@@ -78,4 +99,34 @@ pub fn history_set_cursor(hist: HistoryState, idx: Int) -> HistoryState {
 
 pub fn history_reset_cursor(hist: HistoryState) -> HistoryState {
     return HistoryState { entries: hist.entries, file_path: hist.file_path, cursor_idx: list_len(hist.entries) };
+}
+
+pub fn history_suggest(hist: HistoryState, cur_prefix: String) -> String {
+    let plen: Int = chars_len(cur_prefix);
+    if plen == 0 { return ""; }
+    let n: Int = list_len(hist.entries);
+    let mut best_cmd: String = "";
+    let mut best_score: Int = -1;
+    let mut i: Int = n - 1;
+    while i >= 0 {
+        let entry: String = list_get(hist.entries, i);
+        if str_starts_with(entry, cur_prefix) && chars_len(entry) > plen {
+            let mut freq: Int = 0;
+            let mut j: Int = 0;
+            while j < n {
+                if list_get(hist.entries, j) == entry { freq = freq + 1; }
+                j = j + 1;
+            }
+            let score: Int = (freq * 100) + i;
+            if score > best_score {
+                best_score = score;
+                best_cmd = entry;
+            }
+        }
+        i = i - 1;
+    }
+    if best_cmd != "" {
+        return str_slice(best_cmd, plen, chars_len(best_cmd));
+    }
+    return "";
 }

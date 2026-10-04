@@ -28,10 +28,10 @@ SRC := main.oo version.oo anchor.oo prompt.oo dispatch.oo engine.oo manual.oo al
        ipc/anchor.oo ipc/varlink.oo ipc/daemon.oo \
        term/anchor.oo term/raw.oo term/read.oo term/line.oo term/history.oo term/complete.oo \
        syntax/anchor.oo syntax/lexer.oo syntax/expand.oo syntax/param.oo syntax/arith.oo syntax/glob.oo syntax/control.oo syntax/list.oo \
-       exec/anchor.oo exec/pipe.oo exec/nav.oo exec/host.oo \
+       exec/anchor.oo exec/pipe.oo exec/nav.oo exec/host.oo exec/explain.oo exec/stream.oo \
        job/anchor.oo job/table.oo job/control.oo
 
-UNIT_SRC := qa/unit_runner.oo qa/unit/anchor.oo qa/unit/test_lexer.oo qa/unit/test_arith.oo qa/unit/test_control.oo qa/unit/test_remedy.oo
+UNIT_SRC := qa/unit_runner.oo qa/unit/anchor.oo qa/unit/test_lexer.oo qa/unit/test_arith.oo qa/unit/test_control.oo qa/unit/test_remedy.oo qa/unit/test_stream.oo
 
 .PHONY: all build test test-unit parity line-cap file-law academy check verify install clean test-e2e test-tier1 test-tier2 test-tier3 test-tier4 test-tier5
 

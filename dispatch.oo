@@ -21,6 +21,7 @@ import "ipc/anchor.oo";
 import "syntax/anchor.oo";
 import "exec/anchor.oo";
 import "job/anchor.oo";
+import "term/anchor.oo";
 
 fn ansi_esc() -> String { return bytes_to_str(bytes_push(bytes_new(), 27)); }
 
@@ -28,8 +29,6 @@ pub type DispatchResult = struct {
     next_cwd: String, should_exit: Bool, exit_code: Int,
     flight_rec: FlightRecord, aliases: AliasMap, session: SessionState, is_return: Bool
 };
-
-fn is_exit(cmd: String) -> Bool { let t: String = str_trim(cmd); return t == "exit" || str_starts_with(t, "exit ") || t == "quit" || t == "q" || t == ":q" || t == ":q!" || t == ":x" || t == "bye" || t == "logout"; }
 
 fn make_res(cwd: String, exit: Bool, rc: Int, rec: FlightRecord, sess: SessionState, ret: Bool) -> DispatchResult {
     return DispatchResult { next_cwd: cwd, should_exit: exit, exit_code: rc, flight_rec: rec, aliases: sess.alias_map, session: sess, is_return: ret };
@@ -51,13 +50,8 @@ pub fn dispatch_line(fs_r: &FsReadCap, fs_w: &FsWriteCap, sys: &ProcessCap, env:
             let next_op: String = list_get(cl.ops, i);
             let ok: Bool = prev_op == "" || prev_op == ";" || prev_op == "&" || (prev_op == "&&" && cur_res.exit_code == 0) || (prev_op == "||" && cur_res.exit_code != 0);
             if ok && sub_cmd != "" {
-                if next_op == "&" {
-                    let bg_s: SessionState = SessionState { cwd: cur_res.session.cwd, env_map: cur_res.session.env_map, alias_map: cur_res.session.alias_map, job_table: spawn_background(ffi, cur_res.session.job_table, sub_cmd), func_map: cur_res.session.func_map };
-                    cur_res = make_res(cur_res.next_cwd, false, 0, flight_success(cur_res.flight_rec, sub_cmd, 0), bg_s, false);
-                } else {
-                    cur_res = dispatch_line(fs_r, fs_w, sys, env, ffi, sub_cmd, cur_res.flight_rec, cur_res.session);
-                    if cur_res.should_exit || cur_res.is_return { return cur_res; }
-                }
+                if next_op == "&" { cur_res = make_res(cur_res.next_cwd, false, 0, flight_success(cur_res.flight_rec, sub_cmd, 0), SessionState { cwd: cur_res.session.cwd, env_map: cur_res.session.env_map, alias_map: cur_res.session.alias_map, job_table: spawn_background(ffi, cur_res.session.job_table, sub_cmd), func_map: cur_res.session.func_map }, false); }
+                else { cur_res = dispatch_line(fs_r, fs_w, sys, env, ffi, sub_cmd, cur_res.flight_rec, cur_res.session); if cur_res.should_exit || cur_res.is_return { return cur_res; } }
             }
             prev_op = next_op; i = i + 1;
         }
@@ -66,29 +60,22 @@ pub fn dispatch_line(fs_r: &FsReadCap, fs_w: &FsWriteCap, sys: &ProcessCap, env:
 
     if str_starts_with(raw_trimmed, "#") { return make_res(cwd, false, 0, rec, cur_s, false); }
     if str_starts_with(raw_trimmed, "rune ") { raw_trimmed = str_trim(str_slice(raw_trimmed, 5, chars_len(raw_trimmed))); }
-    if is_subshell_stmt(raw_trimmed) {
-        let rc: Int = exec_subshell(sys, ffi, extract_subshell_body(raw_trimmed));
-        return make_res(cwd, false, rc, if rc == 0 { flight_success(rec, raw_trimmed, 0) } else { flight_failure(rec, raw_trimmed, rc, "", 0) }, cur_s, false);
-    }
+    if is_group_stmt(raw_trimmed) { return dispatch_line(fs_r, fs_w, sys, env, ffi, extract_group_body(raw_trimmed), rec, cur_s); }
+    if is_subshell_stmt(raw_trimmed) { let rc: Int = exec_subshell(sys, ffi, extract_subshell_body(raw_trimmed)); return make_res(cwd, false, rc, if rc == 0 { flight_success(rec, raw_trimmed, 0) } else { flight_failure(rec, raw_trimmed, rc, "", 0) }, cur_s, false); }
     let pa: PrefixAssignResult = parse_prefix_assignments(raw_trimmed);
     if pa.has_cmd && pa.remaining_cmd != "" {
         let pres: DispatchResult = dispatch_line(fs_r, fs_w, sys, env, ffi, pa.remaining_cmd, rec, SessionState { cwd: cwd, env_map: apply_prefix_env(ffi, cur_s.env_map, pa.assignments), alias_map: cur_s.alias_map, job_table: cur_s.job_table, func_map: cur_s.func_map });
-        let fin_s: SessionState = SessionState { cwd: pres.next_cwd, env_map: restore_prefix_env(ffi, pres.session.env_map, cur_s.env_map, pa.assignments), alias_map: pres.session.alias_map, job_table: pres.session.job_table, func_map: pres.session.func_map };
-        return make_res(pres.next_cwd, pres.should_exit, pres.exit_code, pres.flight_rec, fin_s, pres.is_return);
+        return make_res(pres.next_cwd, pres.should_exit, pres.exit_code, pres.flight_rec, SessionState { cwd: pres.next_cwd, env_map: restore_prefix_env(ffi, pres.session.env_map, cur_s.env_map, pa.assignments), alias_map: pres.session.alias_map, job_table: pres.session.job_table, func_map: pres.session.func_map }, pres.is_return);
     }
     if is_function_def(raw_trimmed) {
         let def_r: Result[CompoundSplit, String] = parse_function_def(raw_trimmed);
-        if def_r.is_ok() {
-            let def: CompoundSplit = match def_r { Ok(d) => d, Err(_) => CompoundSplit { lhs: "", op: "", rhs: "" } };
-            return make_res(cwd, false, 0, flight_success(rec, raw_trimmed, 0), SessionState { cwd: cwd, env_map: cur_s.env_map, alias_map: cur_s.alias_map, job_table: cur_s.job_table, func_map: func_map_set(cur_s.func_map, def.lhs, def.rhs) }, false);
-        }
+        if def_r.is_ok() { let def: CompoundSplit = match def_r { Ok(d) => d, Err(_) => CompoundSplit { lhs: "", op: "", rhs: "" } }; return make_res(cwd, false, 0, flight_success(rec, raw_trimmed, 0), SessionState { cwd: cwd, env_map: cur_s.env_map, alias_map: cur_s.alias_map, job_table: cur_s.job_table, func_map: func_map_set(cur_s.func_map, def.lhs, def.rhs) }, false); }
     }
     if is_for_stmt(raw_trimmed) {
         let f_r: Result[ForLoopDef, String] = parse_for_stmt(raw_trimmed);
         if f_r.is_ok() {
             let f: ForLoopDef = match f_r { Ok(v) => v, Err(_) => for_def_empty() };
-            let mut iter_s: SessionState = cur_s; let mut cur_rec: FlightRecord = rec;
-            let mut last_rc: Int = 0; let mut item_i: Int = 0;
+            let mut iter_s: SessionState = cur_s; let mut cur_rec: FlightRecord = rec; let mut last_rc: Int = 0; let mut item_i: Int = 0;
             while item_i < list_len(f.items) {
                 let res: DispatchResult = dispatch_line(fs_r, fs_w, sys, env, ffi, f.body, cur_rec, SessionState { cwd: iter_s.cwd, env_map: env_map_set(iter_s.env_map, f.var_name, list_get(f.items, item_i)), alias_map: iter_s.alias_map, job_table: iter_s.job_table, func_map: iter_s.func_map });
                 cur_rec = res.flight_rec; iter_s = res.session; last_rc = res.exit_code;
@@ -102,8 +89,7 @@ pub fn dispatch_line(fs_r: &FsReadCap, fs_w: &FsWriteCap, sys: &ProcessCap, env:
         let w_r: Result[WhileLoopDef, String] = parse_while_stmt(raw_trimmed);
         if w_r.is_ok() {
             let w: WhileLoopDef = match w_r { Ok(v) => v, Err(_) => WhileLoopDef { cond: "", body: "" } };
-            let mut iter_s: SessionState = cur_s; let mut cur_rec: FlightRecord = rec;
-            let mut last_rc: Int = 0; let mut guard: Int = 0;
+            let mut iter_s: SessionState = cur_s; let mut cur_rec: FlightRecord = rec; let mut last_rc: Int = 0; let mut guard: Int = 0;
             while guard < 10000 {
                 let c_res: DispatchResult = dispatch_line(fs_r, fs_w, sys, env, ffi, w.cond, cur_rec, iter_s);
                 if c_res.exit_code != 0 || c_res.should_exit || c_res.is_return { guard = 10001; } else {
@@ -127,7 +113,12 @@ pub fn dispatch_line(fs_r: &FsReadCap, fs_w: &FsWriteCap, sys: &ProcessCap, env:
         }
     }
     if is_case_stmt(raw_trimmed) {
-        let cs_r: Result[CaseStmtDef, String] = parse_case_stmt(raw_trimmed);
+        let in_i: Int = find_keyword_delimited(raw_trimmed, "in", false);
+        let raw_w: String = if in_i > 5 { str_trim(str_slice(raw_trimmed, 5, in_i)) } else { "" };
+        let exp_w: String = expand_command_line(sys, env, cur_s.env_map, rec.last_exit_code, raw_w);
+        let elen: Int = chars_len(exp_w);
+        let tw: String = if elen >= 2 && ((str_starts_with(exp_w, "\"") && str_ends_with(exp_w, "\"")) || (str_starts_with(exp_w, "'") && str_ends_with(exp_w, "'"))) { str_slice(exp_w, 1, elen - 1) } else { exp_w };
+        let cs_r: Result[CaseStmtDef, String] = parse_case_stmt_word(raw_trimmed, tw);
         if cs_r.is_ok() {
             let cs: CaseStmtDef = match cs_r { Ok(v) => v, Err(_) => CaseStmtDef { matched_body: "" } };
             if cs.matched_body != "" { return dispatch_line(fs_r, fs_w, sys, env, ffi, cs.matched_body, rec, cur_s); }
@@ -166,32 +157,53 @@ pub fn dispatch_line(fs_r: &FsReadCap, fs_w: &FsWriteCap, sys: &ProcessCap, env:
     if pipe_i >= 0 {
         let exp_p_lhs: String = alias_expand(cur_s.alias_map, expand_command_line(sys, env, cur_s.env_map, rec.last_exit_code, str_trim(str_slice(raw_trimmed, 0, pipe_i))));
         let exp_p_rhs: String = alias_expand(cur_s.alias_map, expand_command_line(sys, env, cur_s.env_map, rec.last_exit_code, str_trim(str_slice(raw_trimmed, pipe_i + 1, chars_len(raw_trimmed)))));
+        let next_p: Int = find_unquoted_pipe(exp_p_rhs);
+        let f_cmd: String = if next_p >= 0 { str_trim(str_slice(exp_p_rhs, 0, next_p)) } else { exp_p_rhs };
+        if exec_is_property_access(f_cmd) || exec_is_where_filter(f_cmd) {
+            let b_res: Result[String, String] = get_all_builtin_output(sys, env, fs_r, cwd, rec, exp_p_lhs, cur_s);
+            let lhs_out: String = if b_res.is_ok() { match b_res { Ok(s) => s, Err(_) => "" } } else { match process_exec(sys, exp_p_lhs) { Ok(s) => s, Err(_) => "" } };
+            let f_out: String = if exec_is_property_access(f_cmd) { exec_property_access_run(lhs_out, f_cmd) } else { exec_where_filter_run(lhs_out, f_cmd) };
+            if next_p >= 0 {
+                let rem_cmd: String = str_trim(str_slice(exp_p_rhs, next_p + 1, chars_len(exp_p_rhs)));
+                let prc: Int = route_builtin_pipeline(ffi, f_out, rem_cmd);
+                return make_res(cwd, false, prc, if prc == 0 { flight_success(rec, raw_trimmed, 0) } else { flight_failure(rec, raw_trimmed, prc, "", 0) }, cur_s, false);
+            }
+            if f_out != "" { if str_ends_with(f_out, "\n") { print(f_out); } else { println(f_out); } }
+            return make_res(cwd, false, 0, flight_success(rec, raw_trimmed, 0), cur_s, false);
+        }
         let rhs_b: Result[String, String] = get_all_builtin_output(sys, env, fs_r, cwd, rec, exp_p_rhs, cur_s);
-        let br_s: String = match rhs_b { Ok(s) => s, Err(_) => "" };
-        if rhs_b.is_ok() { print(br_s); return make_res(cwd, false, 0, flight_success(rec, raw_trimmed, 0), cur_s, false); }
+        if rhs_b.is_ok() { print(match rhs_b { Ok(s) => s, Err(_) => "" }); return make_res(cwd, false, 0, flight_success(rec, raw_trimmed, 0), cur_s, false); }
         let b_res: Result[String, String] = get_all_builtin_output(sys, env, fs_r, cwd, rec, exp_p_lhs, cur_s);
-        let bl_s: String = match b_res { Ok(s) => s, Err(_) => "" };
-        let prc: Int = if b_res.is_ok() { route_builtin_pipeline(ffi, bl_s, exp_p_rhs) } else { route_direct_pipeline(ffi, exp_p_lhs, exp_p_rhs) };
+        let prc: Int = if b_res.is_ok() { route_builtin_pipeline(ffi, match b_res { Ok(s) => s, Err(_) => "" }, exp_p_rhs) } else { route_direct_pipeline(ffi, exp_p_lhs, exp_p_rhs) };
         return make_res(cwd, false, prc, if prc == 0 { flight_success(rec, raw_trimmed, 0) } else { flight_failure(rec, raw_trimmed, prc, "", 0) }, cur_s, false);
     }
 
     let line: String = alias_expand(cur_s.alias_map, expand_command_line(sys, env, cur_s.env_map, rec.last_exit_code, raw_trimmed));
-    if has_unquoted_background(line) {
-        let next_jobs: JobTable = spawn_background(ffi, cur_s.job_table, strip_unquoted_background(line));
-        return make_res(cwd, false, 0, flight_success(rec, line, 0), SessionState { cwd: cwd, env_map: cur_s.env_map, alias_map: cur_s.alias_map, job_table: next_jobs, func_map: cur_s.func_map }, false);
-    }
-    if line == "return" || str_starts_with(line, "return ") {
-        let rc: Int = parse_return_code(line, rec.last_exit_code);
-        return make_res(cwd, false, rc, if rc == 0 { flight_success(rec, line, 0) } else { flight_failure(rec, line, rc, "", 0) }, cur_s, true);
-    }
-    if is_exit(line) { return make_res(cwd, true, parse_exit_code(line, rec.last_exit_code), rec, cur_s, false); }
+    if has_unquoted_background(line) { return make_res(cwd, false, 0, flight_success(rec, line, 0), SessionState { cwd: cwd, env_map: cur_s.env_map, alias_map: cur_s.alias_map, job_table: spawn_background(ffi, cur_s.job_table, strip_unquoted_background(line)), func_map: cur_s.func_map }, false); }
+    if line == "return" || str_starts_with(line, "return ") { let rc: Int = parse_return_code(line, rec.last_exit_code); return make_res(cwd, false, rc, if rc == 0 { flight_success(rec, line, 0) } else { flight_failure(rec, line, rc, "", 0) }, cur_s, true); }
+    if exec_is_exit(line) { return make_res(cwd, true, parse_exit_code(line, rec.last_exit_code), rec, cur_s, false); }
     if is_version_cmd(line) { println("oosh " + oosh_version()); return make_res(cwd, false, 0, rec, cur_s, false); }
+    if line == "remedy --apply" || line == "fix --apply" {
+        let diag: DiagnosticResult = flight_rules_match(rec.last_failed_cmd, rec.last_exit_code, rec.last_stderr, cwd);
+        if diag.actionable_cmd != "" { println("Applying: " + diag.actionable_cmd); return dispatch_line(fs_r, fs_w, sys, env, ffi, diag.actionable_cmd, rec, cur_s); }
+        println("No actionable remedy available."); return make_res(cwd, false, 1, flight_failure(rec, line, 1, "no remedy", 0), cur_s, false);
+    }
+    if exec_is_explain(line) { println(exec_explain(line)); return make_res(cwd, false, 0, flight_success(rec, line, 0), cur_s, false); }
+    if is_z_cmd(line) {
+        let nav_res = dispatch_nav_z(ffi, env, cwd, cur_s.env_map, line, term_history_load(fs_r, env).entries);
+        if nav_res.is_ok() { let nr: NavResult = match nav_res { Ok(r) => r, Err(_) => NavResult { cwd: cwd, env_map: cur_s.env_map } }; return make_res(nr.cwd, false, 0, flight_success(rec, line, 0), SessionState { cwd: nr.cwd, env_map: nr.env_map, alias_map: cur_s.alias_map, job_table: cur_s.job_table, func_map: cur_s.func_map }, false); }
+        return make_res(cwd, false, 1, flight_failure(rec, line, 1, "directory not found", 0), cur_s, false);
+    }
+    if exec_is_daemon(line) {
+        let d_res = exec_daemon_run(sys, line);
+        if d_res.is_ok() { println(str_trim(match d_res { Ok(s) => s, Err(_) => "" })); return make_res(cwd, false, 0, flight_success(rec, line, 0), cur_s, false); }
+        let d_err: String = match d_res { Ok(_) => "", Err(e) => e };
+        println("oosh: daemon error: " + d_err); return make_res(cwd, false, 1, flight_failure(rec, line, 1, d_err, 0), cur_s, false);
+    }
+    if exec_is_sandbox(line) { return dispatch_line(fs_r, fs_w, sys, env, ffi, exec_sandbox_resolve(line), rec, cur_s); }
     if is_job_cmd(line) {
         let jr: Result[JobTable, String] = dispatch_job_cmd(ffi, line, cur_s.job_table);
-        if jr.is_ok() {
-            let jt: JobTable = match jr { Ok(t) => t, Err(_) => cur_s.job_table };
-            return make_res(cwd, false, 0, flight_success(rec, line, 0), SessionState { cwd: cwd, env_map: cur_s.env_map, alias_map: cur_s.alias_map, job_table: jt, func_map: cur_s.func_map }, false);
-        }
+        if jr.is_ok() { return make_res(cwd, false, 0, flight_success(rec, line, 0), SessionState { cwd: cwd, env_map: cur_s.env_map, alias_map: cur_s.alias_map, job_table: match jr { Ok(t) => t, Err(_) => cur_s.job_table }, func_map: cur_s.func_map }, false); }
         return make_res(cwd, false, 1, flight_failure(rec, line, 1, "", 0), cur_s, false);
     }
     if is_link_cmd(line) { ipc_dispatch_link(sys, env, cwd, rec, line); return make_res(cwd, false, 0, rec, cur_s, false); }
@@ -199,18 +211,12 @@ pub fn dispatch_line(fs_r: &FsReadCap, fs_w: &FsWriteCap, sys: &ProcessCap, env:
     if line == "pwd" || line == "cwd" || line == "where" || line == "here" { println(cwd); return make_res(cwd, false, 0, rec, cur_s, false); }
     if is_session_builtin(line) {
         let b_res: Result[SessionState, String] = dispatch_session_builtin(ffi, fs_r, sys, env, cwd, line, cur_s);
-        if b_res.is_ok() {
-            let next_s: SessionState = match b_res { Ok(s) => s, Err(_) => cur_s };
-            return make_res(cwd, false, 0, flight_success(rec, line, 0), next_s, false);
-        }
+        if b_res.is_ok() { return make_res(cwd, false, 0, flight_success(rec, line, 0), match b_res { Ok(s) => s, Err(_) => cur_s }, false); }
         return make_res(cwd, false, 1, flight_failure(rec, line, 1, "builtin failed", 0), cur_s, false);
     }
     if is_nav_cmd(line) || is_take_cmd(line) {
         let nav_res = if is_nav_cmd(line) { dispatch_nav_cd(ffi, env, cwd, cur_s.env_map, line) } else { dispatch_nav_take(ffi, env, cwd, cur_s.env_map, line) };
-        if nav_res.is_ok() {
-            let nr: NavResult = match nav_res { Ok(r) => r, Err(_) => NavResult { cwd: cwd, env_map: cur_s.env_map } };
-            return make_res(nr.cwd, false, 0, flight_success(rec, line, 0), SessionState { cwd: nr.cwd, env_map: nr.env_map, alias_map: cur_s.alias_map, job_table: cur_s.job_table, func_map: cur_s.func_map }, false);
-        }
+        if nav_res.is_ok() { let nr: NavResult = match nav_res { Ok(r) => r, Err(_) => NavResult { cwd: cwd, env_map: cur_s.env_map } }; return make_res(nr.cwd, false, 0, flight_success(rec, line, 0), SessionState { cwd: nr.cwd, env_map: nr.env_map, alias_map: cur_s.alias_map, job_table: cur_s.job_table, func_map: cur_s.func_map }, false); }
         return make_res(cwd, false, 1, flight_failure(rec, line, 1, "directory not found", 0), cur_s, false);
     }
 
@@ -228,7 +234,6 @@ pub fn dispatch_line(fs_r: &FsReadCap, fs_w: &FsWriteCap, sys: &ProcessCap, env:
         if num_tokens < 2 { println("oosh: " + cmd + ": filename argument required"); return make_res(cwd, false, 2, flight_failure(rec, line, 2, "filename argument required", 0), cur_s, false); }
         let src_path: String = list_get(tokens, 1);
         let sr: Result[String, String] = read_file(fs_r, if str_starts_with(src_path, "/") { src_path } else { cwd + "/" + src_path });
-        if sr.is_err() { println("oosh: " + src_path + ": No such file or directory"); return make_res(cwd, false, 1, flight_failure(rec, line, 1, "No such file or directory", 0), cur_s, false); }
         let src_body: String = match sr { Ok(s) => s, Err(_) => "" };
         return dispatch_line(fs_r, fs_w, sys, env, ffi, src_body, rec, cur_s);
     }
@@ -237,20 +242,14 @@ pub fn dispatch_line(fs_r: &FsReadCap, fs_w: &FsWriteCap, sys: &ProcessCap, env:
         let fn_b: String = match fn_r { Ok(b) => b, Err(_) => "" };
         let fn_res: DispatchResult = dispatch_line(fs_r, fs_w, sys, env, ffi, fn_b, rec, SessionState { cwd: cwd, env_map: build_fn_env(cur_s.env_map, cmd, tokens), alias_map: cur_s.alias_map, job_table: cur_s.job_table, func_map: cur_s.func_map });
         let next_sess: SessionState = SessionState { cwd: fn_res.next_cwd, env_map: restore_fn_env(fn_res.session.env_map, cur_s.env_map, num_tokens - 1), alias_map: fn_res.session.alias_map, job_table: fn_res.session.job_table, func_map: fn_res.session.func_map };
-        let fn_rec: FlightRecord = if fn_res.exit_code == 0 { flight_success(fn_res.flight_rec, cmd, 0) } else { flight_failure(fn_res.flight_rec, cmd, fn_res.exit_code, "", 0) };
-        return make_res(fn_res.next_cwd, fn_res.should_exit, fn_res.exit_code, fn_rec, next_sess, false);
+        return make_res(fn_res.next_cwd, fn_res.should_exit, fn_res.exit_code, if fn_res.exit_code == 0 { flight_success(fn_res.flight_rec, cmd, 0) } else { flight_failure(fn_res.flight_rec, cmd, fn_res.exit_code, "", 0) }, next_sess, false);
     }
     if cmd == "test" || cmd == "[" {
-        let rc: Int = if eval_test_tokens(sys, tokens) { 0 } else { 1 };
-        return make_res(cwd, false, rc, if rc == 0 { flight_success(rec, line, 0) } else { flight_failure(rec, line, rc, "", 0) }, cur_s, false);
+        let rc: Int = if eval_test_tokens(sys, tokens) { 0 } else { 1 }; return make_res(cwd, false, rc, if rc == 0 { flight_success(rec, line, 0) } else { flight_failure(rec, line, rc, "", 0) }, cur_s, false);
     }
     let ex_res = exec_host_command(sys, ffi, cwd, cmd, tokens);
-    if ex_res.is_ok() {
-        let rc: Int = match ex_res { Ok(c) => c, Err(_) => 0 };
-        let frec: FlightRecord = if rc == 0 { flight_success(rec, line, 0) } else { flight_failure(rec, line, rc, "", 0) };
-        return make_res(cwd, false, rc, frec, cur_s, false);
-    }
+    if ex_res.is_ok() { let rc: Int = match ex_res { Ok(c) => c, Err(_) => 0 }; return make_res(cwd, false, rc, if rc == 0 { flight_success(rec, line, 0) } else { flight_failure(rec, line, rc, "", 0) }, cur_s, false); }
     let err_msg: String = match ex_res { Ok(_) => "", Err(m) => m };
-    let rc: Int = if err_msg == "command not found" { 127 } else { 1 };
-    return make_res(cwd, false, rc, flight_failure(rec, line, rc, err_msg, 0), cur_s, false);
+    let cnf_code: Int = if err_msg == "command not found" { 127 } else { 1 };
+    return make_res(cwd, false, cnf_code, flight_failure(rec, line, cnf_code, err_msg, 0), cur_s, false);
 }

@@ -14,6 +14,7 @@ import "test_lexer.oo";
 import "test_arith.oo";
 import "test_control.oo";
 import "test_remedy.oo";
+import "test_stream.oo";
 
 pub fn run_all_unit_tests(env: &EnvCap, r: TestRunner) -> TestRunner {
     let mut tr: TestRunner = r;
@@ -21,5 +22,6 @@ pub fn run_all_unit_tests(env: &EnvCap, r: TestRunner) -> TestRunner {
     tr = run_test_arith(env, tr);
     tr = run_test_control(tr);
     tr = run_test_remedy(tr);
+    tr = run_test_stream(tr);
     return tr;
 }

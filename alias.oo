@@ -143,8 +143,8 @@ pub fn dispatch_session_builtin(ffi: &FfiCap, fs_r: &FsReadCap, sys: &ProcessCap
         println(out); return Ok(session);
     }
     if line == "history" || line == "hist" || line == "past" || line == "recall" {
-        let home: String = match env_get(env, "HOME") { Ok(h) => h, Err(_) => "" };
-        let h_str: String = match read_file(fs_r, home + "/.oosh_history") { Ok(s) => s, Err(_) => "No history available\n" };
+        let home: String = match env_map_get(session.env_map, "HOME") { Ok(h) => h, Err(_) => match env_get(env, "HOME") { Ok(h2) => h2, Err(_) => "" } };
+        let h_str: String = match read_file(fs_r, (if home != "" { home } else { "." }) + "/.oosh_history") { Ok(s) => s, Err(_) => "No history available\n" };
         print(h_str); if !str_ends_with(h_str, "\n") { println(""); }
         return Ok(session);
     }

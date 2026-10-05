@@ -1,4 +1,4 @@
-# oosh v0.9.0 Makefile
+# oosh v1.0.0 Makefile
 #
 # Build, verify, and test the openOODA sovereign shell.
 #
@@ -35,7 +35,7 @@ SRC := main.oo version.oo anchor.oo prompt.oo dispatch.oo engine.oo manual.oo al
 
 UNIT_SRC := qa/unit_runner.oo qa/unit/anchor.oo qa/unit/test_lexer.oo qa/unit/test_arith.oo qa/unit/test_control.oo qa/unit/test_remedy.oo qa/unit/test_stream.oo qa/unit/test_defense.oo
 
-.PHONY: all build test test-unit parity line-cap file-law academy check verify install clean test-e2e test-tier1 test-tier2 test-tier3 test-tier4 test-tier5
+.PHONY: all build test test-unit parity line-cap file-law academy check verify install clean test-e2e test-tier1 test-tier2 test-tier3 test-tier4 test-tier5 rpm deb pkg
 
 all: build verify test test-unit test-e2e
 
@@ -341,7 +341,7 @@ parity: build
 
 line-cap:
 	@violations=0; \
-	for f in $$(find . \( -name "*.oo" -o -name "*.oot" \) -not -path "./.git/*" -not -path "./.agents/*" -not -path "./.github/*"); do \
+	for f in $$(find . \( -name "*.oo" -o -name "*.oot" \) -not -path "./.git/*" -not -path "./.agents/*" -not -path "./.github/*" -not -path "./packaging/*" -not -path "./dist/*"); do \
 		n=$$(wc -l < "$$f"); \
 		if [ $$n -gt 256 ]; then \
 			echo "VIOLATION: $$f = $$n lines (exceeds 256)"; \
@@ -359,19 +359,19 @@ file-law:
 	@forbidden="py js ts rb pl json yaml toml"; \
 	violations=0; \
 	for ext in $$forbidden; do \
-		found=$$(find . -name "*.$$ext" -not -path "./.git/*" -not -path "./.agents/*" -not -path "./.blackbox/*" -not -path "./.github/*" 2>/dev/null | head -3); \
+		found=$$(find . -name "*.$$ext" -not -path "./.git/*" -not -path "./.agents/*" -not -path "./.blackbox/*" -not -path "./.github/*" -not -path "./packaging/*" -not -path "./dist/*" 2>/dev/null | head -3); \
 		if [ -n "$$found" ]; then \
 			echo "VIOLATION: .$$ext forbidden:"; echo "$$found"; \
 			violations=$$((violations+1)); \
 		fi; \
 	done; \
-	for f in $$(find . -name "*.sh" -not -path "./.git/*" -not -path "./.agents/*" -not -path "./.github/*" 2>/dev/null); do \
+	for f in $$(find . -name "*.sh" -not -path "./.git/*" -not -path "./.agents/*" -not -path "./.github/*" -not -path "./packaging/*" -not -path "./dist/*" 2>/dev/null); do \
 		if [ "$$f" != "./install.sh" ]; then \
 			echo "VIOLATION: .sh forbidden outside install.sh: $$f"; \
 			violations=$$((violations+1)); \
 		fi; \
 	done; \
-	for f in $$(find . -name "*.md" -not -path "./.git/*" -not -path "./.agents/*" -not -path "./.github/*" 2>/dev/null); do \
+	for f in $$(find . -name "*.md" -not -path "./.git/*" -not -path "./.agents/*" -not -path "./.github/*" -not -path "./packaging/*" -not -path "./dist/*" 2>/dev/null); do \
 		if [ "$$f" != "./README.md" ] && [ "$$f" != "./AGENTS.md" ] && [ "$$f" != "./TEST_READY.md" ]; then \
 			echo "VIOLATION: .md forbidden outside README.md, AGENTS.md, and TEST_READY.md: $$f"; \
 			violations=$$((violations+1)); \
@@ -382,7 +382,7 @@ file-law:
 
 academy:
 	@failures=0; \
-	for f in $$(find . -name "*.oo" -not -path "./.git/*" -not -path "./.agents/*" -not -path "./.github/*"); do \
+	for f in $$(find . -name "*.oo" -not -path "./.git/*" -not -path "./.agents/*" -not -path "./.github/*" -not -path "./packaging/*" -not -path "./dist/*"); do \
 		header=$$(head -7 "$$f"); \
 		if ! echo "$$header" | grep -q "^// # "; then \
 			echo "FAIL: $$f missing '// # <Title>' in first 7 lines"; \
@@ -419,6 +419,28 @@ install: build
 	cp -a $(BIN) $(HOME)/.openooda/bin/oosh
 	@chmod +x $(HOME)/.openooda/bin/oosh
 	@echo "installed $(HOME)/.openooda/bin/oosh"
+
+rpm: $(BIN)
+	@rm -rf dist/rpmbuild
+	@mkdir -p dist/rpmbuild/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
+	@cp packaging/dnf/oosh.spec dist/rpmbuild/SPECS/
+	@rpmbuild --define "_topdir $(CURDIR)/dist/rpmbuild" --define "bin_path $(CURDIR)/$(BIN)" -bb dist/rpmbuild/SPECS/oosh.spec >/dev/null
+	@cp dist/rpmbuild/RPMS/x86_64/oosh-1.0.0-1.x86_64.rpm dist/
+	@rm -rf dist/rpmbuild
+	@echo "built dist/oosh-1.0.0-1.x86_64.rpm"
+
+deb: $(BIN)
+	@rm -rf dist/deb_staging
+	@mkdir -p dist/deb_staging/DEBIAN
+	@mkdir -p dist/deb_staging/usr/bin
+	@install -m 755 $(BIN) dist/deb_staging/usr/bin/oosh
+	@cp packaging/apt/debian/control dist/deb_staging/DEBIAN/
+	@chmod 644 dist/deb_staging/DEBIAN/control
+	@dpkg-deb --build --root-owner-group dist/deb_staging dist/oosh_1.0.0-1_amd64.deb >/dev/null
+	@rm -rf dist/deb_staging
+	@echo "built dist/oosh_1.0.0-1_amd64.deb"
+
+pkg: rpm deb
 
 clean:
 	@rm -rf dist .ooda-cache .blackbox

@@ -3,26 +3,49 @@
 > **openOODA Sovereign Shell**  
 > *The intent-driven, ambient, capability-bounded interactive shell for the AI era.*
 
-Part of [openOODA-tools](https://github.com/openOODA-tools).
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/openOODA-tools/oosh/releases/tag/v1.0.0)
+[![CI/CD](https://github.com/openOODA-tools/oosh/actions/workflows/ci.yml/badge.svg)](https://github.com/openOODA-tools/oosh/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-green.svg)](LICENSE)
+[![Parity](https://img.shields.io/badge/POSIX%20Parity-10%2F10-brightgreen.svg)](#5-posix-parity--core-ergonomics)
+
+Part of [openOODA-tools](https://github.com/openOODA-tools). Visit the [Official Landing Page](https://openooda-tools.github.io/oosh/).
 
 ---
 
-## 1. Quick Install (Any Linux Machine)
+## 1. Quick Install Matrix
 
-Install `oosh` on any Linux machine (x86_64 / aarch64) with zero dependencies. Neither `openOODA` nor `syntropd` is required on the host:
+`oosh` offers zero-dependency installation across all major Linux distributions via Web, DNF (RPM), and APT (DEB) channels:
+
+| Distribution Channel | Command | Description |
+| :--- | :--- | :--- |
+| **Web (Universal)** | `curl -fsSL https://openooda-tools.github.io/oosh/install.sh \| bash` | Direct glibc-linked standalone binary deployment with SHA-256 seal verification. |
+| **DNF / RPM (Fedora/RHEL)** | `curl -fsSL https://openooda-tools.github.io/oosh/install.sh \| bash -s -- --dnf` | Native `.rpm` package installation via system `dnf` or `rpm`. |
+| **APT / DEB (Ubuntu/Debian)** | `curl -fsSL https://openooda-tools.github.io/oosh/install.sh \| bash -s -- --apt` | Native `.deb` package installation via system `apt` or `dpkg`. |
+| **Auto-Detect** | `curl -fsSL https://openooda-tools.github.io/oosh/install.sh \| bash -s -- --auto` | Automatically detects package manager (`dnf` or `apt`), falling back to Web binary. |
+
+### Direct Package Installation
+
+You can also install packages directly from GitHub Releases:
 
 ```bash
-curl -fsSL https://openooda-tools.github.io/oosh/install.sh | bash
+# Fedora / RHEL / CentOS (RPM via DNF)
+sudo dnf install -y https://github.com/openOODA-tools/oosh/releases/download/v1.0.0/oosh-1.0.0-1.x86_64.rpm
+
+# Ubuntu / Debian (DEB via APT)
+curl -fsSL -O https://github.com/openOODA-tools/oosh/releases/download/v1.0.0/oosh_1.0.0-1_amd64.deb
+sudo apt install -y ./oosh_1.0.0-1_amd64.deb
+rm -f oosh_1.0.0-1_amd64.deb
 ```
 
-The installer verifies cryptographic SHA-256 checksums, places the binary in `/usr/local/bin` (or `~/.local/bin`), and tests execution.
-
-### Options
+### Installer Options
 ```bash
 # Preview actions without modifying the host
 curl -fsSL https://openooda-tools.github.io/oosh/install.sh | bash -s -- --dry-run
 
-# Uninstall
+# Verify cryptographic SHA-256 integrity only
+curl -fsSL https://openooda-tools.github.io/oosh/install.sh | bash -s -- --verify
+
+# Clean uninstall (removes package or binary)
 curl -fsSL https://openooda-tools.github.io/oosh/install.sh | bash -s -- --uninstall
 ```
 
@@ -114,11 +137,23 @@ In keeping with Unix philosophy and openOODA lean architecture:
 
 ---
 
-## 7. Build From Source
+## 7. Build & Packaging From Source
 
 ```bash
 git clone git@github.com:openOODA-tools/oosh.git
 cd oosh
+
+# Build native binary dist/oosh
+make build
+
+# Build native Linux RPM package (dist/oosh-1.0.0-1.x86_64.rpm)
+make rpm
+
+# Build native Debian/Ubuntu DEB package (dist/oosh_1.0.0-1_amd64.deb)
+make deb
+
+# Build both RPM and DEB packages
+make pkg
 
 # Build, verify, and run all test suites (unit + smoke + E2E tiers 1-5)
 make all
@@ -126,6 +161,8 @@ make all
 # Install locally to ~/.openooda/bin/oosh
 make install
 ```
+
+Package specifications and helper scripts reside in [`packaging/dnf/`](packaging/dnf/) and [`packaging/apt/`](packaging/apt/).
 
 ---
 

@@ -1,0 +1,10 @@
+Package: oosh
+Version: 1.0.0-1
+Section: shells
+Priority: optional
+Architecture: amd64
+Maintainer: openOODA Team <team@openooda.org>
+Description: openOODA Sovereign Shell
+ The intent-driven, ambient, capability-bounded interactive shell for the AI era.
+ Built with zero runtime dependencies, unforgeable capability tokens, native
+ POSIX execution, Varlink IPC, and autonomous failure recovery.

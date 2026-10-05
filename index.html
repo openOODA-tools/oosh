@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>oosh — The openOODA Sovereign Shell</title>
+  <meta name="description" content="The intent-driven, ambient, capability-bounded interactive shell for the AI era. Zero dependencies, pure POSIX execution, Varlink IPC.">
+  <meta name="theme-color" content="#0d1117">
+  <style>
+    :root {
+      --bg: #090d13;
+      --card-bg: #121824;
+      --card-border: #1f293d;
+      --accent-cyan: #38bdf8;
+      --accent-amber: #fbbf24;
+      --accent-green: #4ade80;
+      --accent-magenta: #f472b6;
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --code-bg: #05080e;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      line-height: 1.6;
+      padding: 0;
+      margin: 0;
+    }
+    header {
+      background: linear-gradient(180deg, rgba(56, 189, 248, 0.08) 0%, rgba(9, 13, 19, 0) 100%);
+      padding: 3rem 1.5rem 2rem;
+      text-align: center;
+      border-bottom: 1px solid var(--card-border);
+    }
+    .container {
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem;
+    }
+    .badge-bar {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 0.5rem;
+      margin-bottom: 1.25rem;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      font-size: 0.75rem;
+      font-family: var(--font-mono);
+      font-weight: 600;
+      padding: 0.25rem 0.65rem;
+      border-radius: 9999px;
+      border: 1px solid var(--card-border);
+      background: var(--card-bg);
+      color: var(--text-muted);
+    }
+    .badge.green { border-color: rgba(74, 222, 128, 0.3); color: var(--accent-green); }
+    .badge.cyan { border-color: rgba(56, 189, 248, 0.3); color: var(--accent-cyan); }
+    .badge.amber { border-color: rgba(251, 191, 36, 0.3); color: var(--accent-amber); }
+    h1 {
+      font-family: var(--font-mono);
+      font-size: 2.75rem;
+      letter-spacing: -0.05em;
+      color: #fff;
+      margin-bottom: 0.5rem;
+    }
+    .tagline {
+      font-size: 1.15rem;
+      color: var(--accent-cyan);
+      font-weight: 400;
+      max-width: 680px;
+      margin: 0 auto 1.5rem;
+    }
+    .subhead {
+      font-size: 0.95rem;
+      color: var(--text-muted);
+      max-width: 640px;
+      margin: 0 auto 2rem;
+    }
+
+    /* Terminal Chrome */
+    .terminal-window {
+      background: var(--code-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+      margin: 2rem 0;
+      overflow: hidden;
+    }
+    .terminal-header {
+      background: #0f1522;
+      padding: 0.5rem 0.75rem;
+      display: flex;
+      align-items: center;
+      border-bottom: 1px solid var(--card-border);
+    }
+    .terminal-dots {
+      display: flex;
+      gap: 6px;
+    }
+    .terminal-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .dot-red { background: #ef4444; }
+    .dot-yellow { background: #f59e0b; }
+    .dot-green { background: #10b981; }
+    .terminal-title {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin: 0 auto;
+      padding-right: 36px;
+    }
+    .terminal-body {
+      padding: 1.25rem;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      line-height: 1.55;
+      overflow-x: auto;
+      color: #cbd5e1;
+    }
+    .prompt-row { color: var(--accent-cyan); }
+    .prompt-arrow { color: var(--accent-green); font-weight: bold; }
+    .prompt-cmd { color: #f8fafc; font-weight: 600; }
+    .prompt-out { color: var(--text-muted); margin-bottom: 0.75rem; }
+    .accent-amber { color: var(--accent-amber); }
+    .accent-cyan { color: var(--accent-cyan); }
+    .accent-green { color: var(--accent-green); }
+
+    /* Installer Box */
+    .install-box {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 1.5rem;
+      margin: 2rem 0;
+    }
+    .tab-header {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 0.75rem;
+      margin-bottom: 1rem;
+    }
+    .tab-btn {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      padding: 0.4rem 0.85rem;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .tab-btn:hover {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .tab-btn.active {
+      background: rgba(56, 189, 248, 0.15);
+      border-color: rgba(56, 189, 248, 0.4);
+      color: var(--accent-cyan);
+      font-weight: 600;
+    }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    .code-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--code-bg);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 6px;
+      padding: 0.75rem 1rem;
+      margin-bottom: 0.75rem;
+    }
+    .code-row code {
+      font-family: var(--font-mono);
+      font-size: 0.88rem;
+      color: var(--accent-cyan);
+      word-break: break-all;
+    }
+    .copy-btn {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #f1f5f9;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      padding: 0.35rem 0.75rem;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-left: 1rem;
+      white-space: nowrap;
+      transition: background 0.15s;
+    }
+    .copy-btn:hover { background: rgba(56, 189, 248, 0.25); }
+    .install-hint {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    /* Features Grid */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.25rem;
+      margin: 2.5rem 0;
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 1.25rem;
+      transition: border-color 0.2s;
+    }
+    .card:hover { border-color: rgba(56, 189, 248, 0.4); }
+    .card-title {
+      font-family: var(--font-mono);
+      font-size: 1rem;
+      font-weight: 600;
+      color: #fff;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .card-title .icon { color: var(--accent-cyan); }
+    .card-desc {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    /* Releases Table */
+    .release-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1.5rem 0;
+      font-size: 0.85rem;
+    }
+    .release-table th, .release-table td {
+      border: 1px solid var(--card-border);
+      padding: 0.6rem 0.85rem;
+      text-align: left;
+    }
+    .release-table th {
+      background: #0f1522;
+      color: #fff;
+      font-family: var(--font-mono);
+    }
+    .release-table tr:nth-child(even) { background: rgba(255, 255, 255, 0.02); }
+    .release-table a { color: var(--accent-cyan); text-decoration: none; }
+    .release-table a:hover { text-decoration: underline; }
+
+    footer {
+      border-top: 1px solid var(--card-border);
+      padding: 2.5rem 1.5rem;
+      text-align: center;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+    footer a { color: var(--accent-cyan); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="badge-bar">
+      <span class="badge green">● v1.0.0 Sovereign Release</span>
+      <span class="badge cyan">POSIX Parity: 10 / 10</span>
+      <span class="badge amber">Zero Ambient Authority</span>
+      <span class="badge">Standalone Glibc Executable</span>
+    </div>
+    <h1>oosh</h1>
+    <p class="tagline">The openOODA Sovereign Shell</p>
+    <p class="subhead">The intent-driven, ambient, capability-bounded interactive shell for the AI era. Combining 100% native POSIX execution with sovereign capability security and headless Varlink IPC.</p>
+  </header>
+
+  <div class="container">
+
+    <!-- Installation Channels Tabs -->
+    <div class="install-box">
+      <div class="tab-header">
+        <button class="tab-btn active" onclick="switchTab('web')">Web (Universal)</button>
+        <button class="tab-btn" onclick="switchTab('dnf')">DNF / RPM (Fedora & RHEL)</button>
+        <button class="tab-btn" onclick="switchTab('apt')">APT / DEB (Ubuntu & Debian)</button>
+        <button class="tab-btn" onclick="switchTab('auto')">Auto-Detect</button>
+        <button class="tab-btn" onclick="switchTab('source')">Build Source</button>
+      </div>
+
+      <!-- Tab: Web -->
+      <div id="tab-web" class="tab-content active">
+        <div class="code-row">
+          <code>curl -fsSL https://openooda-tools.github.io/oosh/install.sh | bash</code>
+          <button class="copy-btn" onclick="copyCode(this, 'curl -fsSL https://openooda-tools.github.io/oosh/install.sh | bash')">Copy</button>
+        </div>
+        <p class="install-hint">Direct glibc-linked standalone binary deployment into <code>/usr/local/bin</code> with cryptographic SHA-256 seal verification. Zero dependencies required.</p>
+      </div>
+
+      <!-- Tab: DNF -->
+      <div id="tab-dnf" class="tab-content">
+        <div class="code-row">
+          <code>curl -fsSL https://openooda-tools.github.io/oosh/install.sh | bash -s -- --dnf</code>
+          <button class="copy-btn" onclick="copyCode(this, 'curl -fsSL https://openooda-tools.github.io/oosh/install.sh | bash -s -- --dnf')">Copy</button>
+        </div>
+        <p class="install-hint">Or install RPM directly: <code>sudo dnf install -y https://github.com/openOODA-tools/oosh/releases/download/v1.0.0/oosh-1.0.0-1.x86_64.rpm</code></p>
+      </div>
+
+      <!-- Tab: APT -->
+      <div id="tab-apt" class="tab-content">
+        <div class="code-row">
+          <code>curl -fsSL https://openooda-tools.github.io/oosh/install.sh | bash -s -- --apt</code>
+          <button class="copy-btn" onclick="copyCode(this, 'curl -fsSL https://openooda-tools.github.io/oosh/install.sh | bash -s -- --apt')">Copy</button>
+        </div>
+        <p class="install-hint">Or install DEB directly: <code>curl -fsSL -O https://github.com/openOODA-tools/oosh/releases/download/v1.0.0/oosh_1.0.0-1_amd64.deb && sudo apt install -y ./oosh_1.0.0-1_amd64.deb</code></p>
+      </div>
+
+      <!-- Tab: Auto -->
+      <div id="tab-auto" class="tab-content">
+        <div class="code-row">
+          <code>curl -fsSL https://openooda-tools.github.io/oosh/install.sh | bash -s -- --auto</code>
+          <button class="copy-btn" onclick="copyCode(this, 'curl -fsSL https://openooda-tools.github.io/oosh/install.sh | bash -s -- --auto')">Copy</button>
+        </div>
+        <p class="install-hint">Detects whether <code>dnf</code> or <code>apt</code> is present on host and installs the native system package; cleanly falls back to standalone web binary.</p>
+      </div>
+
+      <!-- Tab: Source -->
+      <div id="tab-source" class="tab-content">
+        <div class="code-row">
+          <code>git clone https://github.com/openOODA-tools/oosh.git && cd oosh && make all && make install</code>
+          <button class="copy-btn" onclick="copyCode(this, 'git clone https://github.com/openOODA-tools/oosh.git && cd oosh && make all && make install')">Copy</button>
+        </div>
+        <p class="install-hint">Compiles native binary via <code>openOODA</code> and verifies all 371 test assertions across unit, smoke, and E2E tiers.</p>
+      </div>
+    </div>
+
+    <!-- Terminal Session Showcase -->
+    <div class="terminal-window">
+      <div class="terminal-header">
+        <div class="terminal-dots">
+          <div class="terminal-dot dot-red"></div>
+          <div class="terminal-dot dot-yellow"></div>
+          <div class="terminal-dot dot-green"></div>
+        </div>
+        <div class="terminal-title">oosh — sovereign@host: ~/Projects/openOODA-tools/oosh</div>
+      </div>
+      <div class="terminal-body">
+        <div class="prompt-row"><span class="accent-cyan">sovereign@host</span>:<span class="accent-amber">~</span> <span class="prompt-arrow">❯</span> <span class="prompt-cmd">oosh --version</span></div>
+        <div class="prompt-out">oosh v1.0.0 (openOODA sovereign shell)</div>
+
+        <div class="prompt-row"><span class="accent-cyan">sovereign@host</span>:<span class="accent-amber">~</span> <span class="prompt-arrow">❯</span> <span class="prompt-cmd">caps</span></div>
+        <div class="prompt-out">[CAPS] ProcessCap=ACTIVE FsReadCap=ACTIVE FsWriteCap=ACTIVE EnvCap=ACTIVE TimeCap=ACTIVE</div>
+
+        <div class="prompt-row"><span class="accent-cyan">sovereign@host</span>:<span class="accent-amber">~</span> <span class="prompt-arrow">❯</span> <span class="prompt-cmd">? convert all png in images/ to webp</span></div>
+        <div class="prompt-out"><span class="accent-magenta">[INTENT CHANNEL]</span><br>  Query:   convert all png in images/ to webp<br>  Action:  for f in images/*.png; do ffmpeg -i "$f" "${f%.png}.webp"; done<br>  Safety:  <span class="accent-green">SAFE</span> [Y/n/e/?]</div>
+
+        <div class="prompt-row"><span class="accent-cyan">sovereign@host</span>:<span class="accent-amber">~/Projects/openOODA-tools/oosh</span> <span class="prompt-arrow">❯</span> <span class="prompt-cmd">whereami</span></div>
+        <div class="prompt-out">Location: /home/sovereign/Projects/openOODA-tools/oosh<br>Branch:   main [clean]</div>
+      </div>
+    </div>
+
+    <!-- Feature Matrix Grid -->
+    <div class="grid">
+      <div class="card">
+        <div class="card-title"><span class="icon">⚡</span> Zero Ambient Authority</div>
+        <div class="card-desc">Privileged system operations require unforgeable capability tokens (<code>&ProcessCap</code>, <code>&FsReadCap</code>). No accidental ambient filesystem or process leaks.</div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span class="icon">⚙</span> POSIX Parity 10 / 10</div>
+        <div class="card-desc">In-process group redirection <code>{ a; b; } &gt; out</code>, subshell environment propagation, native job control (<code>jobs</code>, <code>fg</code>, <code>bg</code>, <code>wait</code>), unary tests, and compound execution.</div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span class="icon">🛡</span> 5 Proactive Threat Defenses</div>
+        <div class="card-desc">OSC 52/CSI injection filtering, wildcard <code>-*</code> filename argument injection immunity, private socket <code>SO_PEERCRED</code> authentication, stack ceilings, and 16MB stream quotas.</div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span class="icon">🧠</span> Natural Intent Channel</div>
+        <div class="card-desc">Prefix any natural query with <code>?</code>, <code>??</code>, or <code>ai</code> to synthesize precise POSIX commands with safety tier classification (SAFE, MODERATE, HIGH_RISK) before execution.</div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span class="icon">🔄</span> Autonomous Recovery</div>
+        <div class="card-desc">Flight recorder captures failed commands and standard error streams. <code>remedy</code> suggests actionable fixes while <code>autopsy</code> performs postmortem forensic analysis.</div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span class="icon">🔌</span> Headless Varlink IPC</div>
+        <div class="card-desc">Non-blocking Unix domain socket RPC over <code>/run/oosh/control.sock</code> enables autonomous AI sidecars and external applications to query shell posture and stream telemetry.</div>
+      </div>
+    </div>
+
+    <!-- Release Packages Table -->
+    <h2 style="font-family: var(--font-mono); font-size: 1.35rem; margin-top: 2rem; margin-bottom: 0.5rem; color: #fff;">v1.0.0 Release Packages</h2>
+    <table class="release-table">
+      <thead>
+        <tr>
+          <th>Format</th>
+          <th>Artifact</th>
+          <th>Architecture</th>
+          <th>Direct Download</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Standalone Binary</strong></td>
+          <td><code>oosh-linux-x86_64</code></td>
+          <td>x86_64 (Linux)</td>
+          <td><a href="https://github.com/openOODA-tools/oosh/releases/download/v1.0.0/oosh-linux-x86_64">Download Binary</a></td>
+        </tr>
+        <tr>
+          <td><strong>SHA-256 Seal</strong></td>
+          <td><code>oosh-linux-x86_64.sha256</code></td>
+          <td>Cryptographic</td>
+          <td><a href="https://github.com/openOODA-tools/oosh/releases/download/v1.0.0/oosh-linux-x86_64.sha256">Verify Checksum</a></td>
+        </tr>
+        <tr>
+          <td><strong>DNF / RPM</strong></td>
+          <td><code>oosh-1.0.0-1.x86_64.rpm</code></td>
+          <td>Fedora, RHEL, CentOS</td>
+          <td><a href="https://github.com/openOODA-tools/oosh/releases/download/v1.0.0/oosh-1.0.0-1.x86_64.rpm">Download RPM</a></td>
+        </tr>
+        <tr>
+          <td><strong>APT / DEB</strong></td>
+          <td><code>oosh_1.0.0-1_amd64.deb</code></td>
+          <td>Ubuntu, Debian</td>
+          <td><a href="https://github.com/openOODA-tools/oosh/releases/download/v1.0.0/oosh_1.0.0-1_amd64.deb">Download DEB</a></td>
+        </tr>
+      </tbody>
+    </table>
+
+  </div>
+
+  <footer>
+    <p>oosh is open-source software licensed under the <a href="https://github.com/openOODA-tools/oosh/blob/main/LICENSE">Apache-2.0 License</a>.</p>
+    <p style="margin-top: 0.5rem;">Part of the <a href="https://github.com/openOODA-tools">openOODA-tools</a> organization. Built with openOODA.</p>
+  </footer>
+
+  <script>
+    function switchTab(id) {
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+      const targetBtn = Array.from(document.querySelectorAll('.tab-btn')).find(b => b.getAttribute('onclick').includes(id));
+      if (targetBtn) targetBtn.classList.add('active');
+      const targetContent = document.getElementById('tab-' + id);
+      if (targetContent) targetContent.classList.add('active');
+    }
+
+    function copyCode(btn, text) {
+      navigator.clipboard.writeText(text).then(() => {
+        const orig = btn.innerText;
+        btn.innerText = 'Copied!';
+        setTimeout(() => { btn.innerText = orig; }, 1800);
+      });
+    }
+  </script>
+</body>
+</html>

@@ -142,8 +142,12 @@ pub fn has_redirection_or_chaining(cmd: String) -> Bool {
            str_contains(cmd, "|");
 }
 
+pub fn has_glob_dash_injection(cmd: String) -> Bool {
+    return (is_destructive_token(cmd) || is_mutation_token(cmd)) && (str_contains(cmd, " *") || str_contains(cmd, " -*") || str_contains(cmd, " ./-*") || str_contains(cmd, " ?") || str_contains(cmd, "/*"));
+}
+
 pub fn classify_safety_tier(cmd: String) -> String {
-    if is_destructive_token(cmd) {
+    if is_destructive_token(cmd) || has_glob_dash_injection(cmd) {
         return "HIGH_RISK";
     }
     if has_redirection_or_chaining(cmd) {
@@ -186,4 +190,21 @@ pub fn render_safety_badge(cmd: String) -> String {
         return esc + "[38;2;255;184;0m[MODERATE / WARN: MUTATING OPERATION]" + esc + "[0m";
     }
     return esc + "[38;2;0;255;102m[SAFE: READ-ONLY QUERY]" + esc + "[0m";
+}
+
+pub fn sanitize_dash_args(fs_r: &FsReadCap, cwd: String, cmd: String, tokens: List[String]) -> List[String] {
+    if !is_destructive_token(cmd) && !is_mutation_token(cmd) { return tokens; }
+    let n: Int = list_len(tokens);
+    let mut out: List[String] = list_new();
+    let mut i: Int = 0;
+    while i < n {
+        let tok: String = list_get(tokens, i);
+        if i > 0 && str_starts_with(tok, "-") && (path_exists(fs_r, cwd + "/" + tok) || path_exists(fs_r, tok)) {
+            out = list_push(out, "./" + tok);
+        } else {
+            out = list_push(out, tok);
+        }
+        i = i + 1;
+    }
+    return out;
 }

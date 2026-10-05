@@ -22,6 +22,42 @@ fn strip_trailing_nl(s: String) -> String {
     return t;
 }
 
+fn is_exportable_env(k: String) -> Bool {
+    let n: Int = chars_len(k);
+    if n == 0 { return false; }
+    let b0: Int = byte_at(char_at(k, 0), 0);
+    let valid_b0: Bool = (b0 >= 65 && b0 <= 90) || (b0 >= 97 && b0 <= 122) || b0 == 95;
+    if !valid_b0 { return false; }
+    let mut i: Int = 1;
+    while i < n {
+        let bi: Int = byte_at(char_at(k, i), 0);
+        let valid_bi: Bool = (bi >= 65 && bi <= 90) || (bi >= 97 && bi <= 122) || (bi >= 48 && bi <= 57) || bi == 95;
+        if !valid_bi { return false; }
+        i = i + 1;
+    }
+    if k == "_" || k == "UID" || k == "EUID" || k == "PPID" || k == "SHELLOPTS" || k == "BASHOPTS" {
+        return false;
+    }
+    if str_starts_with(k, "BASH_") { return false; }
+    return true;
+}
+
+fn build_env_prefix(env_map: EnvMap) -> String {
+    let n: Int = list_len(env_map.keys);
+    let mut prefix: String = "";
+    let mut i: Int = 0;
+    while i < n {
+        let k: String = list_get(env_map.keys, i);
+        let v: String = list_get(env_map.vals, i);
+        if is_exportable_env(k) && chars_len(v) < 16384 {
+            let safe_v: String = replace_all_str(v, "'", "'\\''");
+            prefix = prefix + k + "='" + safe_v + "'; export " + k + "; ";
+        }
+        i = i + 1;
+    }
+    return prefix;
+}
+
 pub fn expand_subshell_captures(sys: &ProcessCap, env: &EnvCap, env_map: EnvMap, line: String) -> String {
     let n: Int = chars_len(line);
     let mut out: String = "";
@@ -80,7 +116,7 @@ pub fn expand_subshell_captures(sys: &ProcessCap, env: &EnvCap, env_map: EnvMap,
                 if depth == 0 {
                     let inner_cmd: String = str_slice(line, i + 2, ci);
                     let rec_cmd: String = expand_subshell_captures(sys, env, env_map, inner_cmd);
-                    let r: Result[String, String] = process_exec(sys, rec_cmd);
+                    let r: Result[String, String] = process_exec(sys, build_env_prefix(env_map) + rec_cmd);
                     let captured: String = match r { Ok(s) => s, Err(_) => "" };
                     out = out + strip_trailing_nl(captured);
                     i = ci + 1;
@@ -95,7 +131,7 @@ pub fn expand_subshell_captures(sys: &ProcessCap, env: &EnvCap, env_map: EnvMap,
             if ci < n {
                 let inner_cmd: String = str_slice(line, i + 1, ci);
                 let rec_cmd: String = expand_subshell_captures(sys, env, env_map, inner_cmd);
-                let r: Result[String, String] = process_exec(sys, rec_cmd);
+                let r: Result[String, String] = process_exec(sys, build_env_prefix(env_map) + rec_cmd);
                 let captured: String = match r { Ok(s) => s, Err(_) => "" };
                 out = out + strip_trailing_nl(captured);
                 i = ci + 1;

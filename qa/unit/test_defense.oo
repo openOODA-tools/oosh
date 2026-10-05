@@ -1,0 +1,109 @@
+// # Test Defense Suite - Unit Verification for 5 Threat Vectors and POSIX Punchlist
+//
+// Logline: Verifies defensive guards for terminal injection, glob dashes, sockets, recursion, and stream quota.
+//
+// Setup: Pure algorithmic test suite using TestRunner and openOODA shell modules.
+//
+// Beats:
+//   1. Verify VT100/OSC 52 escape code stripping and query reply isolation.
+//   2. Verify glob-dash argument injection detection and sanitization.
+//   3. Verify control socket path isolation and permissions.
+//   4. Verify recursion ceilings for arithmetic and control flow.
+//   5. Verify stream quota envelope and POSIX unary test operators.
+
+import "std/meta/test/runner.oo";
+import "term/read.oo";
+import "intent/safety.oo";
+import "ipc/daemon.oo";
+import "syntax/arith.oo";
+import "syntax/control.oo";
+import "syntax/glob.oo";
+import "syntax/param.oo";
+import "exec/stream.oo";
+import "flight/envelope.oo";
+import "syntax/list.oo";
+import "syntax/lexer.oo";
+import "job/control.oo";
+import "ui/dock.oo";
+
+pub fn run_test_defense(fs_r: &FsReadCap, sys: &ProcessCap, env: &EnvCap, r: TestRunner) -> TestRunner {
+    let mut tr: TestRunner = r;
+
+    // POSIX Punchlist: Group Redirection in-process split detection
+    let r_dbg: RedirectSplit = find_unquoted_redirect("{ echo hello; } > scratch/out.txt");
+    tr = test_assert(tr, "posix: group redirection detected", r_dbg.found);
+    tr = test_assert(tr, "posix: group statement recognized", is_group_stmt(r_dbg.lhs));
+    tr = test_assert_eq_str(tr, "posix: group target file", r_dbg.target, "scratch/out.txt");
+
+    // Vector 1: VT100 & OSC 52 Escape Stripping
+    let esc_s: String = bytes_to_str(bytes_push(bytes_new(), 27));
+    let color_str: String = esc_s + "[31mhello" + esc_s + "[0m world";
+    tr = test_assert_eq_str(tr, "defense: strip ANSI color escapes", strip_escape_sequences(color_str), "hello world");
+    let osc_str: String = esc_s + "]52;c;payload" + bytes_to_str(bytes_push(bytes_new(), 7)) + "echo injected";
+    tr = test_assert_eq_str(tr, "defense: strip OSC 52 sequence", strip_escape_sequences(osc_str), "echo injected");
+    tr = test_assert_eq_str(tr, "defense: strip plain text unchanged", strip_escape_sequences("clean text"), "clean text");
+
+    // Vector 2: Glob-Dash Argument Injection & Quote Preservation
+    tr = test_assert(tr, "defense: detect glob dash injection rm -*", has_glob_dash_injection("rm -*"));
+    tr = test_assert(tr, "defense: detect glob dash injection touch -*", has_glob_dash_injection("touch -*"));
+    tr = test_assert(tr, "defense: detect glob dash injection rm *", has_glob_dash_injection("rm *"));
+    tr = test_assert(tr, "defense: safe query does not trigger injection", !has_glob_dash_injection("ls *.oo"));
+    tr = test_assert_eq_str(tr, "defense: glob dash rm -* classified HIGH_RISK", classify_safety_tier("rm -*"), "HIGH_RISK");
+    let q_toks: List[String] = expand_glob_token(fs_r, "\"*.oo\"");
+    tr = test_assert_eq_int(tr, "defense: double quoted glob not expanded count", list_len(q_toks), 1);
+    if list_len(q_toks) > 0 {
+        tr = test_assert_eq_str(tr, "defense: double quoted glob unquoted val", list_get(q_toks, 0), "*.oo");
+    }
+    let s_toks: List[String] = expand_glob_token(fs_r, "'*.oo'");
+    tr = test_assert_eq_int(tr, "defense: single quoted glob not expanded count", list_len(s_toks), 1);
+    if list_len(s_toks) > 0 {
+        tr = test_assert_eq_str(tr, "defense: single quoted glob unquoted val", list_get(s_toks, 0), "*.oo");
+    }
+
+    // Vector 3: Socket Path Isolation
+    let sock: String = resolve_socket_path(env);
+    tr = test_assert(tr, "defense: socket path has oosh directory", str_contains(sock, "oosh"));
+    tr = test_assert(tr, "defense: socket path avoids bare root tmp", sock != "/tmp/oosh-control.sock");
+    let p_sock: String = prepare_socket_path(sys, env);
+    tr = test_assert(tr, "defense: prepare socket creates private path", str_contains(p_sock, "control.sock"));
+
+    // Vector 4: Recursion Depth Limits (Arith & Control)
+    let mut arith_bomb: String = "";
+    let mut ai: Int = 0;
+    while ai < 135 { arith_bomb = arith_bomb + "("; ai = ai + 1; }
+    arith_bomb = arith_bomb + "42";
+    ai = 0;
+    while ai < 135 { arith_bomb = arith_bomb + ")"; ai = ai + 1; }
+    let arith_res: String = eval_arithmetic_expr(env, env_map_new(), arith_bomb);
+    tr = test_assert(tr, "defense: arith depth ceiling terminates cleanly", chars_len(arith_res) > 0);
+
+    let mut if_bomb: String = "";
+    let mut ii: Int = 0;
+    while ii < 130 { if_bomb = if_bomb + "if true; then "; ii = ii + 1; }
+    if_bomb = if_bomb + "echo nested; ";
+    ii = 0;
+    while ii < 130 { if_bomb = if_bomb + "fi; "; ii = ii + 1; }
+    let if_res: Result[IfStmtDef, String] = parse_if_stmt(if_bomb);
+    tr = test_assert(tr, "defense: if nesting depth limit aborts bomb", if_res.is_err());
+
+    // Vector 5: Stream Ingestion Quota & Envelope Telemetry
+    let base_rec: FlightRecord = init_flight_record();
+    let quota_rec: FlightRecord = record_stream_quota_envelope(base_rec, "pipe_stream", 20971520);
+    tr = test_assert(tr, "defense: quota record has failed", quota_rec.has_failed);
+    tr = test_assert_eq_int(tr, "defense: quota exit code 137", quota_rec.last_exit_code, 137);
+    tr = test_assert_eq_str(tr, "defense: quota causal link", quota_rec.last_causal_link, "stream_quota");
+    let prop_res: String = exec_property_access("{\"app\":{\"name\":\"oosh\"}}", ".app.name");
+    tr = test_assert_eq_str(tr, "defense: stream property access works", prop_res, "oosh");
+
+    // POSIX Punchlist: Unary file operators & wait command
+    tr = test_assert(tr, "posix: test -e main.oo exists", eval_test_tokens(fs_r, sys, list_push(list_push(list_push(list_new(), "test"), "-e"), "main.oo")));
+    tr = test_assert(tr, "posix: test -f main.oo is regular file", eval_test_tokens(fs_r, sys, list_push(list_push(list_push(list_new(), "test"), "-f"), "main.oo")));
+    tr = test_assert(tr, "posix: test -d qa is directory", eval_test_tokens(fs_r, sys, list_push(list_push(list_push(list_new(), "test"), "-d"), "qa")));
+    tr = test_assert(tr, "posix: test -f qa is not regular file", !eval_test_tokens(fs_r, sys, list_push(list_push(list_push(list_new(), "test"), "-f"), "qa")));
+    tr = test_assert(tr, "posix: test -d main.oo is not directory", !eval_test_tokens(fs_r, sys, list_push(list_push(list_push(list_new(), "test"), "-d"), "main.oo")));
+    tr = test_assert(tr, "posix: is_job_cmd wait recognized", is_job_cmd("wait"));
+    tr = test_assert(tr, "posix: is_job_cmd wait %1 recognized", is_job_cmd("wait %1"));
+    tr = test_assert(tr, "dock: ambient dock renders path segment", chars_len(render_ambient_dock(fs_r, env, "/home", false, 0)) > 0);
+
+    return tr;
+}

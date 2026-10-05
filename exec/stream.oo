@@ -98,7 +98,10 @@ fn array_extract_index(arr_str: String, idx: Int) -> String {
 }
 
 pub fn exec_property_access(input_str: String, query: String) -> String {
-    let mut cur_val: String = input_str;
+    let mut cur_val: String = if chars_len(input_str) > 16777216 {
+        println("oosh: stream ingestion limit breached (16MB); truncated to quota envelope");
+        str_slice(input_str, 0, 16777216)
+    } else { input_str };
     let mut q: String = str_trim(query);
     while q != "" {
         if str_starts_with(q, ".") {
@@ -185,20 +188,24 @@ fn to_upper_ascii(s: String) -> String {
 }
 
 pub fn exec_where_filter(input_text: String, filter_expr: String) -> String {
+    let text: String = if chars_len(input_text) > 16777216 {
+        println("oosh: stream ingestion limit breached (16MB); truncated to quota envelope");
+        str_slice(input_text, 0, 16777216)
+    } else { input_text };
     let raw_f: String = str_trim(filter_expr);
     let expr: String = if str_starts_with(raw_f, "where ") { str_trim(str_slice(raw_f, 6, chars_len(raw_f))) } else { raw_f };
     let parts: List[String] = split_row_words(expr);
-    if list_len(parts) < 3 { return input_text; }
+    if list_len(parts) < 3 { return text; }
     let raw_field: String = list_get(parts, 0);
     let field: String = if str_starts_with(raw_field, ".") { str_slice(raw_field, 1, chars_len(raw_field)) } else { raw_field };
     let op: String = list_get(parts, 1);
     let expected: String = list_get(parts, 2);
 
     let mut lines: List[String] = list_new();
-    let n: Int = chars_len(input_text);
+    let n: Int = chars_len(text);
     let mut cur_l: String = ""; let mut i: Int = 0;
     while i < n {
-        let c: String = char_at(input_text, i);
+        let c: String = char_at(text, i);
         if c == "\n" { lines = list_push(lines, cur_l); cur_l = ""; }
         else if c != "\r" { cur_l = cur_l + c; }
         i = i + 1;

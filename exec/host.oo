@@ -11,6 +11,7 @@
 
 import "diagnostics/anchor.oo";
 import "syntax/anchor.oo";
+import "term/anchor.oo";
 import "std/fs/process/process.oo";
 
 fn ansi_esc() -> String { return bytes_to_str(bytes_push(bytes_new(), 27)); }
@@ -97,12 +98,14 @@ pub fn exec_host_command(sys: &ProcessCap, ffi: &FfiCap, cwd: String, cmd: Strin
         return Ok(match exec_res { Ok(c) => c, Err(_) => 0 });
     }
     let err_msg: String = match exec_res { Ok(_) => "", Err(m) => m };
+    let clean_cmd: String = term_strip_escapes(cmd);
+    let clean_err: String = term_strip_escapes(err_msg);
     let is_cnf: Bool = err_msg == "command not found";
-    let diag: DiagnosticResult = flight_rules_match(cmd, if is_cnf { 127 } else { 1 }, err_msg, cwd);
+    let diag: DiagnosticResult = flight_rules_match(clean_cmd, if is_cnf { 127 } else { 1 }, clean_err, cwd);
     if is_cnf && diag.actionable_cmd != "" && !str_starts_with(diag.actionable_cmd, "which ") {
-        println("oosh: command not found: '" + cmd + "'. Did you mean '" + diag.actionable_cmd + "'?");
+        println("oosh: command not found: '" + clean_cmd + "'. Did you mean '" + diag.actionable_cmd + "'?");
     } else {
-        println("oosh: " + (if is_cnf { "command not found: '" + cmd + "'" } else { cmd + ": " + err_msg }));
+        println("oosh: " + (if is_cnf { "command not found: '" + clean_cmd + "'" } else { clean_cmd + ": " + clean_err }));
     }
     return Err(err_msg);
 }

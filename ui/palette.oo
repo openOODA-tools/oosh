@@ -1,93 +1,36 @@
-// # Cyberpunk Palette - ANSI TrueColor Terminal Theme
+// # Native Terminal ANSI Palette
 //
-// Logline: Definitive TrueColor and ANSI escape sequences for cyberpunk aesthetic styling.
+// Logline: Minimal 16-color ANSI terminal styling with zero theme engine dependencies.
 //
-// Setup: Pure string formatting and escape sequence generation with zero ambient effects.
+// Setup: Pure string formatting and standard SGR escape sequences with zero ambient effects.
 //
 // Beats:
-//   1. Generate raw 24-bit TrueColor sequences for the core cyber palette.
+//   1. Provide standard ANSI SGR escape sequences for core terminal colors.
 //   2. Provide terminal styling primitives for bold, dim, and reset controls.
-//   3. Wrap text segments with high-contrast color tokens and automatic reset.
+//   3. Wrap text segments with standard ANSI color tokens and automatic reset.
 
 pub fn ansi_esc() -> String {
     return bytes_to_str(bytes_push(bytes_new(), 27));
 }
 
-pub fn cyber_esc() -> String {
-    return ansi_esc();
-}
+pub fn cyber_esc() -> String { return ansi_esc(); }
+pub fn cyber_reset() -> String { return ansi_esc() + "[0m"; }
+pub fn cyber_bold() -> String { return ansi_esc() + "[1m"; }
+pub fn cyber_dim() -> String { return ansi_esc() + "[2m"; }
 
-pub fn cyber_reset() -> String {
-    return ansi_esc() + "[0m";
-}
+// Standard 16-color ANSI SGR codes
+pub fn cyber_cyan() -> String { return ansi_esc() + "[36m"; }
+pub fn cyber_amber() -> String { return ansi_esc() + "[33m"; }
+pub fn cyber_purple() -> String { return ansi_esc() + "[35m"; }
+pub fn cyber_green() -> String { return ansi_esc() + "[32m"; }
+pub fn cyber_red() -> String { return ansi_esc() + "[31m"; }
+pub fn cyber_blue() -> String { return ansi_esc() + "[34m"; }
+pub fn cyber_gray() -> String { return ansi_esc() + "[90m"; }
 
-pub fn cyber_bold() -> String {
-    return ansi_esc() + "[1m";
-}
-
-pub fn cyber_dim() -> String {
-    return ansi_esc() + "[2m";
-}
-
-// Neon Cyan (Primary accent)
-pub fn cyber_cyan() -> String {
-    return ansi_esc() + "[38;2;0;240;255m";
-}
-
-// Electric Amber (Builtin & warning accent)
-pub fn cyber_amber() -> String {
-    return ansi_esc() + "[38;2;255;184;0m";
-}
-
-// Ultraviolet (Intent & magic plane)
-pub fn cyber_purple() -> String {
-    return ansi_esc() + "[38;2;189;0;255m";
-}
-
-// Toxic Green (Success & process execution)
-pub fn cyber_green() -> String {
-    return ansi_esc() + "[38;2;0;255;102m";
-}
-
-// Neon Crimson (Error & destructive action)
-pub fn cyber_red() -> String {
-    return ansi_esc() + "[38;2;255;51;102m";
-}
-
-// Electric Blue (Network & link channel)
-pub fn cyber_blue() -> String {
-    return ansi_esc() + "[38;2;0;170;255m";
-}
-
-// Muted Cyber Gray (Shadows & secondary metadata)
-pub fn cyber_gray() -> String {
-    return ansi_esc() + "[38;2;110;120;140m";
-}
-
-pub fn paint_cyan(s: String) -> String {
-    return cyber_cyan() + s + cyber_reset();
-}
-
-pub fn paint_amber(s: String) -> String {
-    return cyber_amber() + s + cyber_reset();
-}
-
-pub fn paint_purple(s: String) -> String {
-    return cyber_purple() + s + cyber_reset();
-}
-
-pub fn paint_green(s: String) -> String {
-    return cyber_green() + s + cyber_reset();
-}
-
-pub fn paint_red(s: String) -> String {
-    return cyber_red() + s + cyber_reset();
-}
-
-pub fn paint_blue(s: String) -> String {
-    return cyber_blue() + s + cyber_reset();
-}
-
-pub fn paint_gray(s: String) -> String {
-    return cyber_gray() + s + cyber_reset();
-}
+pub fn paint_cyan(s: String) -> String { return cyber_cyan() + s + cyber_reset(); }
+pub fn paint_amber(s: String) -> String { return cyber_amber() + s + cyber_reset(); }
+pub fn paint_purple(s: String) -> String { return cyber_purple() + s + cyber_reset(); }
+pub fn paint_green(s: String) -> String { return cyber_green() + s + cyber_reset(); }
+pub fn paint_red(s: String) -> String { return cyber_red() + s + cyber_reset(); }
+pub fn paint_blue(s: String) -> String { return cyber_blue() + s + cyber_reset(); }
+pub fn paint_gray(s: String) -> String { return cyber_gray() + s + cyber_reset(); }

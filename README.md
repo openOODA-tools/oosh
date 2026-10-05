@@ -71,34 +71,65 @@ curl -fsSL https://openooda-tools.github.io/oosh/install.sh | bash -s -- --unins
 
 ---
 
-## 4. Sovereign Superpowers & Terminal Magic (v0.9.0)
+## 4. Proactive Threat Defenses
 
-`oosh v0.9.0` introduces Phase 3 "Sovereign Superpowers" and advanced terminal ergonomics while preserving openOODA capability security:
-- **Two-Line Sovereign Cockpit & Grounded Prompt (`❯`)**: Row 1 presents a subtle ambient statusline with tilde-abbreviated cwd, git branch (direct `.git/HEAD` reader), host identity, and capability tokens (`CAPS: PROC+FS+NET`). Row 2 anchors typing with the grounded prompt symbol `❯ ` (or honors custom `$PS1` overrides).
-- **Real-Time TrueColor Syntax Accenting**: Live syntax colorization in raw mode without cursor drift: cyan for builtins (`caps`, `whereami`, `remedy`, `autopsy`, `alias`, `export`, `jobs`, `help`), toxic green for system binaries (`ls`, `git`, `vim`, `cargo`), electric amber for flags and string literals, and ultraviolet for intent queries (`? <query>`, `ai <query>`).
-- **Inline Dimmed Ghost Suggestions & Auto-Remedy Previews**: Dimmed ghost completions ahead of cursor accepted via `Tab` or `Right Arrow`. Non-zero command failures display actionable remedies (`[Auto-Remedy: <cmd> | Tab to accept]`) populated into buffer on `Tab`.
-- **Native Compiled C epoll Varlink Daemon**: High-concurrency non-blocking Unix domain socket RPC server in `ipc/daemon.oo` over `/run/oosh/control.sock` with multithreaded worker dispatch.
-- **Expanded Autopsy Flight Telemetry**: Memory metrics, PID, and causal execution links recorded in `envelope.oo` and rendered in clean columnar postmortem history.
-- **Pure POSIX Bash Ergonomics & Full Control Flow**: Native loops, conditionals, quote-safe lexing, parameter expansion, secure pipes, job control, and signal handling.
+`oosh` implements 5 proactive, architectural defenses against traditional and emerging shell attack vectors:
+
+1. **Terminal Escape Sequence & Input Injection (OSC 52 / CSI 6n)**:
+   - *Threat*: Malicious output or clipboard responses injecting carriage returns and shell commands via unsolicited terminal query replies.
+   - *Defense*: Typed raw TUI input event decoding in `term/read.oo`. Keystrokes are strictly distinguished from terminal query replies (`CSI ... R`, `CSI ... c`, and `OSC` sequences), isolating and routing query responses without buffer pollution.
+2. **Wildcard & Glob Argument Injection (`-*` Filenames)**:
+   - *Threat*: Files starting with `-` (e.g., `-rf`, `--help`) being expanded by wildcards (`*`) into flags for destructive commands like `rm *`.
+   - *Defense*: In `syntax/glob.oo`, filename matches starting with `-` are normalized to `./-*`. In `intent/safety.oo`, dangerous glob operations on mutation/destructive builtins are classified as `HIGH_RISK` and gated.
+3. **Control Socket Isolation & Peer Credential Authentication**:
+   - *Threat*: Bare control sockets in `/tmp/` vulnerable to symlink hijacking, hijacking by co-located users, or unauthenticated RPC invocation.
+   - *Defense*: Daemon sockets in `ipc/daemon.oo` resolve to private `/tmp/oosh-$UID/` directories locked to `0700` permissions. Connecting clients undergo kernel-enforced `SO_PEERCRED` validation, strictly ensuring the client UID matches `getuid()`.
+4. **Parser Stack Exhaustion Ceilings (Parser Bombs)**:
+   - *Threat*: Adversarial inputs with thousands of nested parentheses or control structures triggering thread stack overflows (SIGSEGV).
+   - *Defense*: Deterministic recursion limits (`depth < 128`) in `syntax/arith.oo` and `syntax/control.oo`. Deeply nested expression bombs are cleanly rejected with descriptive syntax errors.
+5. **Stream Ingestion Quotas**:
+   - *Threat*: Piping infinite streams (e.g., `/dev/zero`, multi-gigabyte log dumps) into shell property extractors or filters exhausting heap memory.
+   - *Defense*: A strict 16MB stream ingestion ceiling in `exec/stream.oo` for property access (`.field`) and tabular filtering (`where`). Breached streams are cleanly truncated with exit status 137 and diagnostic autopsy telemetry in `flight/envelope.oo`.
 
 ---
 
-## 5. Build From Source
+## 5. POSIX Parity & Core Ergonomics
+
+`oosh` balances strict capability security with deep POSIX and developer familiarity:
+- **In-Process Group Redirection**: `{ cmd1; cmd2; } > output.txt` executes in-process, preserving environment and session variable mutations while cleanly redirecting combined output.
+- **Subshell Environment Retention**: Full environment map propagation into subshells (`$(...)`) and backticks while filtering hazardous read-only/ambient variables.
+- **Unary File System Tests**: In-memory, capability-bounded evaluation of `-e`, `-f`, `-d`, and `-s` unary operators under `FsReadCap`.
+- **Native Job Control**: Complete job tracking with `jobs`, `fg`, `bg`, and native `wait` builtin (supporting wait-all, job spec `%N`, or specific PID).
+- **Quoted Glob Preservation**: Proper distinction between literal quoted patterns (`"*.oo"`) and expandable unquoted patterns (`*.oo`).
+
+---
+
+## 6. Clean Unthemed Terminal Posture
+
+In keeping with Unix philosophy and openOODA lean architecture:
+- `oosh` relies entirely on standard **16-color ANSI SGR primitives** in `ui/palette.oo`.
+- All heavy theme tables, 24-bit TrueColor hex parsers, and custom color configuration overhead have been stripped out.
+- The shell stays lean, fast, robust, and universally readable across any terminal emulator, serial console, or remote SSH session.
+- Advanced styling and thematic customization are decoupled into a dedicated companion engine (`oote`).
+
+---
+
+## 7. Build From Source
 
 ```bash
 git clone git@github.com:openOODA-tools/oosh.git
 cd oosh
 
-# Build, verify, and test
+# Build, verify, and run all test suites (unit + smoke + E2E tiers 1-5)
 make all
 
-# Install locally
+# Install locally to ~/.openooda/bin/oosh
 make install
 ```
 
 ---
 
-## 6. Verification & Governance
+## 8. Verification & Governance
 
 All code adheres strictly to the openOODA House Laws documented in [`AGENTS.md`](AGENTS.md):
 - **Page Rule**: Every source file strictly bounded between 16 and 256 lines.

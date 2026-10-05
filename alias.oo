@@ -37,10 +37,7 @@ pub fn alias_map_new() -> AliasMap { return AliasMap { names: list_new(), target
 
 pub fn alias_map_get(m: AliasMap, name: String) -> Result[String, String] {
     let n: Int = list_len(m.names); let mut i: Int = 0;
-    while i < n {
-        if list_get(m.names, i) == name { return Ok(list_get(m.targets, i)); }
-        i = i + 1;
-    }
+    while i < n { if list_get(m.names, i) == name { return Ok(list_get(m.targets, i)); } i = i + 1; }
     return Err("not_found");
 }
 
@@ -64,10 +61,7 @@ pub fn format_aliases(m: AliasMap) -> String {
     let n: Int = list_len(m.names);
     if n == 0 { return "No aliases defined\n"; }
     let mut out: String = ""; let mut i: Int = 0;
-    while i < n {
-        out = out + "alias " + list_get(m.names, i) + "='" + list_get(m.targets, i) + "'\n";
-        i = i + 1;
-    }
+    while i < n { out = out + "alias " + list_get(m.names, i) + "='" + list_get(m.targets, i) + "'\n"; i = i + 1; }
     return out;
 }
 
@@ -133,7 +127,7 @@ pub fn dispatch_session_builtin(ffi: &FfiCap, fs_r: &FsReadCap, sys: &ProcessCap
     let esc: String = ansi_esc();
     if line == "echo" { println(""); return Ok(session); }
     if str_starts_with(line, "echo ") {
-        let gtoks: List[String] = expand_globs(fs_r, split_cmd_tokens(str_slice(line, 5, chars_len(line))));
+        let gtoks: List[String] = expand_globs(fs_r, split_cmd_tokens_preserve_quotes(str_slice(line, 5, chars_len(line))));
         let mut out: String = ""; let gn: Int = list_len(gtoks); let mut gi: Int = 0;
         while gi < gn {
             let t: String = list_get(gtoks, gi);
@@ -165,10 +159,7 @@ pub fn dispatch_session_builtin(ffi: &FfiCap, fs_r: &FsReadCap, sys: &ProcessCap
     }
     if line == "export" {
         let n: Int = list_len(session.env_map.keys); let mut i: Int = 0;
-        while i < n {
-            println("export " + list_get(session.env_map.keys, i) + "=\"" + list_get(session.env_map.vals, i) + "\"");
-            i = i + 1;
-        }
+        while i < n { println("export " + list_get(session.env_map.keys, i) + "=\"" + list_get(session.env_map.vals, i) + "\""); i = i + 1; }
         return Ok(session);
     }
     if str_starts_with(line, "export ") {

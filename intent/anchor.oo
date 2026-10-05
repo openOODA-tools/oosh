@@ -72,6 +72,10 @@ pub fn intent_safety_badge(cmd: String) -> String {
     return render_safety_badge(cmd);
 }
 
+pub fn intent_sanitize_dash_args(fs_r: &FsReadCap, cwd: String, cmd: String, tokens: List[String]) -> List[String] {
+    return sanitize_dash_args(fs_r, cwd, cmd, tokens);
+}
+
 pub fn intent_anchor_probe() -> String {
     return "intent-active";
 }

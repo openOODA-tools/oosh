@@ -38,9 +38,7 @@ pub fn is_group_stmt(line: String) -> Bool {
 }
 pub fn extract_group_body(line: String) -> String { let t: String = str_trim(line); let n: Int = chars_len(t); return if n >= 2 && str_starts_with(t, "{") && str_ends_with(t, "}") { str_trim(str_slice(t, 1, n - 1)) } else { t }; }
 
-pub fn is_function_def(line: String) -> Bool {
-    let t: String = str_trim(line); return (str_starts_with(t, "function ") || str_index_of(t, "()") > 0) && str_contains(t, "{") && str_ends_with(t, "}");
-}
+pub fn is_function_def(line: String) -> Bool { let t: String = str_trim(line); return (str_starts_with(t, "function ") || str_index_of(t, "()") > 0) && str_contains(t, "{") && str_ends_with(t, "}"); }
 pub fn parse_function_def(line: String) -> Result[CompoundSplit, String] {
     let t: String = str_trim(line); let o_b: Int = str_index_of(t, "{");
     let mut c_b: Int = -1; let mut ci: Int = chars_len(t) - 1;
@@ -61,12 +59,8 @@ pub type IfStmtDef = struct { cond: String, then_body: String, else_body: String
 pub type CaseStmtDef = struct { matched_body: String };
 pub fn for_def_empty() -> ForLoopDef { return ForLoopDef { var_name: "", items: list_new(), body: "" }; }
 
-fn trim_semi(s: String) -> String {
-    let t: String = str_trim(s); return if str_ends_with(t, ";") { str_trim(str_slice(t, 0, chars_len(t) - 1)) } else { t };
-}
-fn kw_end_ok(t: String, i: Int, n: Int) -> Bool {
-    return i == n || char_at(t, i) == " " || char_at(t, i) == "\t" || char_at(t, i) == "\n" || char_at(t, i) == ";";
-}
+fn trim_semi(s: String) -> String { let t: String = str_trim(s); return if str_ends_with(t, ";") { str_trim(str_slice(t, 0, chars_len(t) - 1)) } else { t }; }
+fn kw_end_ok(t: String, i: Int, n: Int) -> Bool { return i == n || char_at(t, i) == " " || char_at(t, i) == "\t" || char_at(t, i) == "\n" || char_at(t, i) == ";"; }
 
 pub fn find_keyword_delimited(line: String, kw: String, last: Bool) -> Int {
     let n: Int = chars_len(line); let kn: Int = chars_len(kw);
@@ -119,7 +113,7 @@ pub fn parse_if_stmt(line: String) -> Result[IfStmtDef, String] {
             let p_ok: Bool = i == 0 || kw_end_ok(t, i - 1, n);
             if p_ok {
                 let rem_len: Int = n - i;
-                if rem_len >= 2 && str_slice(t, i, i + 2) == "if" && kw_end_ok(t, i + 2, n) { depth = depth + 1; i = i + 2; }
+                if rem_len >= 2 && str_slice(t, i, i + 2) == "if" && kw_end_ok(t, i + 2, n) { depth = depth + 1; if depth >= 128 { return Err("recursion_limit_exceeded"); } i = i + 2; }
                 else if rem_len >= 2 && str_slice(t, i, i + 2) == "fi" && kw_end_ok(t, i + 2, n) { depth = depth - 1; if depth == 0 { fi_pos = i; i = n; } else { i = i + 2; } }
                 else if depth == 1 && rem_len >= 4 && str_slice(t, i, i + 4) == "then" && kw_end_ok(t, i + 4, n) { if then_pos < 0 { then_pos = i; } i = i + 4; }
                 else if depth == 1 && rem_len >= 4 && str_slice(t, i, i + 4) == "elif" && kw_end_ok(t, i + 4, n) { if elif_pos < 0 && else_pos < 0 { elif_pos = i; } i = i + 4; }
@@ -231,7 +225,7 @@ pub fn is_for_stmt(line: String) -> Bool { return str_starts_with(str_trim(line)
 pub fn is_while_stmt(line: String) -> Bool { return str_starts_with(str_trim(line), "while ") && parse_while_stmt(line).is_ok(); }
 pub fn is_if_stmt(line: String) -> Bool { return str_starts_with(str_trim(line), "if ") && parse_if_stmt(line).is_ok(); }
 
-pub fn eval_test_tokens(sys: &ProcessCap, tokens: List[String]) -> Bool {
+pub fn eval_test_tokens(fs_r: &FsReadCap, sys: &ProcessCap, tokens: List[String]) -> Bool {
     let n: Int = list_len(tokens); if n == 0 { return false; }
     let s_i: Int = if list_get(tokens, 0) == "test" || list_get(tokens, 0) == "[" { 1 } else { 0 };
     let e_i: Int = if n > s_i && list_get(tokens, n - 1) == "]" { n - 1 } else { n };
@@ -241,13 +235,17 @@ pub fn eval_test_tokens(sys: &ProcessCap, tokens: List[String]) -> Bool {
     if argc == 0 { return false; } if argc == 1 { return list_get(args, 0) != ""; }
     if argc == 2 {
         let op: String = list_get(args, 0); let val: String = list_get(args, 1);
-        return if op == "-z" { val == "" } else if op == "-n" { val != "" } else if op == "!" { val == "" } else { false };
+        if op == "-z" { return val == ""; } if op == "-n" { return val != ""; } if op == "!" { return val == ""; }
+        if op == "-e" { return path_exists(fs_r, val); } if op == "-d" { return path_exists(fs_r, val) && oo_fs_is_dir(fs_r, val); }
+        if op == "-f" { return path_exists(fs_r, val) && !oo_fs_is_dir(fs_r, val); } if op == "-s" { return path_exists(fs_r, val) && file_size(fs_r, val) > 0; }
     }
     if argc == 3 {
         let a0: String = list_get(args, 0); let op: String = list_get(args, 1); let a2: String = list_get(args, 2);
         if op == "=" || op == "==" { return a0 == a2; } if op == "!=" { return a0 != a2; }
-        let v1: Int = parse_int_safe(a0); let v2: Int = parse_int_safe(a2);
-        return if op == "-eq" { v1 == v2 } else if op == "-ne" { v1 != v2 } else if op == "-lt" { v1 < v2 } else if op == "-le" { v1 <= v2 } else if op == "-gt" { v1 > v2 } else if op == "-ge" { v1 >= v2 } else { false };
+        if op == "-eq" || op == "-ne" || op == "-lt" || op == "-le" || op == "-gt" || op == "-ge" {
+            let v1: Int = parse_int_safe(a0); let v2: Int = parse_int_safe(a2);
+            return if op == "-eq" { v1 == v2 } else if op == "-ne" { v1 != v2 } else if op == "-lt" { v1 < v2 } else if op == "-le" { v1 <= v2 } else if op == "-gt" { v1 > v2 } else { v1 >= v2 };
+        }
     }
     let mut cmd: String = "test"; let mut fi: Int = 0;
     while fi < argc { cmd = cmd + " \"" + list_get(args, fi) + "\""; fi = fi + 1; }

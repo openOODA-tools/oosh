@@ -30,6 +30,10 @@ fn get_parent_env(sys: &ProcessCap, env: &EnvCap, var_name: String) -> String {
     return match r_p { Ok(s) => str_trim(s), Err(_) => "" };
 }
 
+pub fn resolve_socket_path_cap(bind: &BindCap, env: &EnvCap) -> String {
+    return resolve_socket_path(env);
+}
+
 pub fn resolve_socket_path(env: &EnvCap) -> String {
     let r_override: Result[String, String] = env_get(env, "OOSH_SOCKET");
     let ov: String = match r_override { Ok(s) => s, Err(_) => "" };
@@ -56,7 +60,10 @@ pub fn resolve_socket_path(env: &EnvCap) -> String {
     if home != "" {
         return home + "/.cache/oosh/control.sock";
     }
-    return "/tmp/oosh-control.sock";
+    let r_uid: Result[String, String] = env_get(env, "UID");
+    let uid: String = match r_uid { Ok(s) => s, Err(_) => "" };
+    let final_uid: String = if uid != "" { uid } else { "1000" };
+    return "/tmp/oosh-" + final_uid + "/control.sock";
 }
 
 pub fn prepare_socket_path(sys: &ProcessCap, env: &EnvCap) -> String {
@@ -68,9 +75,13 @@ pub fn prepare_socket_path(sys: &ProcessCap, env: &EnvCap) -> String {
         let _ = process_exec(sys, prep_cmd);
         return ov;
     }
-    let r_primary: Result[String, String] = process_exec(sys, "mkdir -p -m 0700 /run/oosh 2>/dev/null && chmod 0700 /run/oosh 2>/dev/null && test -w /run/oosh");
-    if r_primary.is_ok() {
-        return "/run/oosh/control.sock";
+    let r_user: Result[String, String] = env_get(env, "USER");
+    let user: String = match r_user { Ok(s) => s, Err(_) => "" };
+    if user == "root" {
+        let r_primary: Result[String, String] = process_exec(sys, "mkdir -p -m 0700 /run/oosh 2>/dev/null && chmod 0700 /run/oosh 2>/dev/null && test -w /run/oosh");
+        if r_primary.is_ok() {
+            return "/run/oosh/control.sock";
+        }
     }
     let xdg: String = get_parent_env(sys, env, "XDG_RUNTIME_DIR");
     if xdg != "" {
@@ -86,7 +97,11 @@ pub fn prepare_socket_path(sys: &ProcessCap, env: &EnvCap) -> String {
             return home + "/.cache/oosh/control.sock";
         }
     }
-    return "/tmp/oosh-control.sock";
+    let r_id: Result[String, String] = process_exec(sys, "id -u 2>/dev/null || echo 1000");
+    let uid_s: String = match r_id { Ok(s) => str_trim(s), Err(_) => "1000" };
+    let private_dir: String = "/tmp/oosh-" + uid_s;
+    let _ = process_exec(sys, "mkdir -p -m 0700 \"" + private_dir + "\" 2>/dev/null && chmod 0700 \"" + private_dir + "\" 2>/dev/null");
+    return private_dir + "/control.sock";
 }
 
 pub fn unlink_stale_socket(sys: &ProcessCap, sock_path: String) -> Bool {

@@ -96,7 +96,7 @@ pub fn resume_foreground(ffi: &FfiCap, t: JobTable, job_spec: String) -> Int {
 }
 
 pub fn is_job_cmd(line: String) -> Bool {
-    return line == "jobs" || line == "fg" || str_starts_with(line, "fg ") || line == "bg" || str_starts_with(line, "bg ");
+    return line == "jobs" || line == "fg" || str_starts_with(line, "fg ") || line == "bg" || str_starts_with(line, "bg ") || line == "wait" || str_starts_with(line, "wait ");
 }
 
 pub fn dispatch_job_cmd(ffi: &FfiCap, line: String, t: JobTable) -> Result[JobTable, String] {
@@ -105,6 +105,27 @@ pub fn dispatch_job_cmd(ffi: &FfiCap, line: String, t: JobTable) -> Result[JobTa
         let synced: JobTable = sync_job_table(ffi, t);
         let cleaned: JobTable = job_table_purge_done(synced);
         return Ok(cleaned);
+    }
+    if line == "wait" || str_starts_with(line, "wait ") {
+        let spec: String = if line == "wait" { "" } else { str_trim(str_slice(line, 5, chars_len(line))) };
+        let esc: String = ansi_esc();
+        if spec == "" {
+            let _ = oo_tui_write(ffi, esc + "_job_wait:");
+            let synced: JobTable = sync_job_table(ffi, t);
+            return Ok(job_table_purge_done(synced));
+        }
+        let target_pid: Int = if str_starts_with(spec, "%") {
+            let id: Int = parse_int(str_slice(spec, 1, chars_len(spec)));
+            let jr: Result[Job, String] = job_table_get(t, id);
+            match jr { Ok(j) => j.pid, Err(_) => -1 }
+        } else {
+            parse_int(spec)
+        };
+        if target_pid > 0 {
+            let _ = oo_tui_write(ffi, esc + "_job_wait:" + target_pid.to_string());
+        }
+        let synced: JobTable = sync_job_table(ffi, t);
+        return Ok(job_table_purge_done(synced));
     }
     if line == "fg" || str_starts_with(line, "fg ") {
         let spec: String = if line == "fg" { "" } else { str_trim(str_slice(line, 3, chars_len(line))) };

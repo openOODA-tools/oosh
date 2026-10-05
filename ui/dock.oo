@@ -10,6 +10,7 @@
 //   3. Render clean ambient dock status without runes or frames.
 
 import "std/fs/process/env.oo";
+import "palette.oo";
 
 pub fn resolve_node_id(env: &EnvCap) -> String {
     let ur: Result[String, String] = env_get(env, "USER");
@@ -89,6 +90,8 @@ pub fn resolve_git_branch(fs_r: &FsReadCap, cwd: String) -> String {
 }
 
 pub fn render_ambient_dock(fs_r: &FsReadCap, env: &EnvCap, cwd: String, has_failure: Bool, last_rc: Int) -> String {
+    let d_env: Result[String, String] = env_get(env, "OOSH_DOCK");
+    if d_env.is_ok() && match d_env { Ok(s) => s == "0", Err(_) => false } { return ""; }
     let home: String = resolve_ambient_home(env, cwd);
     let mut disp_cwd: String = cwd + "";
     if home != "" {
@@ -104,17 +107,11 @@ pub fn render_ambient_dock(fs_r: &FsReadCap, env: &EnvCap, cwd: String, has_fail
     let host_name: String = match host_file { Ok(s) => str_trim(s), Err(_) => "node" };
     let node: String = user_name + "@" + (if host_name != "" { host_name } else { "node" });
 
-    let esc: String = bytes_to_str(bytes_push(bytes_new(), 27));
-    let cyan: String = esc + "[38;2;0;240;255m";
-    let purple: String = esc + "[38;2;189;0;255m";
-    let amber: String = esc + "[38;2;255;184;0m";
-    let gray: String = esc + "[38;2;110;120;140m";
-    let rst: String = esc + "[0m";
-
-    let branch_part: String = if branch != "" { " " + purple + "(git:" + branch + ")" + rst } else { "" };
-    let host_part: String = gray + "[" + node + "]" + rst;
-    let path_part: String = " " + cyan + disp_cwd + rst;
-    let cap_part: String = " " + amber + "[CAPS: PROC+FS+NET]" + rst;
+    let rst: String = cyber_reset();
+    let branch_part: String = if branch != "" { " " + cyber_purple() + "(git:" + branch + ")" + rst } else { "" };
+    let host_part: String = cyber_gray() + "[" + node + "]" + rst;
+    let path_part: String = " " + cyber_cyan() + disp_cwd + rst;
+    let cap_part: String = " " + cyber_amber() + "[CAPS: PROC+FS+NET]" + rst;
 
     return host_part + path_part + branch_part + cap_part + "\r\n";
 }

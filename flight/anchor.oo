@@ -27,6 +27,10 @@ pub fn flight_failure(rec: FlightRecord, cmd: String, code: Int, err: String, du
     return record_flight_failure(rec, cmd, code, err, dur);
 }
 
+pub fn flight_stream_quota(rec: FlightRecord, cmd: String, bytes: Int) -> FlightRecord {
+    return record_stream_quota_envelope(rec, cmd, bytes);
+}
+
 pub fn flight_update_duration(rec: FlightRecord, dur: Int) -> FlightRecord {
     return update_flight_duration(rec, dur);
 }

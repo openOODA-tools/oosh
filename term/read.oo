@@ -7,12 +7,52 @@
 // Beats:
 //   1. Read initial byte from standard input stream.
 //   2. Decode VT100 multi-byte escape sequences for arrow keys and navigation.
-//   3. Dispatch standardized KeyEvent tokens.
+//   3. Dispatch standardized KeyEvent tokens and strip ANSI sequences.
 
 pub type KeyEvent = struct {
     action: String,
     text: String
 };
+
+pub fn strip_escape_sequences(s: String) -> String {
+    let n: Int = chars_len(s);
+    let mut out: String = "";
+    let mut i: Int = 0;
+    while i < n {
+        let ch: String = char_at(s, i);
+        let b: Int = byte_at(ch, 0);
+        if b == 27 {
+            let mut j: Int = i + 1;
+            if j < n {
+                let c1: String = char_at(s, j);
+                if c1 == "[" {
+                    j = j + 1;
+                    while j < n {
+                        let cb: Int = byte_at(char_at(s, j), 0);
+                        if cb >= 64 && cb <= 126 { j = j + 1; break; }
+                        j = j + 1;
+                    }
+                } else if c1 == "]" {
+                    j = j + 1;
+                    while j < n {
+                        let cb: Int = byte_at(char_at(s, j), 0);
+                        if cb == 7 { j = j + 1; break; }
+                        if cb == 27 && j + 1 < n && char_at(s, j + 1) == "\\" { j = j + 2; break; }
+                        if cb == 10 || cb == 13 { break; }
+                        j = j + 1;
+                    }
+                } else {
+                    j = j + 1;
+                }
+            }
+            i = j;
+        } else {
+            out = out + ch;
+            i = i + 1;
+        }
+    }
+    return out;
+}
 
 pub fn term_read_key(ffi: &FfiCap) -> KeyEvent {
     let b_res: Result[String, String] = oo_tui_read_byte(ffi, "");
@@ -23,25 +63,60 @@ pub fn term_read_key(ffi: &FfiCap) -> KeyEvent {
     let b: Int = if chars_len(byte_val) > 0 { byte_at(byte_val, 0) } else { 0 };
 
     if b == 27 {
-        let s1 = match oo_tui_read_byte(ffi, "") { Ok(s) => s, Err(_) => "" };
+        let s1 = match oo_tui_read_byte(ffi, "poll") { Ok(s) => s, Err(_) => "" };
+        if s1 == "" { return KeyEvent { action: "escape", text: "" }; }
         if s1 == "[" {
-            let s2 = match oo_tui_read_byte(ffi, "") { Ok(s) => s, Err(_) => "" };
+            let s2 = match oo_tui_read_byte(ffi, "poll") { Ok(s) => s, Err(_) => "" };
             if s2 == "A" { return KeyEvent { action: "up", text: "" }; }
             if s2 == "B" { return KeyEvent { action: "down", text: "" }; }
             if s2 == "C" { return KeyEvent { action: "right", text: "" }; }
             if s2 == "D" { return KeyEvent { action: "left", text: "" }; }
-            if s2 == "H" || s2 == "1" || s2 == "7" {
-                if s2 != "H" { let _ = oo_tui_read_byte(ffi, ""); }
-                return KeyEvent { action: "home", text: "" };
+            if s2 == "H" { return KeyEvent { action: "home", text: "" }; }
+            if s2 == "F" { return KeyEvent { action: "end", text: "" }; }
+            let mut seq: String = s2;
+            let mut fin: String = "";
+            let mut loop_i: Int = 0;
+            while loop_i < 32 {
+                let slen: Int = chars_len(seq);
+                let last_b: Int = if slen > 0 { byte_at(seq, slen - 1) } else { 0 };
+                if last_b >= 64 && last_b <= 126 {
+                    fin = char_at(seq, slen - 1);
+                    seq = str_slice(seq, 0, slen - 1);
+                    loop_i = 32;
+                } else {
+                    let nb = match oo_tui_read_byte(ffi, "poll") { Ok(s) => s, Err(_) => "" };
+                    if nb == "" { loop_i = 32; } else { seq = seq + nb; loop_i = loop_i + 1; }
+                }
             }
-            if s2 == "F" || s2 == "4" || s2 == "8" {
-                if s2 != "F" { let _ = oo_tui_read_byte(ffi, ""); }
-                return KeyEvent { action: "end", text: "" };
+            if fin == "~" {
+                if seq == "3" { return KeyEvent { action: "delete", text: "" }; }
+                if seq == "1" || seq == "7" { return KeyEvent { action: "home", text: "" }; }
+                if seq == "4" || seq == "8" { return KeyEvent { action: "end", text: "" }; }
+                return KeyEvent { action: "query_reply", text: seq + fin };
             }
-            if s2 == "3" {
-                let _ = oo_tui_read_byte(ffi, "");
-                return KeyEvent { action: "delete", text: "" };
+            if fin == "R" || fin == "c" || str_starts_with(seq, "?") {
+                return KeyEvent { action: "query_reply", text: seq + fin };
             }
+            return KeyEvent { action: "none", text: "" };
+        } else if s1 == "]" {
+            let mut osc_text: String = "";
+            let mut loop_i: Int = 0;
+            while loop_i < 256 {
+                let ob = match oo_tui_read_byte(ffi, "poll") { Ok(s) => s, Err(_) => "" };
+                if ob == "" { loop_i = 256; }
+                else {
+                    let ob_val: Int = byte_at(ob, 0);
+                    if ob_val == 7 { loop_i = 256; }
+                    else if ob_val == 27 {
+                        let _ = oo_tui_read_byte(ffi, "poll");
+                        loop_i = 256;
+                    } else {
+                        osc_text = osc_text + ob;
+                        loop_i = loop_i + 1;
+                    }
+                }
+            }
+            return KeyEvent { action: "query_reply", text: osc_text };
         } else if s1 == "b" || s1 == "B" {
             return KeyEvent { action: "word_left", text: "" };
         } else if s1 == "f" || s1 == "F" {

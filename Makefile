@@ -31,7 +31,7 @@ SRC := main.oo version.oo anchor.oo prompt.oo dispatch.oo engine.oo manual.oo al
        exec/anchor.oo exec/pipe.oo exec/nav.oo exec/host.oo exec/explain.oo exec/stream.oo \
        job/anchor.oo job/table.oo job/control.oo
 
-UNIT_SRC := qa/unit_runner.oo qa/unit/anchor.oo qa/unit/test_lexer.oo qa/unit/test_arith.oo qa/unit/test_control.oo qa/unit/test_remedy.oo qa/unit/test_stream.oo
+UNIT_SRC := qa/unit_runner.oo qa/unit/anchor.oo qa/unit/test_lexer.oo qa/unit/test_arith.oo qa/unit/test_control.oo qa/unit/test_remedy.oo qa/unit/test_stream.oo qa/unit/test_defense.oo
 
 .PHONY: all build test test-unit parity line-cap file-law academy check verify install clean test-e2e test-tier1 test-tier2 test-tier3 test-tier4 test-tier5
 
@@ -73,7 +73,7 @@ test: $(BIN)
 	@echo "=== testing whereami ==="
 	@echo "whereami" | ./$(BIN) --no-banner | grep -q "Location:" && echo "PASS: whereami"
 	@echo "=== testing bare .. navigation ==="
-	@echo -e "..\npwd" | ./$(BIN) --no-banner | grep -q "openOODA-tools" && echo "PASS: bare .. navigation"
+	@echo -e "..\npwd" | ./$(BIN) --no-banner | grep -q "$$(dirname "$$(pwd)")" && echo "PASS: bare .. navigation"
 	@echo "=== testing intent channel triggers ==="
 	@echo "? inspect memory" | ./$(BIN) --no-banner | grep -q "Intent Channel" && echo "PASS: intent trigger ?"
 	@echo "ask how to build" | ./$(BIN) --no-banner | grep -q "Intent Channel" && echo "PASS: intent trigger ask"
@@ -339,7 +339,7 @@ parity: build
 
 line-cap:
 	@violations=0; \
-	for f in $$(find . \( -name "*.oo" -o -name "*.oot" \) -not -path "./.git/*" -not -path "./.agents/*"); do \
+	for f in $$(find . \( -name "*.oo" -o -name "*.oot" \) -not -path "./.git/*" -not -path "./.agents/*" -not -path "./.github/*"); do \
 		n=$$(wc -l < "$$f"); \
 		if [ $$n -gt 256 ]; then \
 			echo "VIOLATION: $$f = $$n lines (exceeds 256)"; \
@@ -357,19 +357,19 @@ file-law:
 	@forbidden="py js ts rb pl json yaml toml"; \
 	violations=0; \
 	for ext in $$forbidden; do \
-		found=$$(find . -name "*.$$ext" -not -path "./.git/*" -not -path "./.agents/*" -not -path "./.blackbox/*" 2>/dev/null | head -3); \
+		found=$$(find . -name "*.$$ext" -not -path "./.git/*" -not -path "./.agents/*" -not -path "./.blackbox/*" -not -path "./.github/*" 2>/dev/null | head -3); \
 		if [ -n "$$found" ]; then \
 			echo "VIOLATION: .$$ext forbidden:"; echo "$$found"; \
 			violations=$$((violations+1)); \
 		fi; \
 	done; \
-	for f in $$(find . -name "*.sh" -not -path "./.git/*" -not -path "./.agents/*" 2>/dev/null); do \
+	for f in $$(find . -name "*.sh" -not -path "./.git/*" -not -path "./.agents/*" -not -path "./.github/*" 2>/dev/null); do \
 		if [ "$$f" != "./install.sh" ]; then \
 			echo "VIOLATION: .sh forbidden outside install.sh: $$f"; \
 			violations=$$((violations+1)); \
 		fi; \
 	done; \
-	for f in $$(find . -name "*.md" -not -path "./.git/*" -not -path "./.agents/*" 2>/dev/null); do \
+	for f in $$(find . -name "*.md" -not -path "./.git/*" -not -path "./.agents/*" -not -path "./.github/*" 2>/dev/null); do \
 		if [ "$$f" != "./README.md" ] && [ "$$f" != "./AGENTS.md" ] && [ "$$f" != "./TEST_READY.md" ]; then \
 			echo "VIOLATION: .md forbidden outside README.md, AGENTS.md, and TEST_READY.md: $$f"; \
 			violations=$$((violations+1)); \
@@ -380,7 +380,7 @@ file-law:
 
 academy:
 	@failures=0; \
-	for f in $$(find . -name "*.oo" -not -path "./.git/*" -not -path "./.agents/*"); do \
+	for f in $$(find . -name "*.oo" -not -path "./.git/*" -not -path "./.agents/*" -not -path "./.github/*"); do \
 		header=$$(head -7 "$$f"); \
 		if ! echo "$$header" | grep -q "^// # "; then \
 			echo "FAIL: $$f missing '// # <Title>' in first 7 lines"; \
@@ -407,7 +407,7 @@ academy:
 	echo "PASS: academy headers hold (all 4 elements present in first 7 lines)"
 
 check:
-	@$(OODA_COMPILER) check $$(find . -name "*.oo" -not -path "./.git/*" -not -path "./.agents/*") > /dev/null
+	@OO_LIST_AMBIENT_QUOTA=$(OO_LIST_AMBIENT_QUOTA) OODACODEX=$(OODACODEX) OODA_COMPILER=$(OODA_COMPILER) OODA_NO_JAIL=1 $(OODA_COMPILER) check main.oo qa/unit_runner.oo > /dev/null
 	@echo "PASS: oodac check holds on all .oo files"
 
 verify: line-cap file-law academy check

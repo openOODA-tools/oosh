@@ -10,6 +10,7 @@
 //   3. Manage FIFO oldest-first ring buffer eviction at fixed capacity.
 //   4. Render clean Unix columnar autopsy flight recorder report.
 
+import "term/read.oo";
 
 pub type FlightEntry = struct {
     seq: Int,
@@ -119,15 +120,17 @@ pub fn record_flight_failure(rec: FlightRecord, cmd: String, exit_code: Int, std
 pub fn record_flight_failure_full(rec: FlightRecord, cmd: String, exit_code: Int, stderr_out: String, duration_ms: Int, mem: String, pid: Int, link: String) -> FlightRecord {
     let seq_num: Int = rec.total_commands + 1;
     let causal: String = if link != "" { link } else if rec.total_commands > 0 { "seq#" + rec.total_commands.to_string() } else { "root" };
+    let clean_err: String = strip_escape_sequences(stderr_out);
+    let clean_cmd: String = strip_escape_sequences(cmd);
     let entry: FlightEntry = FlightEntry {
-        seq: seq_num, cmd: cmd, exit_code: exit_code, duration_ms: duration_ms,
-        status: "FAIL", stderr_snippet: safe_str_prefix(stderr_out, 60),
+        seq: seq_num, cmd: clean_cmd, exit_code: exit_code, duration_ms: duration_ms,
+        status: "FAIL", stderr_snippet: safe_str_prefix(clean_err, 60),
         peak_mem: mem, pid: pid, causal_link: causal
     };
     let new_entries: List[FlightEntry] = push_ring_entry(rec.entries, entry, rec.capacity);
     return FlightRecord {
-        has_failed: true, last_failed_cmd: cmd, last_exit_code: exit_code,
-        last_stderr: stderr_out, last_duration_ms: duration_ms,
+        has_failed: true, last_failed_cmd: clean_cmd, last_exit_code: exit_code,
+        last_stderr: clean_err, last_duration_ms: duration_ms,
         total_commands: seq_num, failed_count: rec.failed_count + 1,
         last_success_cmd: rec.last_success_cmd, entries: new_entries, capacity: rec.capacity,
         last_peak_mem: mem, last_pid: pid, last_causal_link: causal
@@ -225,4 +228,9 @@ pub fn render_autopsy_card(rec: FlightRecord) -> String {
     };
 
     return top + "\n" + header_info + sec_trace + "\n" + trace_body + "\n" + sec_post + "\n" + post_body + "\n=== AUTOPSY COMPLETE ===";
+}
+
+pub fn record_stream_quota_envelope(rec: FlightRecord, cmd: String, bytes_ingested: Int) -> FlightRecord {
+    let mb_str: String = (bytes_ingested / 1048576).to_string() + ".0 MB";
+    return record_flight_failure_full(rec, cmd, 137, "stream ingestion quota breached (16MB ceiling reached)", 0, mb_str, 0, "stream_quota");
 }

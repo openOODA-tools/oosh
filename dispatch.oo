@@ -24,12 +24,7 @@ import "job/anchor.oo";
 import "term/anchor.oo";
 
 fn ansi_esc() -> String { return bytes_to_str(bytes_push(bytes_new(), 27)); }
-
-pub type DispatchResult = struct {
-    next_cwd: String, should_exit: Bool, exit_code: Int,
-    flight_rec: FlightRecord, aliases: AliasMap, session: SessionState, is_return: Bool
-};
-
+pub type DispatchResult = struct { next_cwd: String, should_exit: Bool, exit_code: Int, flight_rec: FlightRecord, aliases: AliasMap, session: SessionState, is_return: Bool };
 fn make_res(cwd: String, exit: Bool, rc: Int, rec: FlightRecord, sess: SessionState, ret: Bool) -> DispatchResult {
     return DispatchResult { next_cwd: cwd, should_exit: exit, exit_code: rc, flight_rec: rec, aliases: sess.alias_map, session: sess, is_return: ret };
 }
@@ -137,13 +132,19 @@ pub fn dispatch_line(fs_r: &FsReadCap, fs_w: &FsWriteCap, sys: &ProcessCap, env:
     let r_split: RedirectSplit = find_unquoted_redirect(raw_trimmed);
     let pipe_i: Int = find_unquoted_pipe(raw_trimmed);
     if r_split.found && pipe_i < 0 {
-        let exp_lhs: String = alias_expand(cur_s.alias_map, expand_command_line(sys, env, cur_s.env_map, rec.last_exit_code, r_split.lhs));
         let exp_tgt: String = expand_command_line(sys, env, cur_s.env_map, rec.last_exit_code, r_split.target);
         let dest: String = if r_split.op == "2>&1" { "" } else if str_starts_with(exp_tgt, "/") { exp_tgt } else { cwd + "/" + exp_tgt };
         if r_split.op == "<" {
             let in_res: Result[String, String] = read_file(fs_r, dest);
             if in_res.is_err() { println("oosh: " + exp_tgt + ": No such file or directory"); return make_res(cwd, false, 1, flight_failure(rec, raw_trimmed, 1, "No such file or directory", 0), cur_s, false); }
         }
+        if is_group_stmt(r_split.lhs) {
+            let _ = oo_tui_write(ffi, ansi_esc() + "_redir_push:" + r_split.op + ":" + dest);
+            let g_res: DispatchResult = dispatch_line(fs_r, fs_w, sys, env, ffi, extract_group_body(r_split.lhs), rec, cur_s);
+            let _ = oo_tui_write(ffi, ansi_esc() + "_redir_pop");
+            return make_res(g_res.next_cwd, g_res.should_exit, g_res.exit_code, g_res.flight_rec, g_res.session, false);
+        }
+        let exp_lhs: String = alias_expand(cur_s.alias_map, expand_command_line(sys, env, cur_s.env_map, rec.last_exit_code, r_split.lhs));
         let b_res: Result[String, String] = get_all_builtin_output(sys, env, fs_r, cwd, rec, exp_lhs, cur_s);
         if b_res.is_ok() {
             let out_s: String = match b_res { Ok(s) => s, Err(_) => "" };
@@ -163,13 +164,13 @@ pub fn dispatch_line(fs_r: &FsReadCap, fs_w: &FsWriteCap, sys: &ProcessCap, env:
             let b_res: Result[String, String] = get_all_builtin_output(sys, env, fs_r, cwd, rec, exp_p_lhs, cur_s);
             let lhs_out: String = if b_res.is_ok() { match b_res { Ok(s) => s, Err(_) => "" } } else { match process_exec(sys, exp_p_lhs) { Ok(s) => s, Err(_) => "" } };
             let f_out: String = if exec_is_property_access(f_cmd) { exec_property_access_run(lhs_out, f_cmd) } else { exec_where_filter_run(lhs_out, f_cmd) };
+            let s_rec: FlightRecord = if chars_len(lhs_out) > 16777216 { flight_stream_quota(rec, raw_trimmed, chars_len(lhs_out)) } else { flight_success(rec, raw_trimmed, 0) };
             if next_p >= 0 {
-                let rem_cmd: String = str_trim(str_slice(exp_p_rhs, next_p + 1, chars_len(exp_p_rhs)));
-                let prc: Int = route_builtin_pipeline(ffi, f_out, rem_cmd);
-                return make_res(cwd, false, prc, if prc == 0 { flight_success(rec, raw_trimmed, 0) } else { flight_failure(rec, raw_trimmed, prc, "", 0) }, cur_s, false);
+                let prc: Int = route_builtin_pipeline(ffi, f_out, str_trim(str_slice(exp_p_rhs, next_p + 1, chars_len(exp_p_rhs))));
+                return make_res(cwd, false, if prc != 0 { prc } else { s_rec.last_exit_code }, if prc == 0 { s_rec } else { flight_failure(s_rec, raw_trimmed, prc, "", 0) }, cur_s, false);
             }
             if f_out != "" { if str_ends_with(f_out, "\n") { print(f_out); } else { println(f_out); } }
-            return make_res(cwd, false, 0, flight_success(rec, raw_trimmed, 0), cur_s, false);
+            return make_res(cwd, false, s_rec.last_exit_code, s_rec, cur_s, false);
         }
         let rhs_b: Result[String, String] = get_all_builtin_output(sys, env, fs_r, cwd, rec, exp_p_rhs, cur_s);
         if rhs_b.is_ok() { print(match rhs_b { Ok(s) => s, Err(_) => "" }); return make_res(cwd, false, 0, flight_success(rec, raw_trimmed, 0), cur_s, false); }
@@ -220,15 +221,14 @@ pub fn dispatch_line(fs_r: &FsReadCap, fs_w: &FsWriteCap, sys: &ProcessCap, env:
         return make_res(cwd, false, 1, flight_failure(rec, line, 1, "directory not found", 0), cur_s, false);
     }
 
-    let tokens: List[String] = expand_globs(fs_r, split_cmd_tokens(line));
+    let raw_toks: List[String] = expand_globs(fs_r, split_cmd_tokens_preserve_quotes(line));
+    let cmd: String = if list_len(raw_toks) > 0 { list_get(raw_toks, 0) } else { "" };
+    let tokens: List[String] = intent_sanitize_dash_args(fs_r, cwd, cmd, raw_toks);
     let num_tokens: Int = list_len(tokens);
-    let cmd: String = list_get(tokens, 0);
-
     if cmd == "eval" { return dispatch_line(fs_r, fs_w, sys, env, ffi, join_tokens_from(tokens, 1), rec, cur_s); }
     if cmd == "exec" {
         if num_tokens < 2 { return make_res(cwd, false, 0, flight_success(rec, line, 0), cur_s, false); }
-        let _ = oo_tui_write(ffi, ansi_esc() + "_exec:" + join_tokens_from(tokens, 1));
-        return make_res(cwd, true, 0, flight_success(rec, line, 0), cur_s, false);
+        let _ = oo_tui_write(ffi, ansi_esc() + "_exec:" + join_tokens_from(tokens, 1)); return make_res(cwd, true, 0, flight_success(rec, line, 0), cur_s, false);
     }
     if cmd == "." || cmd == "source" {
         if num_tokens < 2 { println("oosh: " + cmd + ": filename argument required"); return make_res(cwd, false, 2, flight_failure(rec, line, 2, "filename argument required", 0), cur_s, false); }
@@ -245,7 +245,7 @@ pub fn dispatch_line(fs_r: &FsReadCap, fs_w: &FsWriteCap, sys: &ProcessCap, env:
         return make_res(fn_res.next_cwd, fn_res.should_exit, fn_res.exit_code, if fn_res.exit_code == 0 { flight_success(fn_res.flight_rec, cmd, 0) } else { flight_failure(fn_res.flight_rec, cmd, fn_res.exit_code, "", 0) }, next_sess, false);
     }
     if cmd == "test" || cmd == "[" {
-        let rc: Int = if eval_test_tokens(sys, tokens) { 0 } else { 1 }; return make_res(cwd, false, rc, if rc == 0 { flight_success(rec, line, 0) } else { flight_failure(rec, line, rc, "", 0) }, cur_s, false);
+        let rc: Int = if eval_test_tokens(fs_r, sys, tokens) { 0 } else { 1 }; return make_res(cwd, false, rc, if rc == 0 { flight_success(rec, line, 0) } else { flight_failure(rec, line, rc, "", 0) }, cur_s, false);
     }
     let ex_res = exec_host_command(sys, ffi, cwd, cmd, tokens);
     if ex_res.is_ok() { let rc: Int = match ex_res { Ok(c) => c, Err(_) => 0 }; return make_res(cwd, false, rc, if rc == 0 { flight_success(rec, line, 0) } else { flight_failure(rec, line, rc, "", 0) }, cur_s, false); }

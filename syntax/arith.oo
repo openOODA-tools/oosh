@@ -99,12 +99,12 @@ fn tokenize_arith(env: &EnvCap, env_map: EnvMap, expr: String) -> List[ArithToke
     return toks;
 }
 
-fn parse_primary(tokens: List[ArithToken], pos: Int) -> EvalRes {
+fn parse_primary(tokens: List[ArithToken], pos: Int, depth: Int) -> EvalRes {
     let n: Int = list_len(tokens);
-    if pos >= n { return EvalRes { val: 0, pos: pos }; }
+    if pos >= n || depth >= 128 { return EvalRes { val: 0, pos: pos }; }
     let tok: ArithToken = list_get(tokens, pos);
     if tok.kind == "(" {
-        let inner: EvalRes = parse_expr(tokens, pos + 1);
+        let inner: EvalRes = parse_expr_depth(tokens, pos + 1, depth + 1);
         let next_pos: Int = inner.pos;
         if next_pos < n && list_get(tokens, next_pos).kind == ")" {
             return EvalRes { val: inner.val, pos: next_pos + 1 };
@@ -117,29 +117,29 @@ fn parse_primary(tokens: List[ArithToken], pos: Int) -> EvalRes {
     return EvalRes { val: 0, pos: pos + 1 };
 }
 
-fn parse_unary(tokens: List[ArithToken], pos: Int) -> EvalRes {
+fn parse_unary(tokens: List[ArithToken], pos: Int, depth: Int) -> EvalRes {
     let n: Int = list_len(tokens);
-    if pos >= n { return EvalRes { val: 0, pos: pos }; }
+    if pos >= n || depth >= 128 { return EvalRes { val: 0, pos: pos }; }
     let tok: ArithToken = list_get(tokens, pos);
     if tok.kind == "-" {
-        let res: EvalRes = parse_unary(tokens, pos + 1);
+        let res: EvalRes = parse_unary(tokens, pos + 1, depth + 1);
         return EvalRes { val: 0 - res.val, pos: res.pos };
     }
     if tok.kind == "+" {
-        return parse_unary(tokens, pos + 1);
+        return parse_unary(tokens, pos + 1, depth + 1);
     }
-    return parse_primary(tokens, pos);
+    return parse_primary(tokens, pos, depth);
 }
 
-fn parse_mul_div(tokens: List[ArithToken], pos: Int) -> EvalRes {
-    let left: EvalRes = parse_unary(tokens, pos);
+fn parse_mul_div(tokens: List[ArithToken], pos: Int, depth: Int) -> EvalRes {
+    let left: EvalRes = parse_unary(tokens, pos, depth);
     let n: Int = list_len(tokens);
     let mut cur_pos: Int = left.pos;
     let mut cur_val: Int = left.val;
-    while cur_pos < n {
+    while cur_pos < n && depth < 128 {
         let op: String = list_get(tokens, cur_pos).kind;
         if op == "*" || op == "/" || op == "%" {
-            let right: EvalRes = parse_unary(tokens, cur_pos + 1);
+            let right: EvalRes = parse_unary(tokens, cur_pos + 1, depth + 1);
             if op == "*" {
                 cur_val = cur_val * right.val;
             } else if op == "/" {
@@ -155,15 +155,15 @@ fn parse_mul_div(tokens: List[ArithToken], pos: Int) -> EvalRes {
     return EvalRes { val: cur_val, pos: cur_pos };
 }
 
-fn parse_add_sub(tokens: List[ArithToken], pos: Int) -> EvalRes {
-    let left: EvalRes = parse_mul_div(tokens, pos);
+fn parse_add_sub(tokens: List[ArithToken], pos: Int, depth: Int) -> EvalRes {
+    let left: EvalRes = parse_mul_div(tokens, pos, depth);
     let n: Int = list_len(tokens);
     let mut cur_pos: Int = left.pos;
     let mut cur_val: Int = left.val;
-    while cur_pos < n {
+    while cur_pos < n && depth < 128 {
         let op: String = list_get(tokens, cur_pos).kind;
         if op == "+" || op == "-" {
-            let right: EvalRes = parse_mul_div(tokens, cur_pos + 1);
+            let right: EvalRes = parse_mul_div(tokens, cur_pos + 1, depth + 1);
             if op == "+" {
                 cur_val = cur_val + right.val;
             } else {
@@ -177,8 +177,13 @@ fn parse_add_sub(tokens: List[ArithToken], pos: Int) -> EvalRes {
     return EvalRes { val: cur_val, pos: cur_pos };
 }
 
+pub fn parse_expr_depth(tokens: List[ArithToken], pos: Int, depth: Int) -> EvalRes {
+    if depth >= 128 { return EvalRes { val: 0, pos: list_len(tokens) }; }
+    return parse_add_sub(tokens, pos, depth);
+}
+
 pub fn parse_expr(tokens: List[ArithToken], pos: Int) -> EvalRes {
-    return parse_add_sub(tokens, pos);
+    return parse_expr_depth(tokens, pos, 0);
 }
 
 pub fn eval_arithmetic_expr(env: &EnvCap, env_map: EnvMap, expr: String) -> String {

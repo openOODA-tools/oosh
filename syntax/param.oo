@@ -61,7 +61,7 @@ fn get_var_val(env: &EnvCap, env_map: EnvMap, k: String) -> String {
     return match r_env { Ok(v) => v, Err(_) => "" };
 }
 
-fn replace_all_str(s: String, old: String, rep: String) -> String {
+pub fn replace_all_str(s: String, old: String, rep: String) -> String {
     let olen: Int = chars_len(old); if olen == 0 { return s; }
     let mut out: String = ""; let mut cur: String = s;
     while true {

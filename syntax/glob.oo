@@ -84,6 +84,10 @@ fn sort_strings(items: List[String]) -> List[String] {
 }
 
 pub fn expand_glob_token(fs_r: &FsReadCap, token: String) -> List[String] {
+    let tlen: Int = chars_len(token);
+    if tlen >= 2 && ((str_starts_with(token, "\"") && str_ends_with(token, "\"")) || (str_starts_with(token, "'") && str_ends_with(token, "'"))) {
+        return list_push(list_new(), str_slice(token, 1, tlen - 1));
+    }
     if !str_contains(token, "*") && !str_contains(token, "?") {
         return list_push(list_new(), token);
     }
@@ -103,9 +107,10 @@ pub fn expand_glob_token(fs_r: &FsReadCap, token: String) -> List[String] {
     while ei < elen {
         let ent: String = list_get(entries, ei);
         if matches_glob(pat, ent) {
+            let safe_ent: String = if str_starts_with(ent, "-") { "./" + ent } else { ent };
             let full_match: String = if last_sl >= 0 {
-                if dir_path == "/" { "/" + ent } else { dir_path + "/" + ent }
-            } else { ent };
+                if dir_path == "/" { "/" + safe_ent } else { dir_path + "/" + safe_ent }
+            } else { safe_ent };
             matches = list_push(matches, full_match);
         }
         ei = ei + 1;
@@ -130,4 +135,38 @@ pub fn expand_globs(fs_r: &FsReadCap, tokens: List[String]) -> List[String] {
         i = i + 1;
     }
     return out;
+}
+
+pub fn split_cmd_tokens_preserve_quotes(cmd: String) -> List[String] {
+    let mut tokens: List[String] = list_new();
+    let n: Int = chars_len(cmd);
+    let mut cur: String = "";
+    let mut in_s: Bool = false;
+    let mut in_d: Bool = false;
+    let mut esc: Bool = false;
+    let mut had_quotes: Bool = false;
+    let mut i: Int = 0;
+    while i < n {
+        let ch: String = char_at(cmd, i);
+        if esc {
+            cur = cur + ch; esc = false;
+        } else if ch == "\\" && !in_s {
+            esc = true; cur = cur + ch;
+        } else if ch == "'" && !in_d {
+            in_s = !in_s; had_quotes = true; cur = cur + ch;
+        } else if ch == "\"" && !in_s {
+            in_d = !in_d; had_quotes = true; cur = cur + ch;
+        } else if !in_s && !in_d && ch == "#" && cur == "" {
+            i = n;
+        } else if !in_s && !in_d && (ch == " " || ch == "\t" || ch == "\n" || ch == "\r") {
+            if cur != "" || had_quotes {
+                tokens = list_push(tokens, cur); cur = ""; had_quotes = false;
+            }
+        } else {
+            cur = cur + ch;
+        }
+        i = i + 1;
+    }
+    if cur != "" || had_quotes { tokens = list_push(tokens, cur); }
+    return tokens;
 }

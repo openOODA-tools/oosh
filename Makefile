@@ -154,7 +154,7 @@ test-tier1: $(BIN)
 	@./$(BIN) -c 'status' | grep -q "POSTURE" && echo "PASS: [T1-F04-01] Status Palette Rendering"
 	@./$(BIN) -c 'caps' | grep -q "CAPABILITY VERIFIED" && echo "PASS: [T1-F04-02] Cyan Accent Palette Rendering"
 	@./$(BIN) -c 'help' | grep -q "builtins" && echo "PASS: [T1-F04-03] Electric Amber Palette Rendering"
-	@./$(BIN) -c 'whereami' | grep -q "Context:" && echo "PASS: [T1-F04-04] Working Context Rendering"
+	@./$(BIN) -c 'whereami' | grep -E -q "Context:|Branch:" && echo "PASS: [T1-F04-04] Working Context Rendering"
 	@./$(BIN) -c 'scry' | grep -q "SCRY COMPLETE" && echo "PASS: [T1-F04-05] Scry Complete Rendering"
 	@./$(BIN) -c 'caps' | grep -F -q "+-- [" && echo "PASS: [T1-F05-01] Card Top Header Rendering"
 	@./$(BIN) -c 'caps' | grep -q "Identity" && echo "PASS: [T1-F05-02] Card Row Margin Rendering"

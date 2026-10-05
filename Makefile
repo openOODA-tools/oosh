@@ -15,6 +15,8 @@
 #   make clean       - remove build artifacts
 #   make all         - build + verify + test
 
+SHELL := /bin/bash
+
 OODA_COMPILER ?= $(firstword $(wildcard $(HOME)/.openooda/bin/oodac $(CURDIR)/../../openOODA/oodac/bin/oodac))
 OODACODEX ?= $(HOME)/.openooda/northstar.oot
 OO_LIST_AMBIENT_QUOTA ?= 8589934592
@@ -73,7 +75,7 @@ test: $(BIN)
 	@echo "=== testing whereami ==="
 	@echo "whereami" | ./$(BIN) --no-banner | grep -q "Location:" && echo "PASS: whereami"
 	@echo "=== testing bare .. navigation ==="
-	@echo -e "..\npwd" | ./$(BIN) --no-banner | grep -q "$$(dirname "$$(pwd)")" && echo "PASS: bare .. navigation"
+	@printf "..\npwd\n" | ./$(BIN) --no-banner | grep -q "$$(dirname "$$(pwd)")" && echo "PASS: bare .. navigation"
 	@echo "=== testing intent channel triggers ==="
 	@echo "? inspect memory" | ./$(BIN) --no-banner | grep -q "Intent Channel" && echo "PASS: intent trigger ?"
 	@echo "ask how to build" | ./$(BIN) --no-banner | grep -q "Intent Channel" && echo "PASS: intent trigger ask"
@@ -270,8 +272,8 @@ test-tier2: $(BIN)
 	@./$(BIN) -c "   " && echo "PASS: [T2-BND-03] Whitespace -c option exits 0"
 	@test "$$(./$(BIN) -c 'echo line1; echo line2')" = "$$(printf "line1\nline2")" && echo "PASS: [T2-BND-04] Multi-line -c command executes sequentially"
 	@./$(BIN) -c "echo $$(printf 'A%.0s' {1..4096})" > /dev/null && echo "PASS: [T2-BND-05] 4096-byte command line handled without overflow"
-	@./$(BIN) -c "echo -e 'control\ttab'" > /dev/null && echo "PASS: [T2-BND-06] Control characters handled safely"
-	@echo -e "cd /nonexistent_test_dir_xyz\npwd" | ./$(BIN) --no-banner | grep -q "oosh" && echo "PASS: [T2-BND-07] Failed cd preserves existing working directory"
+	@./$(BIN) -c "printf 'control\ttab\n'" > /dev/null && echo "PASS: [T2-BND-06] Control characters handled safely"
+	@printf "cd /nonexistent_test_dir_xyz\npwd\n" | ./$(BIN) --no-banner | grep -q "oosh" && echo "PASS: [T2-BND-07] Failed cd preserves existing working directory"
 	@echo "cd" | ./$(BIN) --no-banner > /dev/null && echo "PASS: [T2-BND-08] Bare cd defaults to home without error"
 	@echo "..." | ./$(BIN) --no-banner > /dev/null && echo "PASS: [T2-BND-09] Deep traversal ... handled"
 	@echo -n "" | ./$(BIN) --no-banner > /dev/null && echo "PASS: [T2-BND-10] Empty stdin stream exits cleanly"
@@ -289,13 +291,13 @@ test-tier2: $(BIN)
 
 test-tier3: $(BIN)
 	@echo "=== Tier 3: Cross-Feature Combinations (10 Tests) ==="
-	@echo -e "remedy\nhelp" | ./$(BIN) --no-banner | grep -q "sovereign builtins" && echo "PASS: [T3-XFC-01] UI + Remedy builtin interaction"
-	@echo -e "? find project\nhelp" | ./$(BIN) --no-banner | grep -q "Intent Channel" && echo "PASS: [T3-XFC-02] UI + Intent query interaction"
+	@printf "remedy\nhelp\n" | ./$(BIN) --no-banner | grep -q "sovereign builtins" && echo "PASS: [T3-XFC-01] UI + Remedy builtin interaction"
+	@printf "? find project\nhelp\n" | ./$(BIN) --no-banner | grep -q "Intent Channel" && echo "PASS: [T3-XFC-02] UI + Intent query interaction"
 	@./$(BIN) --varlink-call '{"method":"org.openooda.oosh.Control1.SynthesizeIntent","parameters":{"query":"? status"}}' | grep -q "SAFE" && echo "PASS: [T3-XFC-03] Intent + Safety classification interaction"
 	@./$(BIN) --varlink-call '{"method":"org.openooda.oosh.Control1.GetLastFailure"}' | grep -q "has_failed" && echo "PASS: [T3-XFC-04] Varlink + Remedy IPC failure query interaction"
 	@./$(BIN) --varlink-call '{"method":"org.openooda.oosh.Control1.ExecuteCommand","parameters":{"command":"echo combo_exec"}}' | grep -q "combo_exec" && echo "PASS: [T3-XFC-05] Varlink + Control command execution interaction"
-	@echo -e "cd ..\npwd\ncd oosh" | ./$(BIN) --no-banner > /dev/null && echo "PASS: [T3-XFC-06] Status Dock + Navigation CWD interaction"
-	@echo -e "history\nautopsy" | ./$(BIN) --no-banner > /dev/null && echo "PASS: [T3-XFC-07] Flight Recorder + Autopsy history interaction"
+	@printf "cd ..\npwd\ncd oosh\n" | ./$(BIN) --no-banner > /dev/null && echo "PASS: [T3-XFC-06] Status Dock + Navigation CWD interaction"
+	@printf "history\nautopsy\n" | ./$(BIN) --no-banner > /dev/null && echo "PASS: [T3-XFC-07] Flight Recorder + Autopsy history interaction"
 	@./$(BIN) -c 'caps' | grep -q "ProcessCap" && echo "PASS: [T3-XFC-08] Capability + Process sandbox boundary interaction"
 	@NO_COLOR=1 ./$(BIN) -c "version" > /dev/null && echo "PASS: [T3-XFC-09] Palette + NO_COLOR terminal fallback interaction"
 	@printf "echo one\necho two\necho three\n" | ./$(BIN) --no-banner | grep -q "three" && echo "PASS: [T3-XFC-10] Telemetry + Multi-command stream pipe interaction"
@@ -304,19 +306,19 @@ test-tier3: $(BIN)
 test-tier4: $(BIN)
 	@echo "=== Tier 4: Real-World Scenarios (5 Workload Scenarios) ==="
 	@printf "invalid_cmd_test_404\nremedy\n" | ./$(BIN) --no-banner | grep -q "PROPOSED REMEDIATION" && echo "PASS: [T4-SCN-01] Scenario 1: Developer Failure & Recovery Flow"
-	@echo -e "? list all files\necho executed" | ./$(BIN) --no-banner | grep -q "Intent Channel" && echo "PASS: [T4-SCN-02] Scenario 2: Ambient Natural Language Intent Session"
+	@printf "? list all files\necho executed\n" | ./$(BIN) --no-banner | grep -q "Intent Channel" && echo "PASS: [T4-SCN-02] Scenario 2: Ambient Natural Language Intent Session"
 	@./$(BIN) --varlink-call '{"method":"org.openooda.oosh.Control1.QueryPosture"}' | grep -q "ready" && ./$(BIN) --varlink-call '{"method":"org.openooda.oosh.Control1.ExecuteCommand","parameters":{"command":"echo agent_session_active"}}' | grep -q "agent_session_active" && echo "PASS: [T4-SCN-03] Scenario 3: Headless Varlink Autonomous Agent Session"
 	@printf "echo step1\necho step2\nautopsy\n" | ./$(BIN) --no-banner | grep -q "AUTOPSY FLIGHT RECORDER" && echo "PASS: [T4-SCN-04] Scenario 4: Flight Recorder Postmortem Autopsy"
-	@echo -e "caps\nwhereami\n..\n:q" | ./$(BIN) --no-banner | grep -q "Location:" && echo "PASS: [T4-SCN-05] Scenario 5: Ambient Terminal Navigation & Audit Session"
+	@printf "caps\nwhereami\n..\n:q\n" | ./$(BIN) --no-banner | grep -q "Location:" && echo "PASS: [T4-SCN-05] Scenario 5: Ambient Terminal Navigation & Audit Session"
 	@echo "PASS: Tier 4 Real-World Scenarios (5/5 verified)"
 
 test-tier5: $(BIN)
 	@echo "=== Tier 5: Adversarial Coverage Hardening (20 Tests) ==="
 	@./$(BIN) -c 'echo "adv_suite_active"' | grep -q "adv_suite_active" && echo "PASS: [T5-ADV-01] Adversarial Suite Active Functional Verification"
 	@test "$$(echo 'echo pipe_iso_test' | ./$(BIN) --no-banner)" = "pipe_iso_test" && echo "PASS: [T5-ADV-02] Pipe Stream Clean Isolation"
-	@echo -e "...\npwd" | ./$(BIN) --no-banner > /dev/null && echo "PASS: [T5-ADV-03] Multi-Hop Navigation Traversal"
-	@echo -e "cd\npwd" | ./$(BIN) --no-banner | grep -q "$$HOME" && echo "PASS: [T5-ADV-04] Bare cd Expands Home"
-	@echo -e "cd /nonexistent_adv_dir_001\npwd" | ./$(BIN) --no-banner | grep -q "oosh" && echo "PASS: [T5-ADV-05] Failed cd Preserves Working Directory"
+	@printf "...\npwd\n" | ./$(BIN) --no-banner > /dev/null && echo "PASS: [T5-ADV-03] Multi-Hop Navigation Traversal"
+	@printf "cd\npwd\n" | ./$(BIN) --no-banner | grep -q "$$HOME" && echo "PASS: [T5-ADV-04] Bare cd Expands Home"
+	@printf "cd /nonexistent_adv_dir_001\npwd\n" | ./$(BIN) --no-banner | grep -q "oosh" && echo "PASS: [T5-ADV-05] Failed cd Preserves Working Directory"
 	@python3 -c 'import subprocess, json; p = subprocess.run(["./$(BIN)", "--varlink-call", "{\"method\":\"foo" + chr(10) + "bar\"}"], capture_output=True); data = json.loads(p.stdout.rstrip(b"\x00")); assert data["error"] == "org.varlink.service.MethodNotFound"; assert data["parameters"]["method"] == "foo\nbar"' && echo "PASS: [T5-ADV-06] Varlink Error Method JSON Escaping"
 	@python3 -c 'import subprocess, json; p = subprocess.run(["./$(BIN)", "--varlink-call", "{\"method\":\"org.varlink.service.GetInterfaceDescription\",\"interface\":\"org.test" + chr(10) + "foo\"}"], capture_output=True); data = json.loads(p.stdout.rstrip(b"\x00")); assert data["error"] == "org.varlink.service.InterfaceNotFound"; assert data["parameters"]["interface"] == "org.test\nfoo"' && echo "PASS: [T5-ADV-07] Varlink Interface Error Escaping"
 	@python3 -c 'import subprocess, json; p = subprocess.run(["./$(BIN)", "--varlink-call", "{" + chr(10) + "  \"method\":" + chr(10) + "  \"org.openooda.oosh.Ping\"" + chr(10) + "}"], capture_output=True); data = json.loads(p.stdout.rstrip(b"\x00")); assert data["parameters"]["pong"] is True' && echo "PASS: [T5-ADV-08] Varlink Multiline JSON Method Parsing"

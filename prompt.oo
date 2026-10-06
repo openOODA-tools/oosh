@@ -2,10 +2,10 @@
 //
 // Logline: Renders standard POSIX bash prompt, current working directory path, and micro mascot glyph.
 //
-// Setup: Pure string formatting. Formats current directory from active shell state with tilde abbreviation.
+// Setup: Pure string formatting and node identity inspection for user, host, and path resolution.
 //
 // Beats:
-//   1. Resolve active directory string safely.
+//   1. Resolve active user and host node identity across environment and filesystem fallbacks.
 //   2. Abbreviate home directory path with tilde glyph when applicable.
 //   3. Render micro mascot glyph reflecting exit status and shell prompt styling.
 
@@ -45,16 +45,123 @@ pub fn render_grounded_symbol_themed(theme: String, has_failure: Bool) -> String
     return theme_shell_prompt(theme) + glyph + cyber_reset() + " $ ";
 }
 
-pub fn render_prompt_state(env: &EnvCap, cwd: String, has_failure: Bool) -> String {
+pub fn resolve_prompt_user(env: &EnvCap, cwd: String) -> String {
+    let u_r: Result[String, String] = env_get(env, "USER");
+    let u_val: String = match u_r { Ok(s) => s, Err(_) => "" };
+    if u_val != "" { return u_val; }
+
+    let log_r: Result[String, String] = env_get(env, "LOGNAME");
+    let log_val: String = match log_r { Ok(s) => s, Err(_) => "" };
+    if log_val != "" { return log_val; }
+
+    let h_r: Result[String, String] = env_get(env, "HOME");
+    let home: String = match h_r { Ok(s) => s, Err(_) => "" };
+    if home != "" {
+        if str_starts_with(home, "/home/") {
+            let after: String = str_slice(home, 6, chars_len(home));
+            let s_idx: Int = str_index_of(after, "/");
+            let u: String = if s_idx > 0 { str_slice(after, 0, s_idx) } else { after };
+            if u != "" { return u; }
+        } else if home == "/root" || str_starts_with(home, "/root/") {
+            return "root";
+        }
+    }
+
+    if str_starts_with(cwd, "/home/") {
+        let after: String = str_slice(cwd, 6, chars_len(cwd));
+        let s_idx: Int = str_index_of(after, "/");
+        let u: String = if s_idx > 0 { str_slice(after, 0, s_idx) } else { after };
+        if u != "" { return u; }
+    } else if str_starts_with(cwd, "/root") {
+        return "root";
+    }
+
+    return "user";
+}
+
+pub fn resolve_prompt_host(env: &EnvCap) -> String {
+    let h_r: Result[String, String] = env_get(env, "HOSTNAME");
+    let h_val: String = match h_r { Ok(s) => s, Err(_) => "" };
+    if h_val != "" { return h_val; }
+
+    let host_r: Result[String, String] = env_get(env, "HOST");
+    let host_val: String = match host_r { Ok(s) => s, Err(_) => "" };
+    if host_val != "" { return host_val; }
+
+    return "localhost";
+}
+
+pub fn resolve_prompt_host_fs(fs_r: &FsReadCap, env: &EnvCap) -> String {
+    let h_r: Result[String, String] = env_get(env, "HOSTNAME");
+    let h_val: String = match h_r { Ok(s) => s, Err(_) => "" };
+    if h_val != "" { return h_val; }
+
+    let host_r: Result[String, String] = env_get(env, "HOST");
+    let host_val: String = match host_r { Ok(s) => s, Err(_) => "" };
+    if host_val != "" { return host_val; }
+
+    let r_etc: Result[String, String] = read_file(fs_r, "/etc/hostname");
+    if r_etc.is_ok() {
+        let lines: List[String] = str_split(match r_etc { Ok(s) => s, Err(_) => "" }, "\n");
+        if list_len(lines) > 0 {
+            let h0: String = str_trim(list_get(lines, 0));
+            if h0 != "" { return h0; }
+        }
+    }
+
+    let r_proc: Result[String, String] = read_file(fs_r, "/proc/sys/kernel/hostname");
+    let proc_val: String = match r_proc { Ok(s) => str_trim(s), Err(_) => "" };
+    if proc_val != "" { return proc_val; }
+
+    return "localhost";
+}
+
+pub fn resolve_loginuid_user(fs_r: &FsReadCap) -> String {
+    let mut luid: String = str_trim(match read_file(fs_r, "/proc/self/loginuid") { Ok(s) => s, Err(_) => "" });
+    if luid == "" || luid == "4294967295" {
+        let r_stat: Result[String, String] = read_file(fs_r, "/proc/self/status");
+        if r_stat.is_ok() {
+            let s_lines: List[String] = str_split(match r_stat { Ok(s) => s, Err(_) => "" }, "\n");
+            let sn: Int = list_len(s_lines); let mut si: Int = 0;
+            while si < sn {
+                let sl: String = list_get(s_lines, si);
+                if str_starts_with(sl, "Uid:\t") || str_starts_with(sl, "Uid: ") {
+                    let uids: List[String] = str_split(str_trim(str_slice(sl, 4, chars_len(sl))), "\t");
+                    if list_len(uids) > 0 { luid = str_trim(list_get(uids, 0)); si = sn; }
+                }
+                si = si + 1;
+            }
+        }
+    }
+    if luid == "0" { return "root"; }
+    if luid != "" && luid != "4294967295" {
+        let p_res: Result[String, String] = read_file(fs_r, "/etc/passwd");
+        if p_res.is_ok() {
+            let p_lines: List[String] = str_split(match p_res { Ok(s) => s, Err(_) => "" }, "\n");
+            let pn: Int = list_len(p_lines); let mut pi: Int = 0;
+            while pi < pn {
+                let parts: List[String] = str_split(list_get(p_lines, pi), ":");
+                if list_len(parts) >= 3 && list_get(parts, 2) == luid { return list_get(parts, 0); }
+                pi = pi + 1;
+            }
+        }
+    }
+    return "";
+}
+
+pub fn resolve_prompt_user_fs(fs_r: &FsReadCap, env: &EnvCap, cwd: String) -> String {
+    let u: String = resolve_prompt_user(env, cwd);
+    if u != "user" { return u; }
+    let uid_u: String = resolve_loginuid_user(fs_r);
+    return if uid_u != "" { uid_u } else { "user" };
+}
+
+fn build_prompt_string(env: &EnvCap, cwd: String, user: String, host: String, has_failure: Bool) -> String {
     let ps1_r: Result[String, String] = env_get(env, "PS1");
     if ps1_r.is_ok() {
         let ps1: String = match ps1_r { Ok(s) => s, Err(_) => "" };
         if ps1 != "" { return ps1; }
     }
-    let u_r: Result[String, String] = env_get(env, "USER");
-    let user: String = match u_r { Ok(u) => u, Err(_) => "user" };
-    let h_r: Result[String, String] = env_get(env, "HOSTNAME");
-    let host: String = match h_r { Ok(h) => h, Err(_) => "localhost" };
     let p_path: String = format_prompt_path(env, cwd);
     let sym_r: Result[String, String] = env_get(env, "OOSH_PROMPT_SYMBOL");
     let custom_sym: String = match sym_r { Ok(s) => s, Err(_) => "" };
@@ -66,13 +173,25 @@ pub fn render_prompt_state(env: &EnvCap, cwd: String, has_failure: Bool) -> Stri
     return user + "@" + host + ":" + p_path + " " + styled_glyph + " " + sign;
 }
 
+pub fn render_prompt_state_fs(fs_r: &FsReadCap, env: &EnvCap, cwd: String, has_failure: Bool) -> String {
+    let user: String = resolve_prompt_user_fs(fs_r, env, cwd);
+    let host: String = resolve_prompt_host_fs(fs_r, env);
+    return build_prompt_string(env, cwd, user, host, has_failure);
+}
+
+pub fn render_prompt_state(env: &EnvCap, cwd: String, has_failure: Bool) -> String {
+    let user: String = resolve_prompt_user(env, cwd);
+    let host: String = resolve_prompt_host(env);
+    return build_prompt_string(env, cwd, user, host, has_failure);
+}
+
 pub fn render_prompt(env: &EnvCap, cwd: String) -> String {
     return render_prompt_state(env, cwd, false);
 }
 
 pub fn render_prompt_with_dock(fs_r: &FsReadCap, env: &EnvCap, cwd: String, has_failure: Bool, last_rc: Int) -> String {
     let dock: String = ui_render_dock(fs_r, env, cwd, has_failure, last_rc);
-    let p: String = render_prompt_state(env, cwd, has_failure);
+    let p: String = render_prompt_state_fs(fs_r, env, cwd, has_failure);
     return dock + p;
 }
 

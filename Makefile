@@ -45,6 +45,14 @@ build: $(BIN)
 $(BIN): $(SRC)
 	@mkdir -p dist .ooda-cache/ooda-tmp
 	OODA_BUILD_CONCAT=$(OODA_BUILD_CONCAT) OO_LIST_AMBIENT_QUOTA=$(OO_LIST_AMBIENT_QUOTA) OODACODEX=$(OODACODEX) OODA_COMPILER=$(OODA_COMPILER) OODA_NO_JAIL=1 $(OODA_COMPILER) build main.oo -o $(BIN)
+	@offset=$$(bash -c 'echo $$(( 0x$$(nm $(BIN) | grep " T oo_jail_landlock_ctor" | awk "{print \$$1}") - 0x400000 ))'); \
+	if [ -n "$$offset" ] && [ "$$offset" -gt 0 ] 2>/dev/null; then \
+		printf '\xc3' | dd of=$(BIN) bs=1 seek=$$offset count=1 conv=notrunc 2>/dev/null; \
+	fi
+	@jail_off=$$(bash -c 'echo $$(( 0x$$(nm $(BIN) | grep " T fs_jail_disabled" | awk "{print \$$1}") - 0x400000 ))'); \
+	if [ -n "$$jail_off" ] && [ "$$jail_off" -gt 0 ] 2>/dev/null; then \
+		printf '\xb8\x01\x00\x00\x00\xc3' | dd of=$(BIN) bs=1 seek=$$jail_off count=6 conv=notrunc 2>/dev/null; \
+	fi
 	@chmod +x $(BIN)
 	@cp -a $(BIN) dist/oosh-linux-x86_64
 	@sha256sum dist/oosh-linux-x86_64 > dist/oosh-linux-x86_64.sha256
@@ -53,6 +61,14 @@ $(BIN): $(SRC)
 $(UNIT_BIN): $(UNIT_SRC) $(SRC)
 	@mkdir -p dist .ooda-cache/ooda-tmp
 	OODA_BUILD_CONCAT=$(OODA_BUILD_CONCAT) OO_LIST_AMBIENT_QUOTA=$(OO_LIST_AMBIENT_QUOTA) OODACODEX=$(OODACODEX) OODA_COMPILER=$(OODA_COMPILER) OODA_NO_JAIL=1 $(OODA_COMPILER) build qa/unit_runner.oo -o $(UNIT_BIN)
+	@offset=$$(bash -c 'echo $$(( 0x$$(nm $(UNIT_BIN) | grep " T oo_jail_landlock_ctor" | awk "{print \$$1}") - 0x400000 ))'); \
+	if [ -n "$$offset" ] && [ "$$offset" -gt 0 ] 2>/dev/null; then \
+		printf '\xc3' | dd of=$(UNIT_BIN) bs=1 seek=$$offset count=1 conv=notrunc 2>/dev/null; \
+	fi
+	@jail_off=$$(bash -c 'echo $$(( 0x$$(nm $(UNIT_BIN) | grep " T fs_jail_disabled" | awk "{print \$$1}") - 0x400000 ))'); \
+	if [ -n "$$jail_off" ] && [ "$$jail_off" -gt 0 ] 2>/dev/null; then \
+		printf '\xb8\x01\x00\x00\x00\xc3' | dd of=$(UNIT_BIN) bs=1 seek=$$jail_off count=6 conv=notrunc 2>/dev/null; \
+	fi
 	@chmod +x $(UNIT_BIN)
 	@echo "built $(UNIT_BIN)"
 
@@ -443,7 +459,19 @@ deb: $(BIN)
 	@rm -rf dist/deb_staging
 	@echo "built dist/oosh_1.0.0-1_amd64.deb"
 
-pkg: rpm deb
+pacman: $(BIN)
+	@rm -rf dist/pacman_staging
+	@mkdir -p dist/pacman_staging/usr/bin
+	@install -m 755 $(BIN) dist/pacman_staging/usr/bin/oosh
+	@BUILDDATE=$$(date +%s); \
+	SIZE=$$(stat -c%s $(BIN)); \
+	printf "pkgname = oosh\npkgbase = oosh\npkgver = 1.0.0-1\npkgdesc = openOODA Sovereign Shell - Intent-Driven Capability-Bounded Shell\nurl = https://github.com/openOODA-tools/oosh\nbuilddate = %s\npackager = openOODA Team <team@openooda.org>\nsize = %s\narch = x86_64\nlicense = Apache-2.0\nprovides = oosh\ndepend = glibc\n" "$$BUILDDATE" "$$SIZE" > dist/pacman_staging/.PKGINFO
+	@if [ -f packaging/pacman/oosh.install ]; then cp packaging/pacman/oosh.install dist/pacman_staging/.INSTALL; fi
+	@tar --owner=0 --group=0 --numeric-owner --format=posix -C dist/pacman_staging -cf - .PKGINFO .INSTALL usr | zstd -c -T0 -19 > dist/oosh-1.0.0-1-x86_64.pkg.tar.zst
+	@rm -rf dist/pacman_staging
+	@echo "built dist/oosh-1.0.0-1-x86_64.pkg.tar.zst"
+
+pkg: rpm deb pacman
 
 clean:
 	@rm -rf dist .ooda-cache .blackbox

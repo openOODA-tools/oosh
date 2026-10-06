@@ -10,6 +10,8 @@
 #   --web (default)  Direct standalone binary deployment
 #   --dnf, --rpm     Native RPM package installation via DNF
 #   --apt, --deb     Native DEB package installation via APT
+#   --pacman, --arch Native Arch package installation via Pacman (.pkg.tar.zst)
+#   --pkgbuild       Build and install via Arch PKGBUILD and makepkg
 #   --auto           Auto-detect host package manager or fallback to web
 #
 # Options:
@@ -158,6 +160,8 @@ while [ $# -gt 0 ]; do
         --web) INSTALL_METHOD="web"; shift ;;
         --dnf|--rpm) INSTALL_METHOD="dnf"; shift ;;
         --apt|--deb) INSTALL_METHOD="apt"; shift ;;
+        --pacman|--arch) INSTALL_METHOD="pacman"; shift ;;
+        --pkgbuild) INSTALL_METHOD="pkgbuild"; shift ;;
         --auto) INSTALL_METHOD="auto"; shift ;;
         --dry-run) DRY_RUN=1; shift ;;
         --uninstall) DO_UNINSTALL=1; shift ;;
@@ -171,7 +175,9 @@ while [ $# -gt 0 ]; do
             say "    ${CYAN}--web${RESET}            Direct glibc-linked standalone binary deployment (default)"
             say "    ${CYAN}--dnf, --rpm${RESET}     Native RPM package installation via DNF"
             say "    ${CYAN}--apt, --deb${RESET}     Native DEB package installation via APT"
-            say "    ${CYAN}--auto${RESET}           Auto-detect host package manager (dnf/apt) or fallback to web"
+            say "    ${CYAN}--pacman, --arch${RESET} Native Arch package installation via Pacman (.pkg.tar.zst)"
+            say "    ${CYAN}--pkgbuild${RESET}       Build and install via Arch PKGBUILD and makepkg"
+            say "    ${CYAN}--auto${RESET}           Auto-detect host package manager (dnf/apt/pacman) or fallback to web"
             say ""
             say "  ${BOLD}Options:${RESET}"
             say "    ${CYAN}--prefix <dir>${RESET}   Target binary directory for web install (default: /usr/local/bin)"
@@ -208,6 +214,14 @@ if [ "$DO_UNINSTALL" -eq 1 ]; then
         else
             if [ "$(id -u)" -eq 0 ]; then apt remove -y oosh; else sudo apt remove -y oosh; fi
             ok "Banished oosh DEB package"
+        fi
+        FOUND=1
+    elif command -v pacman >/dev/null 2>&1 && pacman -Q oosh >/dev/null 2>&1; then
+        if [ "$DRY_RUN" -eq 1 ]; then
+            dim "Would remove oosh via pacman -R --noconfirm oosh"
+        else
+            if [ "$(id -u)" -eq 0 ]; then pacman -R --noconfirm oosh; else sudo pacman -R --noconfirm oosh; fi
+            ok "Banished oosh Pacman package"
         fi
         FOUND=1
     fi
@@ -264,6 +278,8 @@ if [ "$INSTALL_METHOD" = "auto" ]; then
         INSTALL_METHOD="dnf"
     elif command -v apt >/dev/null 2>&1; then
         INSTALL_METHOD="apt"
+    elif command -v pacman >/dev/null 2>&1; then
+        INSTALL_METHOD="pacman"
     else
         INSTALL_METHOD="web"
     fi
@@ -293,7 +309,7 @@ fi
 # Resolve destination directory
 if [ -n "$CUSTOM_PREFIX" ]; then
     INSTALL_DIR="$CUSTOM_PREFIX"
-elif [ "$INSTALL_METHOD" = "dnf" ] || [ "$INSTALL_METHOD" = "apt" ]; then
+elif [ "$INSTALL_METHOD" = "dnf" ] || [ "$INSTALL_METHOD" = "apt" ] || [ "$INSTALL_METHOD" = "pacman" ] || [ "$INSTALL_METHOD" = "pkgbuild" ]; then
     INSTALL_DIR="/usr/bin"
 elif [ "$(id -u)" -eq 0 ]; then
     INSTALL_DIR="/usr/local/bin"
@@ -334,6 +350,20 @@ case "$INSTALL_METHOD" in
         ASSET_URL="${GITHUB_URL}/releases/download/${LATEST_TAG}/${ASSET_NAME}"
         SHA_URL=""
         ;;
+    pacman)
+        if [ "$TARGET_ARCH" != "x86_64" ]; then
+            err "Pacman package currently available for x86_64. Use --web for direct binary installation."
+            exit 1
+        fi
+        ASSET_NAME="oosh-${VERSION_NUM}-1-x86_64.pkg.tar.zst"
+        ASSET_URL="${GITHUB_URL}/releases/download/${LATEST_TAG}/${ASSET_NAME}"
+        SHA_URL="${ASSET_URL}.sha256"
+        ;;
+    pkgbuild)
+        ASSET_NAME="PKGBUILD"
+        ASSET_URL="https://raw.githubusercontent.com/${REPO}/${LATEST_TAG}/packaging/pacman/PKGBUILD"
+        SHA_URL=""
+        ;;
     web|*)
         ASSET_NAME="oosh-linux-${TARGET_ARCH}"
         ASSET_URL="${GITHUB_URL}/releases/download/${LATEST_TAG}/${ASSET_NAME}"
@@ -353,6 +383,10 @@ if [ "$DRY_RUN" -eq 1 ]; then
         say "  ${DIM}deploy${RESET}  ${CYAN}sudo dnf install -y ${ASSET_NAME}${RESET}"
     elif [ "$INSTALL_METHOD" = "apt" ]; then
         say "  ${DIM}deploy${RESET}  ${CYAN}sudo apt install -y ./${ASSET_NAME}${RESET}"
+    elif [ "$INSTALL_METHOD" = "pacman" ]; then
+        say "  ${DIM}deploy${RESET}  ${CYAN}sudo pacman -U --noconfirm ${ASSET_NAME}${RESET}"
+    elif [ "$INSTALL_METHOD" = "pkgbuild" ]; then
+        say "  ${DIM}deploy${RESET}  ${CYAN}makepkg -si --noconfirm (via PKGBUILD)${RESET}"
     else
         if [ -n "$SHA_URL" ]; then
             say "  ${DIM}verify${RESET}  ${CYAN}${SHA_URL}${RESET}"
@@ -435,6 +469,33 @@ elif [ "$INSTALL_METHOD" = "apt" ]; then
     fi
     INSTALL_DIR="/usr/bin"
     ok "Package installed to ${BOLD}${INSTALL_DIR}/oosh${RESET}"
+elif [ "$INSTALL_METHOD" = "pacman" ]; then
+    story_line "Installing Arch package via pacman…"
+    if command -v pacman >/dev/null 2>&1; then
+        if [ "$(id -u)" -eq 0 ]; then
+            pacman -U --noconfirm "${TMP_DIR}/${ASSET_NAME}"
+        else
+            sudo pacman -U --noconfirm "${TMP_DIR}/${ASSET_NAME}"
+        fi
+    else
+        err "pacman not found on this system. Cannot install pacman package."
+        exit 1
+    fi
+    INSTALL_DIR="/usr/bin"
+    ok "Package installed to ${BOLD}${INSTALL_DIR}/oosh${RESET}"
+elif [ "$INSTALL_METHOD" = "pkgbuild" ]; then
+    story_line "Building package via makepkg…"
+    if ! command -v makepkg >/dev/null 2>&1; then
+        err "makepkg not found on this system. Install base-devel or use --pacman / --web."
+        exit 1
+    fi
+    (
+        cd "$TMP_DIR"
+        curl -fsSL "https://raw.githubusercontent.com/${REPO}/${LATEST_TAG}/packaging/pacman/oosh.install" -o oosh.install 2>/dev/null || true
+        makepkg -si --noconfirm
+    )
+    INSTALL_DIR="/usr/bin"
+    ok "Package built and installed to ${BOLD}${INSTALL_DIR}/oosh${RESET}"
 else
     if [ ! -d "$INSTALL_DIR" ]; then
         mkdir -p "$INSTALL_DIR" 2>/dev/null || sudo mkdir -p "$INSTALL_DIR"

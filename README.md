@@ -14,20 +14,29 @@ Part of [openOODA-tools](https://github.com/openOODA-tools). Visit the [Official
 
 ## 1. Quick Install Matrix
 
-`oosh` offers zero-dependency installation across all major Linux distributions via Web, DNF (RPM), and APT (DEB) channels:
+`oosh` offers zero-dependency installation across all major Linux distributions via Web, DNF (RPM), APT (DEB), and Pacman (Arch/Omarchy) channels:
 
 | Distribution Channel | Command | Description |
 | :--- | :--- | :--- |
 | **Web (Universal)** | `curl -fsSL https://openooda-tools.github.io/oosh/install.sh \| bash` | Direct glibc-linked standalone binary deployment with SHA-256 seal verification. |
 | **DNF / RPM (Fedora/RHEL)** | `curl -fsSL https://openooda-tools.github.io/oosh/install.sh \| bash -s -- --dnf` | Native `.rpm` package installation via system `dnf` or `rpm`. |
 | **APT / DEB (Ubuntu/Debian)** | `curl -fsSL https://openooda-tools.github.io/oosh/install.sh \| bash -s -- --apt` | Native `.deb` package installation via system `apt` or `dpkg`. |
-| **Auto-Detect** | `curl -fsSL https://openooda-tools.github.io/oosh/install.sh \| bash -s -- --auto` | Automatically detects package manager (`dnf` or `apt`), falling back to Web binary. |
+| **Pacman (Arch/Omarchy)** | `curl -fsSL https://openooda-tools.github.io/oosh/install.sh \| bash -s -- --pacman` | Native Arch `.pkg.tar.zst` package installation via `pacman -U`. |
+| **PKGBUILD (makepkg)** | `curl -fsSL https://openooda-tools.github.io/oosh/install.sh \| bash -s -- --pkgbuild` | Builds and installs via native Arch `PKGBUILD` and `makepkg -si`. |
+| **Auto-Detect** | `curl -fsSL https://openooda-tools.github.io/oosh/install.sh \| bash -s -- --auto` | Automatically detects package manager (`dnf`, `apt`, or `pacman`), falling back to Web binary. |
 
 ### Direct Package Installation
 
 You can also install packages directly from GitHub Releases:
 
 ```bash
+# Arch Linux / Omarchy (Pacman)
+sudo pacman -U https://github.com/openOODA-tools/oosh/releases/download/v1.0.0/oosh-1.0.0-1-x86_64.pkg.tar.zst
+
+# Arch Linux / Omarchy (PKGBUILD / makepkg)
+curl -fsSL -O https://openooda-tools.github.io/oosh/packaging/pacman/PKGBUILD
+makepkg -si
+
 # Fedora / RHEL / CentOS (RPM via DNF)
 sudo dnf install -y https://github.com/openOODA-tools/oosh/releases/download/v1.0.0/oosh-1.0.0-1.x86_64.rpm
 

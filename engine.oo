@@ -30,7 +30,7 @@ fn compute_ghost(fs_r: &FsReadCap, buf: String, cur: Int, rem: String, aliases: 
 pub fn run_engine(fs_r: &FsReadCap, sys: &ProcessCap, env: &EnvCap, time: &TimeCap, bind: &BindCap, fs_w: &FsWriteCap, ffi: &FfiCap, init_session: SessionState) -> Int {
     let mut session: SessionState = init_session;
     let mut rec: FlightRecord = flight_init();
-    let is_interactive: Bool = ui_is_interactive(sys);
+    let is_interactive: Bool = match env_map_get(session.env_map, "OOSH_INTERACTIVE") { Ok(v) => v == "1", Err(_) => ui_is_interactive(sys) };
     let mut hist: HistoryState = history_load(fs_r, env);
     let mut running: Bool = true;
     let mut ed: LineEditor = line_editor_new();
@@ -41,7 +41,7 @@ pub fn run_engine(fs_r: &FsReadCap, sys: &ProcessCap, env: &EnvCap, time: &TimeC
     while running {
         let ps1_res: Result[String, String] = env_map_get(session.env_map, "PS1");
         let has_ps1: Bool = ps1_res.is_ok() && match ps1_res { Ok(s) => s != "", Err(_) => false };
-        let base_prompt: String = if has_ps1 { match ps1_res { Ok(s) => s, Err(_) => "" } } else { render_prompt_state(env, session.cwd, rec.has_failed) };
+        let base_prompt: String = if has_ps1 { match ps1_res { Ok(s) => s, Err(_) => "" } } else { render_prompt_state_fs(fs_r, env, session.cwd, rec.has_failed) };
         let ps2_res: Result[String, String] = env_map_get(session.env_map, "PS2");
         let ps2_prompt: String = match ps2_res { Ok(s) => if s != "" { s } else { "> " }, Err(_) => "> " };
         let mut active_prompt: String = if multiline_prefix != "" { ps2_prompt } else { base_prompt };

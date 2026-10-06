@@ -12,6 +12,7 @@
 
 import "std/fs/process/env.oo";
 import "alias.oo";
+import "prompt.oo";
 import "version.oo";
 import "engine.oo";
 import "dispatch.oo";
@@ -21,18 +22,11 @@ import "ui/anchor.oo";
 import "ui/theme_io.oo";
 
 fn print_help() {
-    println("oosh - openOODA sovereign shell");
-    println("usage: oosh [flags] [script.oosh] [args...] [-c <command>]");
-    println("");
-    println("flags:");
-    println("  -c <command>           execute specified command and exit");
-    println("  -h, --help             display this help message");
-    println("  -v, --version          display oosh version");
-    println("      --no-banner        suppress startup banner");
-    println("      --daemon           launch headless Varlink IPC control daemon");
-    println("      --varlink          launch headless Varlink IPC control daemon");
-    println("      --varlink-daemon   launch headless Varlink IPC control daemon");
-    println("      --varlink-call <s> execute single-shot Varlink IPC JSON call");
+    println("oosh - openOODA sovereign shell\nusage: oosh [flags] [script.oosh] [args...] [-c <command>]\n\nflags:\n  -c <command>           execute specified command and exit\n  -h, --help             display this help message\n  -v, --version          display oosh version\n  -l, --login            launch as a login shell\n  -i                     force interactive shell mode\n  -s                     read commands from standard input\n      --norc             do not source ~/.ooshrc startup file\n      --noprofile        do not source profile files\n      --no-banner        suppress startup banner\n      --daemon           launch headless Varlink IPC control daemon\n      --varlink          launch headless Varlink IPC control daemon\n      --varlink-daemon   launch headless Varlink IPC control daemon\n      --varlink-call <s> execute single-shot Varlink IPC JSON call");
+}
+
+fn is_known_long(a: String) -> Bool {
+    return a == "--help" || a == "--version" || a == "--no-banner" || a == "--daemon" || a == "--varlink" || a == "--varlink-daemon" || a == "--login" || a == "--norc" || a == "--noprofile";
 }
 
 fn validate_argv(args: List[String]) -> Result[String, String] {
@@ -40,198 +34,220 @@ fn validate_argv(args: List[String]) -> Result[String, String] {
     let mut i: Int = 0;
     while i < n {
         let a: String = list_get(args, i);
-        if a == "--help" || a == "-h" {
-            print_help();
-            return Ok("showed-help");
-        }
-        if a == "--version" || a == "-v" {
-            println("oosh " + oosh_version());
-            return Ok("showed-version");
-        }
-        if a == "--no-banner" || a == "--daemon" || a == "--varlink" || a == "--varlink-daemon" {
-            i = i + 1;
-        } else if a == "-c" {
-            if i + 1 >= n {
-                println("ERR\toosh\t-c requires a command string");
-                process_exit(2);
-                return Err("missing -c arg");
-            }
+        if a == "--help" || a == "-h" { print_help(); return Ok("showed-help"); }
+        if a == "--version" || a == "-v" { println("oosh " + oosh_version()); return Ok("showed-version"); }
+        if a == "--" { return Ok("validated"); }
+        if is_known_long(a) { i = i + 1; }
+        else if a == "--varlink-call" {
+            if i + 1 >= n { println("ERR\toosh\t--varlink-call requires a JSON string"); process_exit(2); return Err("missing --varlink-call arg"); }
             i = i + 2;
-        } else if a == "--varlink-call" {
-            if i + 1 >= n {
-                println("ERR\toosh\t--varlink-call requires a JSON string");
-                process_exit(2);
-                return Err("missing --varlink-call arg");
+        } else if str_starts_with(a, "--") {
+            println("ERR\toosh\tunknown flag: " + a); process_exit(2); return Err("unknown flag");
+        } else if str_starts_with(a, "-") && chars_len(a) > 1 {
+            let clen: Int = chars_len(a); let mut ci: Int = 1; let mut has_c: Bool = false; let mut valid: Bool = true;
+            while ci < clen {
+                let ch: String = char_at(a, ci);
+                if ch == "c" { if ci != clen - 1 { valid = false; } else { has_c = true; } }
+                else if ch != "l" && ch != "i" && ch != "s" && ch != "v" && ch != "h" { valid = false; }
+                ci = ci + 1;
             }
-            i = i + 2;
-        } else if !str_starts_with(a, "-") {
-            return Ok("validated");
-        } else {
-            println("ERR\toosh\tunknown flag: " + a);
-            process_exit(2);
-            return Err("unknown flag");
-        }
+            if !valid { println("ERR\toosh\tunknown flag: " + a); process_exit(2); return Err("unknown flag"); }
+            if has_c {
+                if i + 1 >= n { println("ERR\toosh\t" + a + " requires a command string"); process_exit(2); return Err("missing -c arg"); }
+                i = i + 2;
+            } else { i = i + 1; }
+        } else { return Ok("validated"); }
     }
     return Ok("validated");
 }
 
 fn run_script_file(fs_r: &FsReadCap, fs_w: &FsWriteCap, sys: &ProcessCap, env: &EnvCap, ffi: &FfiCap, script_path: String, script_args: List[String], rec: FlightRecord, session: SessionState) -> Int {
     let sr: Result[String, String] = read_file(fs_r, script_path);
-    if sr.is_err() {
-        println("ERR\toosh\tcannot read script: " + script_path);
-        return 1;
-    }
-    let content: String = match sr { Ok(s) => s, Err(_) => "" };
+    if sr.is_err() { println("ERR\toosh\tcannot read script: " + script_path); return 1; }
     let num_args: Int = list_len(script_args);
-    let mut em: EnvMap = session.env_map;
-    em = env_map_set(em, "0", script_path);
-    em = env_map_set(em, "#", num_args.to_string());
-    let mut all_args_str: String = "";
-    let mut ai: Int = 0;
+    let mut em: EnvMap = env_map_set(env_map_set(session.env_map, "0", script_path), "#", num_args.to_string());
+    let mut all_args_str: String = ""; let mut ai: Int = 0;
     while ai < num_args {
         let arg_val: String = list_get(script_args, ai);
         em = env_map_set(em, (ai + 1).to_string(), arg_val);
         all_args_str = if all_args_str == "" { arg_val } else { all_args_str + " " + arg_val };
         ai = ai + 1;
     }
-    em = env_map_set(em, "@", all_args_str);
-    em = env_map_set(em, "*", all_args_str);
+    em = env_map_set(env_map_set(em, "@", all_args_str), "*", all_args_str);
     let cur_sess: SessionState = SessionState { cwd: session.cwd, env_map: em, alias_map: session.alias_map, job_table: session.job_table, func_map: session.func_map };
-    let res: DispatchResult = dispatch_line(fs_r, fs_w, sys, env, ffi, content, rec, cur_sess);
+    let res: DispatchResult = dispatch_line(fs_r, fs_w, sys, env, ffi, match sr { Ok(s) => s, Err(_) => "" }, rec, cur_sess);
     return res.exit_code;
 }
 
 fn ansi_esc() -> String { return bytes_to_str(bytes_push(bytes_new(), 27)); }
 
-fn load_startup_environ(ffi: &FfiCap, fs_r: &FsReadCap, env: &EnvCap) -> EnvMap {
+fn parse_env_blob(em: EnvMap, blob: String, sep: String) -> EnvMap {
+    let mut res: EnvMap = em;
+    let entries: List[String] = str_split(blob, sep);
+    let n: Int = list_len(entries);
+    let mut i: Int = 0;
+    while i < n {
+        let entry: String = list_get(entries, i);
+        let eq: Int = str_index_of(entry, "=");
+        if eq > 0 { res = env_map_set(res, str_slice(entry, 0, eq), str_slice(entry, eq + 1, chars_len(entry))); }
+        i = i + 1;
+    }
+    return res;
+}
+
+fn sync_env(ffi: &FfiCap, em: EnvMap, k: String, v: String) -> EnvMap {
+    let _ = oo_tui_write(ffi, ansi_esc() + "_set:" + k + "=" + v);
+    return env_map_set(em, k, v);
+}
+
+fn get_em_or_env(em: EnvMap, env: &EnvCap, k: String) -> String {
+    let v1: String = match env_map_get(em, k) { Ok(s) => s, Err(_) => "" };
+    if v1 != "" { return v1; }
+    return match env_get(env, k) { Ok(s) => s, Err(_) => "" };
+}
+
+fn load_startup_environ(ffi: &FfiCap, fs_r: &FsReadCap, env: &EnvCap, cwd: String) -> EnvMap {
     let mut em: EnvMap = env_map_new();
     let r_wire: Result[String, String] = oo_tui_write(ffi, ansi_esc() + "_env");
     let wire_blob: String = if r_wire.is_ok() { match r_wire { Ok(s) => s, Err(_) => "" } } else { "" };
-    if wire_blob != "" {
-        let entries: List[String] = str_split(wire_blob, "\n");
-        let n: Int = list_len(entries);
-        let mut i: Int = 0;
-        while i < n {
-            let entry: String = list_get(entries, i);
-            let eq_pos: Int = str_index_of(entry, "=");
-            if eq_pos > 0 {
-                em = env_map_set(em, str_slice(entry, 0, eq_pos), str_slice(entry, eq_pos + 1, chars_len(entry)));
-            }
-            i = i + 1;
-        }
-    } else {
+    if wire_blob != "" { em = parse_env_blob(em, wire_blob, "\n"); }
+    else {
         let r_proc: Result[String, String] = read_file(fs_r, "/proc/self/environ");
-        if r_proc.is_ok() {
-            let env_blob: String = match r_proc { Ok(s) => s, Err(_) => "" };
-            let nul_sep: String = bytes_to_str(bytes_push(bytes_new(), 0));
-            let entries: List[String] = str_split(env_blob, nul_sep);
-            let n: Int = list_len(entries);
-            let mut i: Int = 0;
-            while i < n {
-                let entry: String = list_get(entries, i);
-                let eq_pos: Int = str_index_of(entry, "=");
-                if eq_pos > 0 {
-                    em = env_map_set(em, str_slice(entry, 0, eq_pos), str_slice(entry, eq_pos + 1, chars_len(entry)));
-                }
-                i = i + 1;
-            }
-        }
+        if r_proc.is_ok() { em = parse_env_blob(em, match r_proc { Ok(s) => s, Err(_) => "" }, bytes_to_str(bytes_push(bytes_new(), 0))); }
     }
     let cur_ps1: Result[String, String] = env_map_get(em, "PS1");
     if cur_ps1.is_err() || (match cur_ps1 { Ok(s) => s, Err(_) => "" }) == "" {
-        let r_oo: Result[String, String] = env_get(env, "OO_PS1");
-        let oo_val: String = match r_oo { Ok(s) => s, Err(_) => "" };
+        let oo_val: String = match env_get(env, "OO_PS1") { Ok(s) => s, Err(_) => match env_get(env, "OODA_PS1") { Ok(s2) => s2, Err(_) => "" } };
         if oo_val != "" { em = env_map_set(em, "PS1", oo_val); }
-        else {
-            let r_ooda: Result[String, String] = env_get(env, "OODA_PS1");
-            let ooda_val: String = match r_ooda { Ok(s) => s, Err(_) => "" };
-            if ooda_val != "" { em = env_map_set(em, "PS1", ooda_val); }
-        }
     }
+    let mut h_val: String = match env_map_get(em, "HOSTNAME") { Ok(s) => s, Err(_) => "" };
+    if h_val == "" { h_val = get_em_or_env(em, env, "HOST"); }
+    if h_val == "" { h_val = resolve_prompt_host_fs(fs_r, env); }
+    em = sync_env(ffi, em, "HOSTNAME", h_val);
+
+    let mut u_val: String = match env_map_get(em, "USER") { Ok(s) => s, Err(_) => "" };
+    if u_val == "" { u_val = get_em_or_env(em, env, "LOGNAME"); }
+    if u_val == "" {
+        let h_for_u: String = get_em_or_env(em, env, "HOME");
+        if str_starts_with(h_for_u, "/home/") {
+            let after: String = str_slice(h_for_u, 6, chars_len(h_for_u));
+            let s_idx: Int = str_index_of(after, "/");
+            u_val = if s_idx > 0 { str_slice(after, 0, s_idx) } else { after };
+        } else if h_for_u == "/root" || str_starts_with(h_for_u, "/root/") { u_val = "root"; }
+    }
+    if u_val == "" { u_val = resolve_loginuid_user(fs_r); }
+    if u_val == "" { u_val = resolve_prompt_user_fs(fs_r, env, cwd); }
+    if u_val == "" { u_val = "user"; }
+    em = sync_env(ffi, em, "USER", u_val);
+    em = sync_env(ffi, em, "LOGNAME", u_val);
+
+    let mut home_val: String = get_em_or_env(em, env, "HOME");
+    if home_val == "" { home_val = if u_val == "root" { "/root" } else if u_val != "" && u_val != "user" { "/home/" + u_val } else { "" }; }
+    if home_val != "" { em = sync_env(ffi, em, "HOME", home_val); }
+    let p_val: String = get_em_or_env(em, env, "PATH");
+    em = sync_env(ffi, em, "PATH", if p_val != "" { p_val } else { "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" });
+    let sh_val: String = get_em_or_env(em, env, "SHELL");
+    em = sync_env(ffi, sync_env(ffi, em, "SHELL", if sh_val != "" { sh_val } else { "/usr/local/bin/oosh" }), "PWD", cwd);
     return em;
+}
+
+fn source_rc(fs_r: &FsReadCap, fs_w: &FsWriteCap, sys: &ProcessCap, env: &EnvCap, ffi: &FfiCap, path: String, rec: FlightRecord, session: SessionState) -> SessionState {
+    let r: Result[String, String] = read_file(fs_r, path);
+    if r.is_ok() { return dispatch_line(fs_r, fs_w, sys, env, ffi, match r { Ok(s) => s, Err(_) => "" }, rec, session).session; }
+    return session;
+}
+
+fn is_login_invocation(fs_r: &FsReadCap, is_login_flag: Bool) -> Bool {
+    if is_login_flag { return true; }
+    let r_cmd: Result[String, String] = read_file(fs_r, "/proc/self/cmdline");
+    if r_cmd.is_ok() {
+        let s: String = match r_cmd { Ok(b) => b, Err(_) => "" };
+        let z: Int = str_index_of(s, bytes_to_str(bytes_push(bytes_new(), 0)));
+        let a0: String = if z > 0 { str_slice(s, 0, z) } else { s };
+        let parts: List[String] = str_split(a0, "/");
+        let pn: Int = list_len(parts);
+        return str_starts_with(if pn > 0 { list_get(parts, pn - 1) } else { a0 }, "-");
+    }
+    return false;
 }
 
 pub fn main(bind: &BindCap, fs_r: &FsReadCap, sys: &ProcessCap, sys_cap: &SysCap, env: &EnvCap, time: &TimeCap, fs_w: &FsWriteCap, alloc: &AllocCap, thread: &ThreadCap, ffi: &FfiCap, args: List[String]) -> Result[Int, String] {
     let _h = dlopen(ffi, "");
     let pre: Result[String, String] = validate_argv(args);
     let kind: String = match pre { Ok(s) => s, Err(_) => "validated" };
-    if kind == "showed-help" || kind == "showed-version" {
-        return Ok(0);
-    }
+    if kind == "showed-help" || kind == "showed-version" { return Ok(0); }
 
     let n: Int = list_len(args);
-    let mut one_shot_cmd: String = "";
-    let mut has_c_flag: Bool = false;
-    let mut is_daemon: Bool = false;
-    let mut has_varlink_call: Bool = false;
-    let mut varlink_payload: String = "";
-    let mut script_file: String = "";
-    let mut script_args: List[String] = list_new();
+    let mut one_shot_cmd: String = ""; let mut has_c_flag: Bool = false; let mut is_daemon: Bool = false;
+    let mut is_login_flag: Bool = false; let mut is_interactive_forced: Bool = false; let mut is_stdin: Bool = false;
+    let mut no_rc: Bool = false; let mut no_profile: Bool = false;
+    let mut has_varlink_call: Bool = false; let mut varlink_payload: String = "";
+    let mut script_file: String = ""; let mut script_args: List[String] = list_new();
 
-    let mut i: Int = 0;
+    let mut i: Int = 0; let mut stop_opts: Bool = false;
     while i < n {
         let a: String = list_get(args, i);
-        if a == "--no-banner" { i = i + 1; }
+        if stop_opts {
+            if script_file == "" && !is_stdin { script_file = a; } else { script_args = list_push(script_args, a); }
+            i = i + 1;
+        } else if a == "--" { stop_opts = true; i = i + 1; }
+        else if a == "--no-banner" { i = i + 1; }
         else if a == "--daemon" || a == "--varlink" || a == "--varlink-daemon" { is_daemon = true; i = i + 1; }
-        else if a == "-c" { has_c_flag = true; one_shot_cmd = list_get(args, i + 1); i = i + 2; }
+        else if a == "--login" { is_login_flag = true; i = i + 1; }
+        else if a == "--norc" { no_rc = true; i = i + 1; }
+        else if a == "--noprofile" { no_profile = true; i = i + 1; }
         else if a == "--varlink-call" { has_varlink_call = true; varlink_payload = list_get(args, i + 1); i = i + 2; }
-        else if script_file != "" { script_args = list_push(script_args, a); i = i + 1; }
-        else if !str_starts_with(a, "-") { script_file = a; i = i + 1; }
+        else if str_starts_with(a, "-") && chars_len(a) > 1 {
+            let clen: Int = chars_len(a); let mut ci: Int = 1;
+            while ci < clen {
+                let ch: String = char_at(a, ci);
+                if ch == "l" { is_login_flag = true; }
+                else if ch == "i" { is_interactive_forced = true; }
+                else if ch == "s" { is_stdin = true; }
+                else if ch == "c" { has_c_flag = true; one_shot_cmd = list_get(args, i + 1); i = i + 1; }
+                ci = ci + 1;
+            }
+            i = i + 1;
+        } else if script_file != "" { script_args = list_push(script_args, a); i = i + 1; }
+        else if !is_stdin { script_file = a; i = i + 1; }
         else { i = i + 1; }
     }
 
-    let pr: Result[String, String] = env_get(env, "PWD");
-    let cwd: String = match pr { Ok(s) => s, Err(_) => "." };
+    let mut cwd: String = match env_get(env, "PWD") { Ok(s) => s, Err(_) => "" };
+    if cwd == "" || cwd == "." {
+        let pr_pwd: Result[String, String] = oo_tui_write(ffi, ansi_esc() + "_pwd");
+        let cw: String = match pr_pwd { Ok(s) => str_trim(s), Err(_) => "" };
+        cwd = if cw != "" { cw } else { "." };
+    }
     let rec: FlightRecord = flight_init();
-    let mut session: SessionState = SessionState { cwd: cwd, env_map: load_startup_environ(ffi, fs_r, env), alias_map: alias_map_new(), job_table: job_table_new(), func_map: func_map_new() };
-    let cur_theme: Result[String, String] = env_map_get(session.env_map, "OODA_THEME");
-    if cur_theme.is_err() || (match cur_theme { Ok(s) => s, Err(_) => "" }) == "" {
-        let startup_theme: String = resolve_shell_theme(fs_r, env, cwd);
-        session.env_map = env_map_set(session.env_map, "OODA_THEME", startup_theme);
+    let mut session: SessionState = SessionState { cwd: cwd, env_map: load_startup_environ(ffi, fs_r, env, cwd), alias_map: alias_map_new(), job_table: job_table_new(), func_map: func_map_new() };
+    if is_interactive_forced { session.env_map = env_map_set(session.env_map, "OOSH_INTERACTIVE", "1"); }
+    let cur_th: Result[String, String] = env_map_get(session.env_map, "OODA_THEME");
+    if cur_th.is_err() || (match cur_th { Ok(s) => s, Err(_) => "" }) == "" {
+        session.env_map = env_map_set(session.env_map, "OODA_THEME", resolve_shell_theme(fs_r, env, cwd));
     }
+    if has_varlink_call { print(ipc_route(sys, cwd, rec, varlink_payload)); return Ok(0); }
+    if is_daemon { return Ok(ipc_run_daemon(sys, env, ffi, cwd, rec)); }
 
-    if has_varlink_call {
-        let reply: String = ipc_route(sys, cwd, rec, varlink_payload);
-        print(reply);
-        return Ok(0);
+    let is_login: Bool = is_login_invocation(fs_r, is_login_flag);
+    let home: String = match env_map_get(session.env_map, "HOME") { Ok(h) => h, Err(_) => "" };
+    if is_login && !no_profile {
+        let sys_p: String = if (read_file(fs_r, "/etc/oosh/profile")).is_ok() { "/etc/oosh/profile" } else { "" };
+        if sys_p != "" { session = source_rc(fs_r, fs_w, sys, env, ffi, sys_p, rec, session); }
+        if home != "" && (read_file(fs_r, home + "/.oosh_profile")).is_ok() {
+            session = source_rc(fs_r, fs_w, sys, env, ffi, home + "/.oosh_profile", rec, session);
+        }
     }
-
-    if is_daemon {
-        let d_rc: Int = ipc_run_daemon(sys, env, ffi, cwd, rec);
-        return Ok(d_rc);
+    if !no_rc && home != "" && (!has_c_flag || is_interactive_forced) {
+        session = source_rc(fs_r, fs_w, sys, env, ffi, home + "/.ooshrc", rec, session);
     }
-
     if has_c_flag {
         if str_trim(one_shot_cmd) == "" { return Ok(0); }
         let res: DispatchResult = dispatch_line(fs_r, fs_w, sys, env, ffi, one_shot_cmd, rec, session);
         if res.exit_code != 0 { process_exit(res.exit_code); }
         return Ok(res.exit_code);
     }
-
-    // Source ~/.ooshrc configuration into session environment and alias table
-    let hr: Result[String, String] = env_get(env, "HOME");
-    let mut home: String = match hr { Ok(h) => h, Err(_) => "" };
-    if home == "" {
-        let p_home: Result[String, String] = process_exec(sys, "printenv HOME 2>/dev/null");
-        home = match p_home { Ok(s) => str_trim(s), Err(_) => "" };
-    }
-    if home != "" {
-        let ooshrc_path: String = home + "/.ooshrc";
-        let ooshrc_read: Result[String, String] = read_file(fs_r, ooshrc_path);
-        if ooshrc_read.is_ok() {
-            let rc_content: String = match ooshrc_read { Ok(s) => s, Err(_) => "" };
-            let rc_res: DispatchResult = dispatch_line(fs_r, fs_w, sys, env, ffi, rc_content, rec, session);
-            session = rc_res.session;
-        }
-    }
-
-    if script_file != "" {
-        let s_rc: Int = run_script_file(fs_r, fs_w, sys, env, ffi, script_file, script_args, rec, session);
-        if s_rc != 0 { process_exit(s_rc); }
-        return Ok(s_rc);
-    }
-
-    let rc: Int = run_engine(fs_r, sys, env, time, bind, fs_w, ffi, session);
-    if rc != 0 { process_exit(rc); }
-    return Ok(rc);
+    let fin_rc: Int = if script_file != "" { run_script_file(fs_r, fs_w, sys, env, ffi, script_file, script_args, rec, session) } else { run_engine(fs_r, sys, env, time, bind, fs_w, ffi, session) };
+    if fin_rc != 0 { process_exit(fin_rc); }
+    return Ok(fin_rc);
 }

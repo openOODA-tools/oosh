@@ -49,6 +49,14 @@ fn test_theme_prompt_alias(env: &EnvCap, r: TestRunner) -> TestRunner {
     tr = test_assert(tr, "theme: symbol ok contains happy glyph", str_contains(sym_ok, "(^.^)"));
     tr = test_assert(tr, "theme: symbol err contains failure glyph", str_contains(sym_err, "(x.x)"));
 
+    let sym_cyber: String = render_grounded_symbol_themed("cyberpunk", false);
+    tr = test_assert(tr, "theme: cyberpunk symbol ok code 31", str_contains(sym_cyber, "[31m"));
+    tr = test_assert(tr, "theme: cyberpunk symbol contains happy glyph", str_contains(sym_cyber, "(^.^)"));
+
+    let sym_1982: String = render_grounded_symbol_themed("1982", true);
+    tr = test_assert(tr, "theme: 1982 symbol err code 32", str_contains(sym_1982, "[32m"));
+    tr = test_assert(tr, "theme: 1982 symbol contains failure glyph", str_contains(sym_1982, "(x.x)"));
+
     let p_ok: String = render_prompt_state(env, "/tmp", false);
     let p_err: String = render_prompt_state(env, "/tmp", true);
     tr = test_assert(tr, "theme: prompt ok contains happy glyph", str_contains(p_ok, "(^.^)"));
@@ -57,6 +65,13 @@ fn test_theme_prompt_alias(env: &EnvCap, r: TestRunner) -> TestRunner {
     tr = test_assert(tr, "theme: accent intent channel", str_contains(render_syntax_accent("? test"), "INTENT CHANNEL"));
     tr = test_assert(tr, "theme: accent navigation", str_contains(render_syntax_accent("cd /"), "NAVIGATION: cd"));
     tr = test_assert(tr, "theme: accent builtin", str_contains(render_syntax_accent("whereami"), "NAVIGATION: whereami"));
+
+    let acc_cyber_intent: String = render_syntax_accent_themed("? test", "cyberpunk");
+    tr = test_assert(tr, "theme: cyberpunk accent intent code 33", str_contains(acc_cyber_intent, "[33m"));
+    let acc_cyber_nav: String = render_syntax_accent_themed("whereami", "cyberpunk");
+    tr = test_assert(tr, "theme: cyberpunk accent nav code 32", str_contains(acc_cyber_nav, "[32m"));
+    let acc_cyber_bi: String = render_syntax_accent_themed("status", "cyberpunk");
+    tr = test_assert(tr, "theme: cyberpunk accent builtin code 36", str_contains(acc_cyber_bi, "[36m"));
     return tr;
 }
 

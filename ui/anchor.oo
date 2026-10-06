@@ -16,11 +16,11 @@ import "accent.oo";
 import "theme_io.oo";
 import "std/fs/process/process.oo";
 
-pub fn ui_theme_shell_prompt() -> String { return theme_shell_prompt(); }
-pub fn ui_theme_shell_builtin() -> String { return theme_shell_builtin(); }
-pub fn ui_theme_shell_nav() -> String { return theme_shell_nav(); }
-pub fn ui_theme_shell_host_bin() -> String { return theme_shell_host_bin(); }
-pub fn ui_theme_shell_intent() -> String { return theme_shell_intent(); }
+pub fn ui_theme_shell_prompt(theme: String) -> String { return theme_shell_prompt(theme); }
+pub fn ui_theme_shell_builtin(theme: String) -> String { return theme_shell_builtin(theme); }
+pub fn ui_theme_shell_nav(theme: String) -> String { return theme_shell_nav(theme); }
+pub fn ui_theme_shell_host_bin(theme: String) -> String { return theme_shell_host_bin(theme); }
+pub fn ui_theme_shell_intent(theme: String) -> String { return theme_shell_intent(theme); }
 
 pub fn ui_is_interactive(sys: &ProcessCap) -> Bool {
     let r: Result[String, String] = process_exec(sys, "test -t 0");

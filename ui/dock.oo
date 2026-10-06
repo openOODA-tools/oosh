@@ -11,6 +11,7 @@
 
 import "std/fs/process/env.oo";
 import "palette.oo";
+import "theme_io.oo";
 
 pub fn resolve_node_id(env: &EnvCap) -> String {
     let ur: Result[String, String] = env_get(env, "USER");
@@ -107,11 +108,12 @@ pub fn render_ambient_dock(fs_r: &FsReadCap, env: &EnvCap, cwd: String, has_fail
     let host_name: String = match host_file { Ok(s) => str_trim(s), Err(_) => "node" };
     let node: String = user_name + "@" + (if host_name != "" { host_name } else { "node" });
 
+    let theme: String = resolve_shell_theme(fs_r, env, home);
     let rst: String = cyber_reset();
-    let branch_part: String = if branch != "" { " " + theme_shell_intent() + "(git:" + branch + ")" + rst } else { "" };
+    let branch_part: String = if branch != "" { " " + theme_shell_intent(theme) + "(git:" + branch + ")" + rst } else { "" };
     let host_part: String = cyber_gray() + "[" + node + "]" + rst;
-    let path_part: String = " " + theme_shell_nav() + disp_cwd + rst;
-    let cap_part: String = " " + theme_shell_builtin() + "[CAPS: PROC+FS+NET]" + rst;
+    let path_part: String = " " + theme_shell_nav(theme) + disp_cwd + rst;
+    let cap_part: String = " " + theme_shell_builtin(theme) + "[CAPS: PROC+FS+NET]" + rst;
 
     return host_part + path_part + branch_part + cap_part + "\r\n";
 }

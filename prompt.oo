@@ -37,8 +37,12 @@ pub fn format_prompt_path(env: &EnvCap, cwd: String) -> String {
 }
 
 pub fn render_grounded_symbol(has_failure: Bool) -> String {
+    return render_grounded_symbol_themed("", has_failure);
+}
+
+pub fn render_grounded_symbol_themed(theme: String, has_failure: Bool) -> String {
     let glyph: String = if has_failure { "(x.x)" } else { "(^.^)" };
-    return theme_shell_prompt() + glyph + cyber_reset() + " $ ";
+    return theme_shell_prompt(theme) + glyph + cyber_reset() + " $ ";
 }
 
 pub fn render_prompt_state(env: &EnvCap, cwd: String, has_failure: Bool) -> String {
@@ -55,7 +59,9 @@ pub fn render_prompt_state(env: &EnvCap, cwd: String, has_failure: Bool) -> Stri
     let sym_r: Result[String, String] = env_get(env, "OOSH_PROMPT_SYMBOL");
     let custom_sym: String = match sym_r { Ok(s) => s, Err(_) => "" };
     let glyph: String = if has_failure { "(x.x)" } else { "(^.^)" };
-    let styled_glyph: String = theme_shell_prompt() + glyph + cyber_reset();
+    let theme_r: Result[String, String] = env_get(env, "OODA_THEME");
+    let theme: String = match theme_r { Ok(s) => s, Err(_) => "" };
+    let styled_glyph: String = theme_shell_prompt(theme) + glyph + cyber_reset();
     let sign: String = if custom_sym != "" { custom_sym } else if user == "root" { "# " } else { "$ " };
     return user + "@" + host + ":" + p_path + " " + styled_glyph + " " + sign;
 }

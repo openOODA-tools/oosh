@@ -9,6 +9,8 @@
 //   2. Resolve configuration path under ~/.openooda/theme.oot.
 //   3. Map shell semantic tokens to ANSI color codes per theme.
 
+import "std/fs/process/env.oo";
+
 pub fn parse_theme_val(line: String, key: String) -> String {
     let trimmed: String = str_trim(line);
     if !str_starts_with(trimmed, key) { return ""; }
@@ -104,4 +106,22 @@ pub fn resolve_active_theme_str(fs_r: &FsReadCap, home: String) -> String {
     if r.is_err() { return "auto"; }
     let content: String = match r { Ok(s) => s, Err(_) => "" };
     return resolve_theme_from_cfg(content);
+}
+
+pub fn resolve_shell_theme(fs_r: &FsReadCap, env: &EnvCap, home: String) -> String {
+    let env_t: Result[String, String] = env_get(env, "OODA_THEME");
+    if env_t.is_ok() {
+        let t: String = match env_t { Ok(s) => s, Err(_) => "" };
+        if t != "" { return t; }
+    }
+    let mut h: String = home;
+    if h == "" {
+        let hr: Result[String, String] = env_get(env, "HOME");
+        h = match hr { Ok(s) => s, Err(_) => "" };
+        if h == "" {
+            let wr: Result[String, String] = env_get(env, "OODA_FS_WRITEDIR");
+            h = match wr { Ok(s) => s, Err(_) => "" };
+        }
+    }
+    return resolve_active_theme_str(fs_r, h);
 }

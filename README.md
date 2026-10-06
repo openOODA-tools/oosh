@@ -49,6 +49,42 @@ curl -fsSL https://openooda-tools.github.io/oosh/install.sh | bash -s -- --verif
 curl -fsSL https://openooda-tools.github.io/oosh/install.sh | bash -s -- --uninstall
 ```
 
+### Configuring Default Login Shell Safely
+
+Depending on your Linux environment, configure `oosh` as your primary shell using the appropriate method:
+
+#### 1. Standard Linux (`chsh`)
+For system-wide installations (`/usr/local/bin/oosh` or `/usr/bin/oosh`) on standard systems:
+```bash
+# Verify shell is registered in /etc/shells (handled automatically by RPM/DEB/installer)
+grep -q "^/usr/local/bin/oosh$" /etc/shells || echo "/usr/local/bin/oosh" | sudo tee -a /etc/shells
+
+# Set default login shell
+chsh -s /usr/local/bin/oosh
+```
+
+#### 2. systemd-homed Managed Accounts (`homectl`)
+On modern systems utilizing `systemd-homed` with encrypted user homes (e.g. LUKS per-user storage):
+```bash
+# Update user account shell via homectl
+homectl update "$USER" --shell=/usr/local/bin/oosh
+```
+> [!WARNING]
+> **Encrypted Homes & Remote SSH Access**: On systems using `systemd-homed`, LUKS per-user encryption, or ecryptfs, the user's home directory is unmounted while logged out. Setting a shell binary inside `/home/` (such as `~/.local/bin/oosh`) causes login/SSH authentication failures (`systemd-home-fallback-shell` failure) because the binary does not exist on disk before authentication! Always install to a system-wide path (`/usr/local/bin/oosh` or `/usr/bin/oosh`), or use the `~/.bashrc` chaining method below.
+
+#### 3. User-Local Installs & Safe Interactive Exec Chaining (`~/.bashrc`)
+If installed without root privileges into `~/.local/bin`, or to safely launch `oosh` without altering system login accounts:
+Keep `/bin/bash` or `/bin/zsh` as your login shell and append the following exec-chaining hook to the end of your `~/.bashrc` (or `~/.zshrc`):
+
+```bash
+if [[ $- == *i* ]] && [ -x /usr/local/bin/oosh ] && [ "$OOSH_ACTIVE" != "1" ]; then
+    export OOSH_ACTIVE=1
+    exec /usr/local/bin/oosh
+fi
+```
+*(If installed locally to `~/.local/bin`, replace `/usr/local/bin/oosh` with `"$HOME/.local/bin/oosh"`).*
+This ensures non-interactive SSH commands, scp/rsync, and display managers retain standard shell behavior while interactive terminal sessions seamlessly enter `oosh`.
+
 ---
 
 ## 2. Vision & Architecture

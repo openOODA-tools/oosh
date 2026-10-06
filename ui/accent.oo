@@ -37,7 +37,7 @@ pub fn is_builtin_verb(verb: String) -> Bool {
            verb == "jobs";
 }
 
-pub fn is_intent_query(cmd: String) -> Bool {
+fn is_intent_query(cmd: String) -> Bool {
     let trimmed: String = str_trim(cmd);
     if trimmed == "?" {
         return false;
@@ -73,42 +73,43 @@ pub fn render_syntax_accent(cmd: String) -> String {
     let rst: String = cyber_reset();
 
     if is_intent_query(trimmed) {
-        return cyber_purple() + "[INTENT CHANNEL]" + rst;
+        return theme_shell_intent() + "[INTENT CHANNEL]" + rst;
     }
 
     let verb: String = extract_verb(trimmed);
     if is_navigation_verb(verb) {
-        return cyber_green() + "[NAVIGATION: " + verb + "]" + rst;
+        return theme_shell_nav() + "[NAVIGATION: " + verb + "]" + rst;
     }
     if is_builtin_verb(verb) {
-        return cyber_amber() + "[SOVEREIGN BUILTIN: " + verb + "]" + rst;
+        return theme_shell_builtin() + "[SOVEREIGN BUILTIN: " + verb + "]" + rst;
     }
 
-    return cyber_cyan() + "[HOST BINARY: " + verb + "]" + rst;
+    return theme_shell_host_bin() + "[HOST BINARY: " + verb + "]" + rst;
 }
 
 fn color_token(tok: String, is_first: Bool) -> String {
     let rst: String = cyber_reset();
     if is_first {
-        if is_intent_query(tok) { return cyber_purple() + tok + rst; }
-        if is_builtin_verb(tok) { return cyber_cyan() + tok + rst; }
-        return cyber_green() + tok + rst;
+        if is_intent_query(tok) { return theme_shell_intent() + tok + rst; }
+        if is_builtin_verb(tok) { return theme_shell_builtin() + tok + rst; }
+        if is_navigation_verb(tok) { return theme_shell_nav() + tok + rst; }
+        return theme_shell_host_bin() + tok + rst;
     }
     // Pipeline and redirection operators
     if tok == "|" || tok == ">" || tok == ">>" || tok == "<" || tok == "&&" || tok == "||" {
-        return cyber_purple() + tok + rst;
+        return theme_shell_intent() + tok + rst;
     }
     // String literals (quoted)
     if str_starts_with(tok, "\"") || str_starts_with(tok, "'") {
-        return cyber_amber() + tok + rst;
+        return theme_shell_builtin() + tok + rst;
     }
     // Paths (contain slash or start with tilde)
     if str_contains(tok, "/") || str_starts_with(tok, "~") {
-        return cyber_green() + tok + rst;
+        return theme_shell_nav() + tok + rst;
     }
     // Command flags
     if str_starts_with(tok, "-") {
-        return cyber_amber() + tok + rst;
+        return theme_shell_builtin() + tok + rst;
     }
     return tok;
 }
@@ -117,7 +118,7 @@ pub fn accent_command_tokens(cmd: String) -> String {
     let n: Int = chars_len(cmd);
     if n == 0 { return ""; }
     if is_intent_query(cmd) {
-        return cyber_purple() + cmd + cyber_reset();
+        return theme_shell_intent() + cmd + cyber_reset();
     }
     let mut out: String = "";
     let mut cur: String = "";

@@ -129,7 +129,7 @@ pub fn parse_if_stmt(line: String) -> Result[IfStmtDef, String] {
     return Ok(IfStmtDef { cond: cond, then_body: trim_semi(str_slice(t, then_pos + 4, fi_pos)), else_body: "" });
 }
 
-fn pattern_matches_word(pattern: String, word: String) -> Bool {
+pub fn pattern_matches_word(pattern: String, word: String) -> Bool {
     let mut p: String = str_trim(pattern);
     let plen: Int = chars_len(p);
     if plen >= 2 && ((str_starts_with(p, "\"") && str_ends_with(p, "\"")) || (str_starts_with(p, "'") && str_ends_with(p, "'"))) { p = str_slice(p, 1, plen - 1); }

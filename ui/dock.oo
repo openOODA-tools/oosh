@@ -108,10 +108,10 @@ pub fn render_ambient_dock(fs_r: &FsReadCap, env: &EnvCap, cwd: String, has_fail
     let node: String = user_name + "@" + (if host_name != "" { host_name } else { "node" });
 
     let rst: String = cyber_reset();
-    let branch_part: String = if branch != "" { " " + cyber_purple() + "(git:" + branch + ")" + rst } else { "" };
+    let branch_part: String = if branch != "" { " " + theme_shell_intent() + "(git:" + branch + ")" + rst } else { "" };
     let host_part: String = cyber_gray() + "[" + node + "]" + rst;
-    let path_part: String = " " + cyber_cyan() + disp_cwd + rst;
-    let cap_part: String = " " + cyber_amber() + "[CAPS: PROC+FS+NET]" + rst;
+    let path_part: String = " " + theme_shell_nav() + disp_cwd + rst;
+    let cap_part: String = " " + theme_shell_builtin() + "[CAPS: PROC+FS+NET]" + rst;
 
     return host_part + path_part + branch_part + cap_part + "\r\n";
 }

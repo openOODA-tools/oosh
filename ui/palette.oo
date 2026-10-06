@@ -9,6 +9,8 @@
 //   2. Provide terminal styling primitives for bold, dim, and reset controls.
 //   3. Wrap text segments with standard ANSI color tokens and automatic reset.
 
+import "theme_io.oo";
+
 pub fn ansi_esc() -> String {
     return bytes_to_str(bytes_push(bytes_new(), 27));
 }
@@ -17,6 +19,13 @@ pub fn cyber_esc() -> String { return ansi_esc(); }
 pub fn cyber_reset() -> String { return ansi_esc() + "[0m"; }
 pub fn cyber_bold() -> String { return ansi_esc() + "[1m"; }
 pub fn cyber_dim() -> String { return ansi_esc() + "[2m"; }
+
+// Semantic theme tokens driven by ~/.openooda/theme.oot
+pub fn theme_shell_prompt() -> String { return ansi_esc() + "[" + theme_token_code("", "shell_prompt") + "m"; }
+pub fn theme_shell_builtin() -> String { return ansi_esc() + "[" + theme_token_code("", "shell_builtin") + "m"; }
+pub fn theme_shell_nav() -> String { return ansi_esc() + "[" + theme_token_code("", "shell_nav") + "m"; }
+pub fn theme_shell_host_bin() -> String { return ansi_esc() + "[" + theme_token_code("", "shell_host_bin") + "m"; }
+pub fn theme_shell_intent() -> String { return ansi_esc() + "[" + theme_token_code("", "shell_intent") + "m"; }
 
 // Standard 16-color ANSI SGR codes
 pub fn cyber_cyan() -> String { return ansi_esc() + "[36m"; }

@@ -10,12 +10,24 @@
 //   3. Print summary and exit with status 0 on pass or 1 on fail.
 
 import "std/meta/test/runner.oo";
-import "unit/anchor.oo";
+import "unit/test_lexer.oo";
+import "unit/test_arith.oo";
+import "unit/test_control.oo";
+import "unit/test_remedy.oo";
+import "unit/test_stream.oo";
+import "unit/test_defense.oo";
+import "unit/test_theme.oo";
 
 pub fn main(fs_r: &FsReadCap, sys: &ProcessCap, env: &EnvCap, args: List[String]) -> Result[Int, String] {
     println("=== Running OOSH Native Unit Tests ===");
     let mut r: TestRunner = test_runner_new();
-    r = run_all_unit_tests(fs_r, sys, env, r);
+    r = run_test_lexer(r);
+    r = run_test_arith(env, r);
+    r = run_test_control(r);
+    r = run_test_remedy(r);
+    r = run_test_stream(r);
+    r = run_test_defense(fs_r, sys, env, r);
+    r = run_test_theme(env, r);
     test_summary(r);
     if r.failed > 0 {
         return Err("Unit tests failed");

@@ -458,6 +458,53 @@ else
     warn "Verification probe non-responsive."
 fi
 
+INSTALL_DIR="${INSTALL_DIR%/}"
+
+# Detect system-wide installation
+IS_SYSTEM_WIDE=0
+case "$INSTALL_DIR" in
+    /usr/bin|/usr/local/bin|/bin|/sbin|/usr/sbin|/opt/*) IS_SYSTEM_WIDE=1 ;;
+esac
+
+# Automatically register in /etc/shells if system-wide and root or passwordless sudo is available
+if [ "$IS_SYSTEM_WIDE" -eq 1 ] && [ -f /etc/shells ]; then
+    if ! grep -q "^${INSTALL_DIR}/oosh$" /etc/shells 2>/dev/null; then
+        story_line "Registering ${INSTALL_DIR}/oosh in /etc/shells…"
+        if [ "$(id -u)" -eq 0 ]; then
+            echo "${INSTALL_DIR}/oosh" >> /etc/shells 2>/dev/null || true
+            if grep -q "^${INSTALL_DIR}/oosh$" /etc/shells 2>/dev/null; then
+                ok "Registered ${BOLD}${INSTALL_DIR}/oosh${RESET} in /etc/shells"
+            fi
+        elif command -v sudo >/dev/null 2>&1; then
+            if sudo -n true 2>/dev/null; then
+                echo "${INSTALL_DIR}/oosh" | sudo tee -a /etc/shells >/dev/null 2>&1 || true
+                if grep -q "^${INSTALL_DIR}/oosh$" /etc/shells 2>/dev/null; then
+                    ok "Registered ${BOLD}${INSTALL_DIR}/oosh${RESET} in /etc/shells (via sudo)"
+                fi
+            elif [ "$IS_TTY" -eq 1 ]; then
+                story_line "Requesting sudo authority to register shell in /etc/shells…"
+                echo "${INSTALL_DIR}/oosh" | sudo tee -a /etc/shells >/dev/null 2>&1 || true
+                if grep -q "^${INSTALL_DIR}/oosh$" /etc/shells 2>/dev/null; then
+                    ok "Registered ${BOLD}${INSTALL_DIR}/oosh${RESET} in /etc/shells (via sudo)"
+                fi
+            fi
+        fi
+    else
+        ok "Shell ${BOLD}${INSTALL_DIR}/oosh${RESET} registered in /etc/shells"
+    fi
+fi
+
+# Detect systemd-homed managed user or active daemon
+IS_HOMED=0
+CURRENT_USER="${USER:-$(id -un 2>/dev/null || echo '')}"
+if command -v homectl >/dev/null 2>&1; then
+    if systemctl is-active systemd-homed >/dev/null 2>&1; then
+        IS_HOMED=1
+    elif [ -n "$CURRENT_USER" ] && homectl inspect "$CURRENT_USER" >/dev/null 2>&1; then
+        IS_HOMED=1
+    fi
+fi
+
 # PATH Inspection
 PATH_OK=0
 case ":$PATH:" in
@@ -477,7 +524,54 @@ fi
 say "  ${BOLD}Enter your sovereign shell right now:${RESET}"
 say "    ${AMBER}${BOLD}${INSTALL_DIR}/oosh${RESET}"
 say ""
-say "  ${BOLD}Make oosh your default login shell:${RESET}"
-say "    ${DIM}echo \"${INSTALL_DIR}/oosh\" | sudo tee -a /etc/shells${RESET}"
-say "    ${BOLD}chsh -s \"${INSTALL_DIR}/oosh\"${RESET}"
-say ""
+
+if [ "$IS_SYSTEM_WIDE" -eq 0 ]; then
+    warn "${BOLD}User-space installation detected (${INSTALL_DIR}/oosh).${RESET}"
+    say "  ${YELLOW}! WARNING:${RESET} Binaries inside ${BOLD}${HOME}${RESET} ${BOLD}CANNOT${RESET} be safely configured as a login shell"
+    say "    (via chsh or homectl) on systems with encrypted or unmounted home directories"
+    say "    (${CYAN}systemd-homed${RESET}, LUKS per-user encryption, ecryptfs)."
+    say "    Upon logout, your home directory is unmounted. On subsequent login or SSH connection,"
+    say "    ${BOLD}${INSTALL_DIR}/oosh${RESET} does not exist on disk before authentication,"
+    say "    triggering immediate login failure and session lockout!"
+    say ""
+    say "  ${BOLD}Recommended Safe Activation (Interactive Chaining):${RESET}"
+    say "    Keep your standard login shell (e.g. /bin/bash) and chain into ${BOLD}oosh${RESET} by adding"
+    say "    the following hook to the end of your ${BOLD}~/.bashrc${RESET} or ${BOLD}~/.zshrc${RESET}:"
+    say ""
+    say "      ${CYAN}if [[ \$- == *i* ]] && [ -x \"${INSTALL_DIR}/oosh\" ] && [ \"\$OOSH_ACTIVE\" != \"1\" ]; then${RESET}"
+    say "      ${CYAN}    export OOSH_ACTIVE=1${RESET}"
+    say "      ${CYAN}    exec \"${INSTALL_DIR}/oosh\"${RESET}"
+    say "      ${CYAN}fi${RESET}"
+    say ""
+elif [ "$IS_HOMED" -eq 1 ]; then
+    say "  ${CYAN}${BOLD}systemd-homed environment detected.${RESET}"
+    say "  To configure oosh as your default login shell via systemd-homed:"
+    say "    ${AMBER}${BOLD}homectl update \"\$USER\" --shell=\"${INSTALL_DIR}/oosh\"${RESET}"
+    say ""
+    warn "Notice for encrypted home directories & SSH public-key authentication:"
+    say "  If your home directory uses per-user encryption, SSH public-key authentication"
+    say "  requires systemd-homed to unlock storage on login. Always verify the binary is"
+    say "  situated in a system path (${INSTALL_DIR}/oosh). Never use a user-local path inside /home."
+    say "  Alternatively, use the safe ${BOLD}~/.bashrc${RESET} interactive chaining hook:"
+    say ""
+    say "      ${CYAN}if [[ \$- == *i* ]] && [ -x \"${INSTALL_DIR}/oosh\" ] && [ \"\$OOSH_ACTIVE\" != \"1\" ]; then${RESET}"
+    say "      ${CYAN}    export OOSH_ACTIVE=1${RESET}"
+    say "      ${CYAN}    exec \"${INSTALL_DIR}/oosh\"${RESET}"
+    say "      ${CYAN}fi${RESET}"
+    say ""
+else
+    say "  ${BOLD}Make oosh your default login shell:${RESET}"
+    if ! grep -q "^${INSTALL_DIR}/oosh$" /etc/shells 2>/dev/null; then
+        say "    ${DIM}echo \"${INSTALL_DIR}/oosh\" | sudo tee -a /etc/shells${RESET}"
+    fi
+    say "    ${BOLD}chsh -s \"${INSTALL_DIR}/oosh\"${RESET}"
+    say ""
+    say "  ${BOLD}Alternative: Safe ~/.bashrc Interactive Exec Chaining:${RESET}"
+    say "  To use oosh interactively without altering system login accounts:"
+    say ""
+    say "      ${CYAN}if [[ \$- == *i* ]] && [ -x \"${INSTALL_DIR}/oosh\" ] && [ \"\$OOSH_ACTIVE\" != \"1\" ]; then${RESET}"
+    say "      ${CYAN}    export OOSH_ACTIVE=1${RESET}"
+    say "      ${CYAN}    exec \"${INSTALL_DIR}/oosh\"${RESET}"
+    say "      ${CYAN}fi${RESET}"
+    say ""
+fi

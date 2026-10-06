@@ -1,0 +1,20 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    configure)
+        if command -v add-shell >/dev/null 2>&1; then
+            add-shell /usr/bin/oosh
+        elif [ -f /etc/shells ]; then
+            if ! grep -q '^/usr/bin/oosh$' /etc/shells 2>/dev/null; then
+                echo '/usr/bin/oosh' >> /etc/shells
+            fi
+        fi
+        ;;
+    abort-upgrade|abort-remove|abort-deconfigure)
+        ;;
+    *)
+        ;;
+esac
+
+exit 0

@@ -39,6 +39,20 @@ else
     fi
 fi
 
+echo "==> Verifying shell registration in /etc/shells..."
+OOSH_BIN="/usr/bin/oosh"
+if [ -f /etc/shells ]; then
+    if ! grep -q "^${OOSH_BIN}$" /etc/shells 2>/dev/null; then
+        echo "==> Registering ${OOSH_BIN} in /etc/shells..."
+        if [ "$(id -u)" -eq 0 ]; then
+            echo "${OOSH_BIN}" >> /etc/shells
+        else
+            echo "${OOSH_BIN}" | sudo tee -a /etc/shells >/dev/null
+        fi
+    fi
+    echo "✔ ${OOSH_BIN} registered in /etc/shells"
+fi
+
 echo "==> Verifying installation..."
 oosh --version
 echo "==> oosh v${VERSION} successfully installed via RPM/DNF."

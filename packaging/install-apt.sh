@@ -37,6 +37,28 @@ else
     fi
 fi
 
+echo "==> Verifying shell registration in /etc/shells..."
+OOSH_BIN="/usr/bin/oosh"
+if [ -f /etc/shells ]; then
+    if ! grep -q "^${OOSH_BIN}$" /etc/shells 2>/dev/null; then
+        echo "==> Registering ${OOSH_BIN} in /etc/shells..."
+        if [ "$(id -u)" -eq 0 ]; then
+            if command -v add-shell >/dev/null 2>&1; then
+                add-shell "${OOSH_BIN}"
+            else
+                echo "${OOSH_BIN}" >> /etc/shells
+            fi
+        else
+            if command -v add-shell >/dev/null 2>&1; then
+                sudo add-shell "${OOSH_BIN}"
+            else
+                echo "${OOSH_BIN}" | sudo tee -a /etc/shells >/dev/null
+            fi
+        fi
+    fi
+    echo "✔ ${OOSH_BIN} registered in /etc/shells"
+fi
+
 echo "==> Verifying installation..."
 oosh --version
 echo "==> oosh v${VERSION} successfully installed via APT/DEB."

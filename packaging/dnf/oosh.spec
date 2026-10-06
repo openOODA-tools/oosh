@@ -19,6 +19,20 @@ execution, process isolation, Varlink IPC, and autonomous recovery.
 mkdir -p %{buildroot}/usr/bin
 install -m 755 %{bin_path} %{buildroot}/usr/bin/oosh
 
+%post
+if [ -f /etc/shells ]; then
+    if ! grep -q '^/usr/bin/oosh$' /etc/shells 2>/dev/null; then
+        echo '/usr/bin/oosh' >> /etc/shells
+    fi
+else
+    echo '/usr/bin/oosh' > /etc/shells
+fi
+
+%postun
+if [ "$1" -eq 0 ] && [ -f /etc/shells ]; then
+    sed -i -e '\|^/usr/bin/oosh$|d' /etc/shells 2>/dev/null || true
+fi
+
 %files
 %defattr(-,root,root,-)
 /usr/bin/oosh

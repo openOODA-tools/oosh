@@ -1,0 +1,107 @@
+// # Theme IO - Configuration Hydration Engine
+//
+// Logline: Hydrates terminal theme tokens and paths from ~/.openooda/theme.oot and environment overrides.
+//
+// Setup: Pure string parser and token mapper with zero ambient side effects.
+//
+// Beats:
+//   1. Parse key-value bindings from openOODA .oot configuration documents.
+//   2. Resolve configuration path under ~/.openooda/theme.oot.
+//   3. Map shell semantic tokens to ANSI color codes per theme.
+
+pub fn parse_theme_val(line: String, key: String) -> String {
+    let trimmed: String = str_trim(line);
+    if !str_starts_with(trimmed, key) { return ""; }
+    let rest: String = str_trim(str_slice(trimmed, chars_len(key), chars_len(trimmed)));
+    if !str_starts_with(rest, "=") { return ""; }
+    let mut val: String = str_trim(str_slice(rest, 1, chars_len(rest)));
+    if str_starts_with(val, "\"") && str_ends_with(val, "\"") {
+        let n: Int = chars_len(val);
+        if n >= 2 { val = str_slice(val, 1, n - 1); }
+    }
+    return val;
+}
+
+pub fn parse_theme_key(content: String, key: String) -> String {
+    let n: Int = chars_len(content);
+    let mut cur: String = "";
+    let mut i: Int = 0;
+    while i < n {
+        let c: String = char_at(content, i);
+        if c == "\n" {
+            let v: String = parse_theme_val(cur, key);
+            if v != "" { return v; }
+            cur = "";
+        } else if c != "\r" {
+            cur = cur + c;
+        }
+        i = i + 1;
+    }
+    if cur != "" {
+        let v: String = parse_theme_val(cur, key);
+        if v != "" { return v; }
+    }
+    return "";
+}
+
+pub fn theme_config_path(home: String) -> String {
+    if chars_len(home) == 0 { return "theme.oot"; }
+    if str_ends_with(home, "/") { return home + ".openooda/theme.oot"; }
+    return home + "/.openooda/theme.oot";
+}
+
+pub fn theme_token_code(theme: String, tok: String) -> String {
+    if theme == "1982" {
+        if tok == "shell_prompt" { return "32"; }
+        if tok == "shell_builtin" { return "33"; }
+        if tok == "shell_nav" { return "32"; }
+        if tok == "shell_host_bin" { return "36"; }
+        if tok == "shell_intent" { return "35"; }
+    }
+    if theme == "cyberpunk" {
+        if tok == "shell_prompt" { return "31"; }
+        if tok == "shell_builtin" { return "36"; }
+        if tok == "shell_nav" { return "32"; }
+        if tok == "shell_host_bin" { return "35"; }
+        if tok == "shell_intent" { return "33"; }
+    }
+    if theme == "nord" {
+        if tok == "shell_prompt" { return "36"; }
+        if tok == "shell_builtin" { return "34"; }
+        if tok == "shell_nav" { return "36"; }
+        if tok == "shell_host_bin" { return "34"; }
+        if tok == "shell_intent" { return "35"; }
+    }
+    if theme == "dracula" {
+        if tok == "shell_prompt" { return "35"; }
+        if tok == "shell_builtin" { return "32"; }
+        if tok == "shell_nav" { return "32"; }
+        if tok == "shell_host_bin" { return "36"; }
+        if tok == "shell_intent" { return "35"; }
+    }
+    // Default: minimax / ember / seasonal / auto
+    if tok == "shell_prompt" { return "33"; }
+    if tok == "shell_builtin" { return "33"; }
+    if tok == "shell_nav" { return "32"; }
+    if tok == "shell_host_bin" { return "36"; }
+    if tok == "shell_intent" { return "35"; }
+    return "37";
+}
+
+pub fn theme_paint(code: String, text: String) -> String {
+    let esc: String = bytes_to_str(bytes_push(bytes_new(), 27));
+    return esc + "[" + code + "m" + text + esc + "[0m";
+}
+
+pub fn resolve_theme_from_cfg(content: String) -> String {
+    let t: String = parse_theme_key(content, "theme");
+    return if t != "" { t } else { "auto" };
+}
+
+pub fn resolve_active_theme_str(fs_r: &FsReadCap, home: String) -> String {
+    let p: String = theme_config_path(home);
+    let r: Result[String, String] = read_file(fs_r, p);
+    if r.is_err() { return "auto"; }
+    let content: String = match r { Ok(s) => s, Err(_) => "" };
+    return resolve_theme_from_cfg(content);
+}

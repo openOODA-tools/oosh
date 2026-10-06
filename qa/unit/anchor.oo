@@ -16,6 +16,7 @@ import "test_control.oo";
 import "test_remedy.oo";
 import "test_stream.oo";
 import "test_defense.oo";
+import "test_theme.oo";
 
 pub fn run_all_unit_tests(fs_r: &FsReadCap, sys: &ProcessCap, env: &EnvCap, r: TestRunner) -> TestRunner {
     let mut tr: TestRunner = r;
@@ -25,5 +26,6 @@ pub fn run_all_unit_tests(fs_r: &FsReadCap, sys: &ProcessCap, env: &EnvCap, r: T
     tr = run_test_remedy(tr);
     tr = run_test_stream(tr);
     tr = run_test_defense(fs_r, sys, env, tr);
+    tr = run_test_theme(env, tr);
     return tr;
 }

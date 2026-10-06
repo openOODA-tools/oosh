@@ -33,7 +33,13 @@ pub type SessionState = struct {
     func_map: FunctionMap
 };
 
-pub fn alias_map_new() -> AliasMap { return AliasMap { names: list_new(), targets: list_new() }; }
+pub fn alias_map_new() -> AliasMap {
+    let mut names: List[String] = list_new();
+    let mut targets: List[String] = list_new();
+    names = list_push(names, "theme");
+    targets = list_push(targets, "oote");
+    return AliasMap { names: names, targets: targets };
+}
 
 pub fn alias_map_get(m: AliasMap, name: String) -> Result[String, String] {
     let n: Int = list_len(m.names); let mut i: Int = 0;

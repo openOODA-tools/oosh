@@ -1,20 +1,17 @@
 // # oosh Prompt Renderer
 //
-// Logline: Renders standard POSIX bash prompt and current working directory path.
+// Logline: Renders standard POSIX bash prompt, current working directory path, and micro mascot glyph.
 //
 // Setup: Pure string formatting. Formats current directory from active shell state with tilde abbreviation.
 //
 // Beats:
 //   1. Resolve active directory string safely.
 //   2. Abbreviate home directory path with tilde glyph when applicable.
-//   3. Render standard POSIX Bash prompt or custom PS1 sovereign posture.
+//   3. Render micro mascot glyph reflecting exit status and shell prompt styling.
 
 import "std/fs/process/env.oo";
 import "ui/anchor.oo";
-
-pub fn ansi_esc() -> String {
-    return bytes_to_str(bytes_push(bytes_new(), 27));
-}
+import "ui/palette.oo";
 
 pub fn format_prompt_path(env: &EnvCap, cwd: String) -> String {
     let mut home: String = match env_get(env, "HOME") { Ok(h) => h, Err(_) => "" };
@@ -40,7 +37,8 @@ pub fn format_prompt_path(env: &EnvCap, cwd: String) -> String {
 }
 
 pub fn render_grounded_symbol(has_failure: Bool) -> String {
-    return if has_failure { "$ " } else { "$ " };
+    let glyph: String = if has_failure { "(x.x)" } else { "(^.^)" };
+    return theme_shell_prompt() + glyph + cyber_reset() + " $ ";
 }
 
 pub fn render_prompt_state(env: &EnvCap, cwd: String, has_failure: Bool) -> String {
@@ -56,8 +54,10 @@ pub fn render_prompt_state(env: &EnvCap, cwd: String, has_failure: Bool) -> Stri
     let p_path: String = format_prompt_path(env, cwd);
     let sym_r: Result[String, String] = env_get(env, "OOSH_PROMPT_SYMBOL");
     let custom_sym: String = match sym_r { Ok(s) => s, Err(_) => "" };
+    let glyph: String = if has_failure { "(x.x)" } else { "(^.^)" };
+    let styled_glyph: String = theme_shell_prompt() + glyph + cyber_reset();
     let sign: String = if custom_sym != "" { custom_sym } else if user == "root" { "# " } else { "$ " };
-    return user + "@" + host + ":" + p_path + sign;
+    return user + "@" + host + ":" + p_path + " " + styled_glyph + " " + sign;
 }
 
 pub fn render_prompt(env: &EnvCap, cwd: String) -> String {
@@ -82,4 +82,3 @@ pub fn parse_cd_target(line: String, cwd: String, home: String, oldpwd: String) 
     if str_starts_with(clean_t, "~/") { return home + str_slice(clean_t, 1, chars_len(clean_t)); }
     return clean_t;
 }
-

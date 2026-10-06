@@ -345,6 +345,50 @@
       </div>
     </div>
 
+    <!-- Shell Configuration Box -->
+    <div class="install-box" style="margin-top: 1.5rem;">
+      <h3 style="font-family: var(--font-mono); font-size: 1.1rem; color: #fff; margin-bottom: 0.75rem;">
+        <span class="icon">🐚</span> Safe Default Login Shell Configuration
+      </h3>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem; line-height: 1.5;">
+        Configure <code>oosh</code> as your primary interactive shell safely across standard distributions, encrypted <code>systemd-homed</code> environments, or user-local installations.
+      </p>
+
+      <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin: 1rem 0;">
+        <div style="background: var(--code-bg); padding: 1rem; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.08);">
+          <div style="font-family: var(--font-mono); font-size: 0.85rem; font-weight: 600; color: var(--accent-cyan); margin-bottom: 0.5rem;">Standard Linux (chsh)</div>
+          <p style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.5rem;">For system-wide installs in <code>/usr/local/bin</code> or <code>/usr/bin</code>:</p>
+          <div class="code-row" style="margin-bottom: 0;">
+            <code>chsh -s /usr/local/bin/oosh</code>
+            <button class="copy-btn" onclick="copyCode(this, 'chsh -s /usr/local/bin/oosh')">Copy</button>
+          </div>
+        </div>
+
+        <div style="background: var(--code-bg); padding: 1rem; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.08);">
+          <div style="font-family: var(--font-mono); font-size: 0.85rem; font-weight: 600; color: var(--accent-amber); margin-bottom: 0.5rem;">systemd-homed (homectl)</div>
+          <p style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.5rem;">For encrypted LUKS per-user homes managed by systemd-homed:</p>
+          <div class="code-row" style="margin-bottom: 0;">
+            <code>homectl update "$USER" --shell=/usr/local/bin/oosh</code>
+            <button class="copy-btn" onclick="copyCode(this, 'homectl update &quot;$USER&quot; --shell=/usr/local/bin/oosh')">Copy</button>
+          </div>
+        </div>
+      </div>
+
+      <div style="background: var(--code-bg); padding: 1rem; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.08); margin-top: 1rem;">
+        <div style="font-family: var(--font-mono); font-size: 0.85rem; font-weight: 600; color: var(--accent-green); margin-bottom: 0.5rem;">Safe Interactive Exec Chaining (~/.bashrc)</div>
+        <p style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.5rem;">
+          <strong>Essential for user-local installs</strong> (<code>~/.local/bin/oosh</code>) and encrypted homes: prevent SSH lockout by keeping <code>/bin/bash</code> as your login shell and chaining into <code>oosh</code> at the end of <code>~/.bashrc</code>:
+        </p>
+        <div class="code-row" style="margin-bottom: 0;">
+          <code style="white-space: pre-wrap;">if [[ $- == *i* ]] &amp;&amp; [ -x /usr/local/bin/oosh ] &amp;&amp; [ "$OOSH_ACTIVE" != "1" ]; then
+    export OOSH_ACTIVE=1
+    exec /usr/local/bin/oosh
+fi</code>
+          <button class="copy-btn" onclick="copyCode(this, 'if [[ $- == *i* ]] &amp;&amp; [ -x /usr/local/bin/oosh ] &amp;&amp; [ &quot;$OOSH_ACTIVE&quot; != &quot;1&quot; ]; then\n    export OOSH_ACTIVE=1\n    exec /usr/local/bin/oosh\nfi')">Copy</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Terminal Session Showcase -->
     <div class="terminal-window">
       <div class="terminal-header">

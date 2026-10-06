@@ -20,11 +20,12 @@ SHELL := /bin/bash
 OODA_COMPILER ?= $(firstword $(wildcard $(HOME)/.openooda/bin/oodac $(CURDIR)/../../openOODA/oodac/bin/oodac))
 OODACODEX ?= $(HOME)/.openooda/northstar.oot
 OO_LIST_AMBIENT_QUOTA ?= 8589934592
+OODA_BUILD_CONCAT ?= 1
 BIN := dist/oosh
 UNIT_BIN := dist/unit_runner
 
 SRC := main.oo version.oo anchor.oo prompt.oo dispatch.oo engine.oo manual.oo alias.oo \
-       ui/anchor.oo ui/palette.oo ui/card.oo ui/dock.oo ui/accent.oo \
+       ui/anchor.oo ui/palette.oo ui/theme_io.oo ui/card.oo ui/dock.oo ui/accent.oo \
        diagnostics/anchor.oo flight/anchor.oo flight/envelope.oo flight/telemetry.oo flight/remedy.oo flight/rules.oo \
        intent/anchor.oo intent/scanner.oo intent/context.oo intent/safety.oo intent/synthesize.oo intent/preview.oo \
        ipc/anchor.oo ipc/varlink.oo ipc/daemon.oo \
@@ -33,7 +34,7 @@ SRC := main.oo version.oo anchor.oo prompt.oo dispatch.oo engine.oo manual.oo al
        exec/anchor.oo exec/pipe.oo exec/nav.oo exec/host.oo exec/explain.oo exec/stream.oo \
        job/anchor.oo job/table.oo job/control.oo
 
-UNIT_SRC := qa/unit_runner.oo qa/unit/anchor.oo qa/unit/test_lexer.oo qa/unit/test_arith.oo qa/unit/test_control.oo qa/unit/test_remedy.oo qa/unit/test_stream.oo qa/unit/test_defense.oo
+UNIT_SRC := qa/unit_runner.oo qa/unit/anchor.oo qa/unit/test_lexer.oo qa/unit/test_arith.oo qa/unit/test_control.oo qa/unit/test_remedy.oo qa/unit/test_stream.oo qa/unit/test_defense.oo qa/unit/test_theme.oo
 
 .PHONY: all build test test-unit parity line-cap file-law academy check verify install clean test-e2e test-tier1 test-tier2 test-tier3 test-tier4 test-tier5 rpm deb pkg
 
@@ -43,7 +44,7 @@ build: $(BIN)
 
 $(BIN): $(SRC)
 	@mkdir -p dist .ooda-cache/ooda-tmp
-	OO_LIST_AMBIENT_QUOTA=$(OO_LIST_AMBIENT_QUOTA) OODACODEX=$(OODACODEX) OODA_COMPILER=$(OODA_COMPILER) OODA_NO_JAIL=1 $(OODA_COMPILER) build main.oo -o $(BIN)
+	OODA_BUILD_CONCAT=$(OODA_BUILD_CONCAT) OO_LIST_AMBIENT_QUOTA=$(OO_LIST_AMBIENT_QUOTA) OODACODEX=$(OODACODEX) OODA_COMPILER=$(OODA_COMPILER) OODA_NO_JAIL=1 $(OODA_COMPILER) build main.oo -o $(BIN)
 	@chmod +x $(BIN)
 	@cp -a $(BIN) dist/oosh-linux-x86_64
 	@sha256sum dist/oosh-linux-x86_64 > dist/oosh-linux-x86_64.sha256
@@ -51,7 +52,7 @@ $(BIN): $(SRC)
 
 $(UNIT_BIN): $(UNIT_SRC) $(SRC)
 	@mkdir -p dist .ooda-cache/ooda-tmp
-	OO_LIST_AMBIENT_QUOTA=$(OO_LIST_AMBIENT_QUOTA) OODACODEX=$(OODACODEX) OODA_COMPILER=$(OODA_COMPILER) OODA_NO_JAIL=1 $(OODA_COMPILER) build qa/unit_runner.oo -o $(UNIT_BIN)
+	OODA_BUILD_CONCAT=$(OODA_BUILD_CONCAT) OO_LIST_AMBIENT_QUOTA=$(OO_LIST_AMBIENT_QUOTA) OODACODEX=$(OODACODEX) OODA_COMPILER=$(OODA_COMPILER) OODA_NO_JAIL=1 $(OODA_COMPILER) build qa/unit_runner.oo -o $(UNIT_BIN)
 	@chmod +x $(UNIT_BIN)
 	@echo "built $(UNIT_BIN)"
 
@@ -436,6 +437,8 @@ deb: $(BIN)
 	@install -m 755 $(BIN) dist/deb_staging/usr/bin/oosh
 	@cp packaging/apt/debian/control dist/deb_staging/DEBIAN/
 	@chmod 644 dist/deb_staging/DEBIAN/control
+	@if [ -f packaging/apt/debian/postinst ]; then cp packaging/apt/debian/postinst dist/deb_staging/DEBIAN/ && chmod 755 dist/deb_staging/DEBIAN/postinst; fi
+	@if [ -f packaging/apt/debian/postrm ]; then cp packaging/apt/debian/postrm dist/deb_staging/DEBIAN/ && chmod 755 dist/deb_staging/DEBIAN/postrm; fi
 	@dpkg-deb --build --root-owner-group dist/deb_staging dist/oosh_1.0.0-1_amd64.deb >/dev/null
 	@rm -rf dist/deb_staging
 	@echo "built dist/oosh_1.0.0-1_amd64.deb"

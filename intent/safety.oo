@@ -9,7 +9,7 @@
 //   2. Assign safety tier (SAFE, MODERATE, or HIGH_RISK / DANGEROUS).
 //   3. Render styled cyberpunk safety badge.
 
-pub fn ansi_esc() -> String {
+fn ansi_esc() -> String {
     return bytes_to_str(bytes_push(bytes_new(), 27));
 }
 

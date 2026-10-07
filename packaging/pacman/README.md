@@ -7,7 +7,7 @@ This directory contains the Arch Linux / Omarchy packaging specifications and in
 Install the official package directly using pacman:
 
 ```bash
-sudo pacman -U https://github.com/openOODA-tools/oosh/releases/download/v1.0.0/oosh-1.0.0-1-x86_64.pkg.tar.zst
+sudo pacman -U https://github.com/openOODA-tools/oosh/releases/download/v1.0.1/oosh-1.0.1-1-x86_64.pkg.tar.zst
 ```
 
 Or using the unified installer:
@@ -37,5 +37,5 @@ To generate the `.pkg.tar.zst` package locally:
 
 ```bash
 make pacman
-sudo pacman -U dist/oosh-1.0.0-1-x86_64.pkg.tar.zst
+sudo pacman -U dist/oosh-1.0.1-1-x86_64.pkg.tar.zst
 ```

@@ -438,7 +438,9 @@ install: build
 	@mkdir -p $(HOME)/.openooda/bin
 	cp -a $(BIN) $(HOME)/.openooda/bin/oosh
 	@chmod +x $(HOME)/.openooda/bin/oosh
-	@echo "installed $(HOME)/.openooda/bin/oosh"
+	cp -a uninstall.sh $(HOME)/.openooda/bin/oosh-uninstall
+	@chmod +x $(HOME)/.openooda/bin/oosh-uninstall
+	@echo "installed $(HOME)/.openooda/bin/oosh and oosh-uninstall"
 
 VERSION ?= 1.0.1
 

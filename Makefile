@@ -103,6 +103,9 @@ test: $(BIN)
 	@./$(BIN) --unknown-flag 2>/dev/null; test $$? -eq 2 && echo "PASS: error exit 2"
 	@echo "=== testing installer dry-run ==="
 	@./install.sh --dry-run > /dev/null && echo "PASS: install.sh dry-run"
+	@echo "=== testing uninstaller dry-run ==="
+	@./uninstall.sh --dry-run > /dev/null && echo "PASS: uninstall.sh dry-run"
+	@./install.sh --dry-run --uninstall > /dev/null && echo "PASS: install.sh --dry-run --uninstall"
 	@echo "=== testing remedy missing directory ==="
 	@printf "cd /missing/dir/xyz\nremedy\n" | ./$(BIN) --no-banner | grep -q "take /missing/dir/xyz" && echo "PASS: remedy missing dir suggests take"
 	@echo "=== testing remedy missing file ==="
@@ -383,8 +386,8 @@ file-law:
 		fi; \
 	done; \
 	for f in $$(find . -name "*.sh" -not -path "./.git/*" -not -path "./.agents/*" -not -path "./.github/*" -not -path "./packaging/*" -not -path "./dist/*" 2>/dev/null); do \
-		if [ "$$f" != "./install.sh" ]; then \
-			echo "VIOLATION: .sh forbidden outside install.sh: $$f"; \
+		if [ "$$f" != "./install.sh" ] && [ "$$f" != "./uninstall.sh" ]; then \
+			echo "VIOLATION: .sh forbidden outside install.sh and uninstall.sh: $$f"; \
 			violations=$$((violations+1)); \
 		fi; \
 	done; \

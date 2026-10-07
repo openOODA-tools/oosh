@@ -53,9 +53,27 @@ curl -fsSL https://openooda-tools.github.io/oosh/install.sh | bash -s -- --dry-r
 
 # Verify cryptographic SHA-256 integrity only
 curl -fsSL https://openooda-tools.github.io/oosh/install.sh | bash -s -- --verify
+```
 
-# Clean uninstall (removes package or binary)
+### Clean Uninstallation
+
+`oosh` includes a dedicated, safety-first uninstaller engine. Before removing any files, it inspects `systemd-homed` and `/etc/passwd` to ensure your active login shell is safely reverted to `/bin/bash` (preventing session lockouts). It then deregisters `oosh` from `/etc/shells`, removes packages (DNF, APT, Pacman) or standalone binaries, cleans `~/.bashrc` chaining hooks, and removes `/run/oosh` runtime sockets.
+
+```bash
+# Method 1: Using the bundled uninstaller binary (installed on PATH)
+oosh-uninstall
+# or with --purge to also delete ~/.ooshrc and ~/.oosh_history:
+oosh-uninstall --purge
+
+# Method 2: Direct web uninstaller
+curl -fsSL https://openooda-tools.github.io/oosh/uninstall.sh | bash
+# or with dry-run / purge:
+curl -fsSL https://openooda-tools.github.io/oosh/uninstall.sh | bash -s -- --dry-run
+curl -fsSL https://openooda-tools.github.io/oosh/uninstall.sh | bash -s -- --purge
+
+# Method 3: Via install.sh flag
 curl -fsSL https://openooda-tools.github.io/oosh/install.sh | bash -s -- --uninstall
+curl -fsSL https://openooda-tools.github.io/oosh/install.sh | bash -s -- --uninstall --purge
 ```
 
 ### Configuring Default Login Shell Safely

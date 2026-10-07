@@ -27,7 +27,7 @@ fn describe_base_cmd(cmd: String) -> String {
     if cmd == "git" { return "Fast distributed version control system."; }
     if cmd == "systemctl" { return "Control and inspect systemd units and services."; }
     if cmd == "systemd-run" { return "Run programs in transient systemd service or scope units."; }
-    if cmd == "daemon" { return "Launch transient systemd user service in app.slice per GEMINI.md."; }
+    if cmd == "daemon" { return "Launch transient systemd user service in app.slice per AGENTS.md."; }
     if cmd == "sandbox" { return "Execute command within isolated capability sandbox."; }
     if cmd == "remedy" || cmd == "fix" { return "Diagnose previous command failure and synthesize recovery command."; }
     if cmd == "autopsy" || cmd == "bb" { return "Inspect flight recorder execution timeline and crash diagnostics."; }

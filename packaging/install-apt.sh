@@ -4,7 +4,7 @@
 # ==============================================================================
 set -euo pipefail
 
-VERSION="1.0.0"
+VERSION="1.0.1"
 DEB_NAME="oosh_${VERSION}-1_amd64.deb"
 DEB_URL="https://github.com/openOODA-tools/oosh/releases/download/v${VERSION}/${DEB_NAME}"
 

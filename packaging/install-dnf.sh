@@ -4,7 +4,7 @@
 # ==============================================================================
 set -euo pipefail
 
-VERSION="1.0.0"
+VERSION="1.0.1"
 RELEASE="1"
 ARCH="x86_64"
 RPM_NAME="oosh-${VERSION}-${RELEASE}.${ARCH}.rpm"

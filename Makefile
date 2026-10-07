@@ -1,4 +1,4 @@
-# oosh v1.0.0 Makefile
+# oosh v1.0.1 Makefile
 #
 # Build, verify, and test the openOODA sovereign shell.
 #
@@ -440,39 +440,44 @@ install: build
 	@chmod +x $(HOME)/.openooda/bin/oosh
 	@echo "installed $(HOME)/.openooda/bin/oosh"
 
+VERSION ?= 1.0.1
+
 rpm: $(BIN)
 	@rm -rf dist/rpmbuild
 	@mkdir -p dist/rpmbuild/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
 	@cp packaging/dnf/oosh.spec dist/rpmbuild/SPECS/
-	@rpmbuild --define "_topdir $(CURDIR)/dist/rpmbuild" --define "bin_path $(CURDIR)/$(BIN)" -bb dist/rpmbuild/SPECS/oosh.spec >/dev/null
-	@cp dist/rpmbuild/RPMS/x86_64/oosh-1.0.0-1.x86_64.rpm dist/
+	@rpmbuild --define "_topdir $(CURDIR)/dist/rpmbuild" --define "bin_path $(CURDIR)/$(BIN)" --define "uninstaller_path $(CURDIR)/uninstall.sh" -bb dist/rpmbuild/SPECS/oosh.spec >/dev/null
+	@cp dist/rpmbuild/RPMS/x86_64/oosh-$(VERSION)*.rpm dist/
+	@if [ ! -f dist/oosh-$(VERSION)-1.x86_64.rpm ]; then cp dist/oosh-$(VERSION)*.rpm dist/oosh-$(VERSION)-1.x86_64.rpm 2>/dev/null || true; fi
 	@rm -rf dist/rpmbuild
-	@echo "built dist/oosh-1.0.0-1.x86_64.rpm"
+	@echo "built dist RPM package"
 
 deb: $(BIN)
 	@rm -rf dist/deb_staging
 	@mkdir -p dist/deb_staging/DEBIAN
 	@mkdir -p dist/deb_staging/usr/bin
 	@install -m 755 $(BIN) dist/deb_staging/usr/bin/oosh
+	@install -m 755 uninstall.sh dist/deb_staging/usr/bin/oosh-uninstall
 	@cp packaging/apt/debian/control dist/deb_staging/DEBIAN/
 	@chmod 644 dist/deb_staging/DEBIAN/control
 	@if [ -f packaging/apt/debian/postinst ]; then cp packaging/apt/debian/postinst dist/deb_staging/DEBIAN/ && chmod 755 dist/deb_staging/DEBIAN/postinst; fi
 	@if [ -f packaging/apt/debian/postrm ]; then cp packaging/apt/debian/postrm dist/deb_staging/DEBIAN/ && chmod 755 dist/deb_staging/DEBIAN/postrm; fi
-	@dpkg-deb --build --root-owner-group dist/deb_staging dist/oosh_1.0.0-1_amd64.deb >/dev/null
+	@dpkg-deb --build --root-owner-group dist/deb_staging dist/oosh_$(VERSION)-1_amd64.deb >/dev/null
 	@rm -rf dist/deb_staging
-	@echo "built dist/oosh_1.0.0-1_amd64.deb"
+	@echo "built dist/oosh_$(VERSION)-1_amd64.deb"
 
 pacman: $(BIN)
 	@rm -rf dist/pacman_staging
 	@mkdir -p dist/pacman_staging/usr/bin
 	@install -m 755 $(BIN) dist/pacman_staging/usr/bin/oosh
+	@install -m 755 uninstall.sh dist/pacman_staging/usr/bin/oosh-uninstall
 	@BUILDDATE=$$(date +%s); \
 	SIZE=$$(stat -c%s $(BIN)); \
-	printf "pkgname = oosh\npkgbase = oosh\npkgver = 1.0.0-1\npkgdesc = openOODA Sovereign Shell - Intent-Driven Capability-Bounded Shell\nurl = https://github.com/openOODA-tools/oosh\nbuilddate = %s\npackager = openOODA Team <team@openooda.org>\nsize = %s\narch = x86_64\nlicense = Apache-2.0\nprovides = oosh\ndepend = glibc\n" "$$BUILDDATE" "$$SIZE" > dist/pacman_staging/.PKGINFO
+	printf "pkgname = oosh\npkgbase = oosh\npkgver = $(VERSION)-1\npkgdesc = openOODA Sovereign Shell - Intent-Driven Capability-Bounded Shell\nurl = https://github.com/openOODA-tools/oosh\nbuilddate = %s\npackager = openOODA Team <team@openooda.org>\nsize = %s\narch = x86_64\nlicense = Apache-2.0\nprovides = oosh\ndepend = glibc\n" "$$BUILDDATE" "$$SIZE" > dist/pacman_staging/.PKGINFO
 	@if [ -f packaging/pacman/oosh.install ]; then cp packaging/pacman/oosh.install dist/pacman_staging/.INSTALL; fi
-	@tar --owner=0 --group=0 --numeric-owner --format=posix -C dist/pacman_staging -cf - .PKGINFO .INSTALL usr | zstd -c -T0 -19 > dist/oosh-1.0.0-1-x86_64.pkg.tar.zst
+	@tar --owner=0 --group=0 --numeric-owner --format=posix -C dist/pacman_staging -cf - .PKGINFO .INSTALL usr | zstd -c -T0 -19 > dist/oosh-$(VERSION)-1-x86_64.pkg.tar.zst
 	@rm -rf dist/pacman_staging
-	@echo "built dist/oosh-1.0.0-1-x86_64.pkg.tar.zst"
+	@echo "built dist/oosh-$(VERSION)-1-x86_64.pkg.tar.zst"
 
 pkg: rpm deb pacman
 

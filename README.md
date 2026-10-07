@@ -3,7 +3,7 @@
 > **openOODA Sovereign Shell**  
 > *The intent-driven, ambient, capability-bounded interactive shell for the AI era.*
 
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/openOODA-tools/oosh/releases/tag/v1.0.0)
+[![Version](https://img.shields.io/badge/version-1.0.1-blue.svg)](https://github.com/openOODA-tools/oosh/releases/tag/v1.0.1)
 [![CI/CD](https://github.com/openOODA-tools/oosh/actions/workflows/ci.yml/badge.svg)](https://github.com/openOODA-tools/oosh/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-green.svg)](LICENSE)
 [![Parity](https://img.shields.io/badge/POSIX%20Parity-10%2F10-brightgreen.svg)](#5-posix-parity--core-ergonomics)
@@ -31,19 +31,19 @@ You can also install packages directly from GitHub Releases:
 
 ```bash
 # Arch Linux / Omarchy (Pacman)
-sudo pacman -U https://github.com/openOODA-tools/oosh/releases/download/v1.0.0/oosh-1.0.0-1-x86_64.pkg.tar.zst
+sudo pacman -U https://github.com/openOODA-tools/oosh/releases/download/v1.0.1/oosh-1.0.1-1-x86_64.pkg.tar.zst
 
 # Arch Linux / Omarchy (PKGBUILD / makepkg)
 curl -fsSL -O https://openooda-tools.github.io/oosh/packaging/pacman/PKGBUILD
 makepkg -si
 
 # Fedora / RHEL / CentOS (RPM via DNF)
-sudo dnf install -y https://github.com/openOODA-tools/oosh/releases/download/v1.0.0/oosh-1.0.0-1.x86_64.rpm
+sudo dnf install -y https://github.com/openOODA-tools/oosh/releases/download/v1.0.1/oosh-1.0.1-1.x86_64.rpm
 
 # Ubuntu / Debian (DEB via APT)
-curl -fsSL -O https://github.com/openOODA-tools/oosh/releases/download/v1.0.0/oosh_1.0.0-1_amd64.deb
-sudo apt install -y ./oosh_1.0.0-1_amd64.deb
-rm -f oosh_1.0.0-1_amd64.deb
+curl -fsSL -O https://github.com/openOODA-tools/oosh/releases/download/v1.0.1/oosh_1.0.1-1_amd64.deb
+sudo apt install -y ./oosh_1.0.1-1_amd64.deb
+rm -f oosh_1.0.1-1_amd64.deb
 ```
 
 ### Installer Options
@@ -209,13 +209,13 @@ cd oosh
 # Build native binary dist/oosh
 make build
 
-# Build native Linux RPM package (dist/oosh-1.0.0-1.x86_64.rpm)
+# Build native Linux RPM package (dist/oosh-1.0.1-1.x86_64.rpm)
 make rpm
 
-# Build native Debian/Ubuntu DEB package (dist/oosh_1.0.0-1_amd64.deb)
+# Build native Debian/Ubuntu DEB package (dist/oosh_1.0.1-1_amd64.deb)
 make deb
 
-# Build both RPM and DEB packages
+# Build RPM, DEB, and Pacman packages
 make pkg
 
 # Build, verify, and run all test suites (unit + smoke + E2E tiers 1-5)

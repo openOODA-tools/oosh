@@ -36,7 +36,7 @@ SRC := main.oo version.oo anchor.oo prompt.oo dispatch.oo engine.oo manual.oo al
 
 UNIT_SRC := qa/unit_runner.oo qa/unit/anchor.oo qa/unit/test_lexer.oo qa/unit/test_arith.oo qa/unit/test_control.oo qa/unit/test_remedy.oo qa/unit/test_stream.oo qa/unit/test_defense.oo qa/unit/test_theme.oo
 
-.PHONY: all build test test-unit parity line-cap file-law academy check verify install clean test-e2e test-tier1 test-tier2 test-tier3 test-tier4 test-tier5 rpm deb pkg
+.PHONY: all build test test-unit parity line-cap file-law academy density check verify install clean test-e2e test-tier1 test-tier2 test-tier3 test-tier4 test-tier5 rpm deb pacman pkg package package-deb package-rpm package-arch
 
 all: build verify test test-unit test-e2e
 
@@ -428,11 +428,22 @@ academy:
 	if [ $$failures -gt 0 ]; then echo "FAIL: $$failures academy header violations"; exit 1; fi; \
 	echo "PASS: academy headers hold (all 4 elements present in first 7 lines)"
 
+density:
+	@violations=0; \
+	for d in $$(find . -type d -not -path "./.git*" -not -path "./dist*" -not -path "./.ooda-cache*" -not -path "./packaging*" -not -path "./man*"); do \
+		n=$$(ls "$$d"/*.oo "$$d"/*.oot 2>/dev/null | grep -v '\*' | wc -l); \
+		if [ $$n -gt 8 ]; then \
+			echo "VIOLATION: $$d holds $$n pages (exceeds 8)"; violations=$$((violations+1)); \
+		fi; \
+	done; \
+	if [ $$violations -gt 0 ]; then echo "FAIL: $$violations directories exceed the density bound"; exit 1; fi; \
+	echo "PASS: directory density (<= 8 pages per directory) holds"
+
 check:
 	@OO_LIST_AMBIENT_QUOTA=$(OO_LIST_AMBIENT_QUOTA) OODACODEX=$(OODACODEX) OODA_COMPILER=$(OODA_COMPILER) OODA_NO_JAIL=1 $(OODA_COMPILER) check main.oo qa/unit_runner.oo > /dev/null
 	@echo "PASS: oodac check holds on all .oo files"
 
-verify: line-cap file-law academy check
+verify: line-cap file-law academy density check
 
 install: build
 	@mkdir -p $(HOME)/.openooda/bin
@@ -482,6 +493,17 @@ pacman: $(BIN)
 	@echo "built dist/oosh-$(VERSION)-1-x86_64.pkg.tar.zst"
 
 pkg: rpm deb pacman
+
+package-rpm: rpm
+package-deb: deb
+package-arch: pacman
+
+package: package-deb package-rpm package-arch
+	@cp $(BIN) dist/oosh-linux-x86_64
+	@chmod 0755 dist/oosh-linux-x86_64
+	@(cd dist && sha256sum oosh-linux-x86_64 > oosh-linux-x86_64.sha256)
+	@(cd dist && sha256sum oosh* > checksums.txt)
+	@echo "built all packages and generated dist/checksums.txt"
 
 clean:
 	@rm -rf dist .ooda-cache .blackbox
